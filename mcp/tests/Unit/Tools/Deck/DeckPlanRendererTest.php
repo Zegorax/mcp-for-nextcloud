@@ -328,14 +328,14 @@ final class DeckPlanRendererTest extends TestCase {
 	public function testEditCardShowsAssigneeChangesInPortugueseAndSpanish(): void {
 		Translator::use(new JsonL10n('pt_BR'));
 		$pt = (string)$this->renderer->render('deck_edit_card', $this->assigneePlan());
-		$this->assertStringContainsString('- Atribuído a: Paulo Exemplo', $pt);
-		$this->assertStringContainsString('- Removido de: Luís Lima', $pt);
+		$this->assertStringContainsString('- Passa a ser responsável: Paulo Exemplo', $pt);
+		$this->assertStringContainsString('- Deixa de ser responsável: Luís Lima', $pt);
 		$this->assertStringContainsString('- Responsáveis após a alteração: Ana Souza, Paulo Exemplo', $pt);
-		$this->assertStringContainsString('- Ignorado, não é responsável pelo cartão: nunca', $pt);
+		$this->assertStringContainsString('- Ignorado, não é responsável pelo card: nunca', $pt);
 
 		Translator::use(new JsonL10n('es'));
 		$es = (string)$this->renderer->render('deck_edit_card', $this->assigneePlan());
-		$this->assertStringNotContainsString('- Assigned:', $es);
+		$this->assertStringContainsString('- Pasa a ser responsable: Paulo Exemplo', $es);
 		$this->assertStringNotContainsString('Assignees after the change', $es);
 		$this->assertStringContainsString('Paulo Exemplo', $es);
 	}
