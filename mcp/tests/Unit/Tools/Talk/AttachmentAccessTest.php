@@ -163,6 +163,15 @@ class AttachmentAccessTest extends TestCase {
     public function testHiddenAttachmentIsRefusedAsNotFound(): void {
         $node = $this->createMock(File::class);
         $node->method('getId')->willReturn(777);
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $node->method('getOwner')->willReturn($owner);
+        $folder = $this->createMock(\OCP\Files\Folder::class);
+        $folder->method('getId')->willReturn(1);
+        $folder->method('getById')->with(777)->willReturn([$node]);
+        $node->method('getParent')->willReturn($folder);
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getUserFolder')->with('alice')->willReturn($folder);
         $share = $this->givenShare(IShare::TYPE_ROOM, 'abcd');
         $share->method('getNode')->willReturn($node);
 
@@ -170,7 +179,7 @@ class AttachmentAccessTest extends TestCase {
         $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $tagMapper->method('getTagIdsForObjects')->willReturn(['777' => ['999']]);
-        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper, $root);
 
         $access = new AttachmentAccess($this->shareManager, $guard);
 
@@ -182,22 +191,61 @@ class AttachmentAccessTest extends TestCase {
     public function testDescribeOmitsInfoWhenNodeIsHidden(): void {
         $node = $this->createMock(File::class);
         $node->method('getId')->willReturn(777);
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $node->method('getOwner')->willReturn($owner);
+        $folder = $this->createMock(\OCP\Files\Folder::class);
+        $folder->method('getId')->willReturn(1);
+        $folder->method('getById')->with(777)->willReturn([$node]);
+        $node->method('getParent')->willReturn($folder);
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getUserFolder')->with('alice')->willReturn($folder);
         $node->method('getName')->willReturn('secret.pdf');
         $node->method('getSize')->willReturn(2048);
         $node->method('getMimeType')->willReturn('application/pdf');
         $share = $this->givenShare(IShare::TYPE_ROOM, 'abcd');
         $share->method('getNode')->willReturn($node);
 
-        $config = new \OCA\Mcp\Tests\Unit\InMemoryConfig();
-        $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
-        $tagMapper->method('getTagIdsForObjects')->willReturn(['777' => ['999']]);
-        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper);
+        $access = new AttachmentAccess($this->shareManager, $this->givenGuard(['777' => ['999']], $root));
 
-        $access = new AttachmentAccess($this->shareManager, $guard);
         $desc = $access->describe($share);
 
         $this->assertSame(['attachmentId' => 77, 'name' => null, 'size' => null, 'mimeType' => null], $desc);
+    }
+
+    /**
+     * An attachment may only pass when its node is resolved and seen as visible by the guard: a resolution
+     * failure can hide a missing tag check, so it is the very same refusal as an unknown id, never an acceptance.
+     */
+    public function testAnAttachmentWhoseNodeCannotBeCheckedIsRefusedAsNotFound(): void {
+        $share = $this->givenShare(IShare::TYPE_ROOM, 'abcd');
+        $share->method('getNode')->willThrowException(new RuntimeException('storage of share 77 is offline'));
+
+        $access = new AttachmentAccess($this->shareManager, $this->givenGuard());
+
+        try {
+            $access->requireRoomShareOf($this->givenConversation(), 'alice', 77);
+            $this->fail('An attachment whose node cannot be checked against the hidden tags must be refused.');
+        } catch (ConversationAccessException $e) {
+            $this->assertSame(Messages::attachmentNotFound(), $e->getMessage());
+            $this->assertStringNotContainsString('storage', $e->getMessage());
+            $this->assertInstanceOf(RuntimeException::class, $e->getPrevious());
+        }
+    }
+
+    public function testAVisibleAttachmentIsStillAcceptedWhenTheGuardIsActive(): void {
+        $node = $this->createMock(File::class);
+        $node->method('getId')->willReturn(777);
+        // A node of the user's own storage, not a share mount: the guard reads its mounted chain only.
+        $storage = $this->createMock(\OCP\Files\Storage\IStorage::class);
+        $storage->method('instanceOfStorage')->willReturn(false);
+        $node->method('getStorage')->willReturn($storage);
+        $share = $this->givenShare(IShare::TYPE_ROOM, 'abcd');
+        $share->method('getNode')->willReturn($node);
+
+        $access = new AttachmentAccess($this->shareManager, $this->givenGuard([], $this->createMock(\OCP\Files\IRootFolder::class)));
+
+        $this->assertSame($share, $access->requireRoomShareOf($this->givenConversation(), 'alice', 77));
     }
 
 
@@ -213,6 +261,27 @@ class AttachmentAccessTest extends TestCase {
 
     private function givenConversation(): Conversation {
         return new Conversation(new AccessRoomStub('abcd'), new AccessParticipantStub());
+    }
+
+    /**
+     * @param array<string, list<string>> $tagsById tags of each file id
+     * @param \OCP\Files\IRootFolder|null $root root the guard resolves a share's owner tree through
+     */
+    private function givenGuard(array $tagsById = [], ?\OCP\Files\IRootFolder $root = null): \OCA\Mcp\Service\VisibilityGuard {
+        $config = new \OCA\Mcp\Tests\Unit\InMemoryConfig();
+        $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
+        $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $tagMapper->method('getTagIdsForObjects')
+            ->willReturnCallback(static function (array $ids) use ($tagsById): array {
+                $out = [];
+                foreach ($ids as $id) {
+                    $out[(string)$id] = $tagsById[(string)$id] ?? [];
+                }
+
+                return $out;
+            });
+
+        return new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper, $root);
     }
 }
 

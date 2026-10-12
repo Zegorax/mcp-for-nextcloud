@@ -492,7 +492,7 @@ final class ResourceRegistryTest extends TestCase {
         $tag->method('getId')->willReturn('999');
         $manager = $this->createMock(\OCP\SystemTag\ISystemTagManager::class);
         $manager->method('getTagsByIds')->willReturn(['999' => $tag]);
-        return new VisibilityGuard($config->mock($this), $mapper, null, $manager);
+        return new VisibilityGuard($config->mock($this), $mapper, $this->rootFolder, $manager);
     }
 
     private function registryWith(VisibilityGuard $guard): ResourceRegistry {
@@ -537,6 +537,28 @@ final class ResourceRegistryTest extends TestCase {
 
         $this->assertNotFound(fn () => $registry->read('nc://files/Documentos/oculto.txt', 'alice'));
         $this->assertSame('Ola mundo', $registry->read('nc://files/Documentos/texto.txt', 'alice')['contents'][0]['text']);
+    }
+
+    public function testAFolderWithAHiddenTagAnswersAsAMissingResource(): void {
+        $id = $this->tree->addFolder('/alice/files/Documentos/Segredo');
+        $this->tree->addFile('/alice/files/Documentos/Segredo/plano.txt', 'sigilo', 'text/plain');
+        $registry = $this->registryWith($this->guardHiding([$id]));
+
+        // Existence and type of a hidden item stay private: protected and missing give the very same answer.
+        $this->assertNotFound(fn () => $registry->read('nc://files/Documentos/Segredo', 'alice'));
+        $this->assertNotFound(fn () => $registry->read('nc://files/Documentos/Segredo/plano.txt', 'alice'));
+        $this->assertSame('Ola mundo', $registry->read('nc://files/Documentos/texto.txt', 'alice')['contents'][0]['text']);
+    }
+
+    public function testAVisibleFolderStillAnswersNotAFile(): void {
+        $registry = $this->registryWith($this->guardHiding([]));
+
+        try {
+            $registry->read('nc://files/Documentos', 'alice');
+            $this->fail('the resource was served');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notAFile(), $e->getMessage());
+        }
     }
 
     /** @return array<string, array{int, string}> the code of each era for a resource the guard hides */

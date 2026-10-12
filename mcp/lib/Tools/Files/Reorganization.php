@@ -146,7 +146,8 @@ final class Reorganization {
             throw new ToolFailure(CommonMessages::forbidden());
         }
         $created = $this->missingLevels($root, $path);
-        NodeAccess::ensureFolder($root, $path);
+        $folder = NodeAccess::ensureFolder($root, $path, $this->visibilityGuard);
+        $this->visibilityGuard?->assertVisible($folder);
         return ['path' => $path, 'created' => true, 'created_paths' => $created];
     }
 
@@ -180,7 +181,7 @@ final class Reorganization {
      * @return Folder the existing ancestor, the user's own root at worst
      */
     private function existingAncestor(Folder $root, string $path): Folder {
-        $segments = array_values(array_filter(explode('/', $path)));
+        $segments = PathGuard::segments($path);
         while ($segments !== []) {
             array_pop($segments);
             $walk = '/' . implode('/', $segments);
@@ -202,7 +203,7 @@ final class Reorganization {
     private function missingLevels(Folder $root, string $path): array {
         $missing = [];
         $walk = '';
-        foreach (array_filter(explode('/', $path)) as $segment) {
+        foreach (PathGuard::segments($path) as $segment) {
             $walk .= '/' . $segment;
             if (!$root->nodeExists(ltrim($walk, '/'))) {
                 $missing[] = $walk;
@@ -241,7 +242,8 @@ final class Reorganization {
         $receipt = $root->getRelativePath($source->getPath()) ?? '';
         // Reading a locked file is allowed, so the source is not checked; files_lock may still refuse a copy between
         // storages, and that refusal is explained.
-        $copy = $this->locks === null ? $source->copy($this->absolute($root, $to)) : $this->locks->capture(fn (): Node => $source->copy($this->absolute($root, $to)), $source, $userId);
+        $copy = NodeAccess::mutate(fn () => $this->locks === null ? $source->copy($this->absolute($root, $to)) : $this->locks->capture(fn (): Node => $source->copy($this->absolute($root, $to)), $source, $userId), $this->visibilityGuard);
+        $this->visibilityGuard?->assertVisible($copy);
         return [
             'from' => $receipt,
             'to' => $to,
@@ -281,6 +283,7 @@ final class Reorganization {
         $versionsBefore = $this->versions($check->source, $userId);
         $sharesBefore = $this->report->shares($check->source, $userId);
         $moved = $this->locked(fn (): Node => $check->source->move($this->absolute($root, $check->to)), $check->source, $userId);
+        $this->visibilityGuard?->assertVisible($moved);
         $idAfter = (int)$moved->getId();
         return [
             'from' => $receipt,
@@ -318,7 +321,7 @@ final class Reorganization {
      * @return Node what the write returned
      */
     private function locked(callable $write, Node $node, string $userId): Node {
-        return $this->locks === null ? $write() : $this->locks->run($write, $node, $userId);
+        return NodeAccess::mutate(fn () => $this->locks === null ? $write() : $this->locks->run($write, $node, $userId), $this->visibilityGuard);
     }
 
     /**
@@ -358,6 +361,8 @@ final class Reorganization {
      *
      * A batch whose plan is not ok is refused rather than partly run: the user approved a plan, and
      * quietly dropping the item that conflicts would leave a state neither they nor the agent asked for.
+     *
+     * If a privacy hook hides a result, the batch is recorded but the generic refusal omits its batch_id.
      *
      * @param Folder $root the user's folder
      * @param string $userId authenticated user
@@ -402,9 +407,11 @@ final class Reorganization {
                 $check = $this->inspect($root, $item['from'], $item['to']);
                 $movedNode = NodeAccess::run(fn () => $this->locked(fn (): Node => $check->source->move($this->absolute($root, $check->to)), $check->source, $userId));
                 $moved[] = ['from' => $item['from'], 'to' => $check->to, 'toId' => (int)$movedNode->getId()];
+                $this->visibilityGuard?->assertVisible($movedNode);
             } catch (\Throwable $e) {
                 $failure = $e instanceof ToolFailure ? $e->getMessage() : FilesMessages::moveFailed();
                 $batchId = $store->insert(new Batch(null, $userId, $now, $moved, $created, null));
+                $this->assertUndoVisible($root, new Batch(null, $userId, $now, $result->planned, $created, null));
                 return [
                     'batch_id' => $batchId,
                     'moved' => $moved,
@@ -415,6 +422,7 @@ final class Reorganization {
             }
         }
         $batchId = $store->insert(new Batch(null, $userId, $now, $moved, $created, null));
+        $this->assertUndoVisible($root, new Batch(null, $userId, $now, $result->planned, $created, null));
         return [
             'batch_id' => $batchId,
             'moved' => $moved,
@@ -579,6 +587,7 @@ final class Reorganization {
         if ($batch->isUndone()) {
             throw new ToolFailure(FilesMessages::batchAlreadyUndone());
         }
+        $this->assertUndoVisible($root, $batch);
         $conflicts = $this->undoConflicts($root, $batch, $userId);
         [$removed, $kept] = $this->emptyDirs($root, $batch);
         return [
@@ -625,6 +634,8 @@ final class Reorganization {
         if ($batch->isUndone()) {
             throw new ToolFailure(FilesMessages::batchAlreadyUndone());
         }
+        // Before the conflicts: they carry paths and reasons, and none may be published for a hidden item.
+        $this->assertUndoVisible($root, $batch);
         $conflicts = $this->undoConflicts($root, $batch, $userId);
         if ($conflicts !== []) {
             return ['batch_id' => $batchId, 'undone' => 0, 'removed_dirs' => [], 'kept_dirs' => [], 'conflicts' => $conflicts];
@@ -635,8 +646,11 @@ final class Reorganization {
         $undone = 0;
         foreach (array_reverse($batch->moves) as $move) {
             try {
+                $this->assertPathsVisible($root, [$move['to'], $move['from']]);
                 $node = NodeAccess::run(fn () => NodeAccess::get($root, $move['to']));
                 NodeAccess::run(fn () => $this->locked(fn (): Node => $node->move($this->absolute($root, $move['from'])), $node, $userId));
+                $undone++;
+                $this->assertPathsVisible($root, [$move['to'], $move['from']]);
             } catch (\Throwable $e) {
                 // Every condition was checked above, so this is a lock or a permission that changed in
                 // between. The row keeps only what did not go back: an item that already moved is no longer
@@ -645,16 +659,21 @@ final class Reorganization {
                 // counts, as in the run of the batch: one Nextcloud has no typed answer for leaves the same state,
                 // and what it says is not repeated to the caller.
                 $store->keepRemaining($batchId, $userId, array_slice($batch->moves, 0, count($batch->moves) - $undone));
+                $this->assertUndoVisible($root, $batch);
                 return ['batch_id' => $batchId, 'undone' => $undone, 'removed_dirs' => [], 'kept_dirs' => [],
                     'conflicts' => [['from' => $move['from'], 'to' => $move['to'],
                         'reason' => $e instanceof ToolFailure ? $e->getMessage() : FilesMessages::moveFailed()]]];
             }
-            $undone++;
         }
+        // All moves have returned; a later privacy refusal must not leave them
+        // pending in the record and make every retry report absent destinations.
+        $store->keepRemaining($batchId, $userId, []);
+        $this->assertUndoVisible($root, $batch);
         $removed = [];
         $kept = [];
         // Deepest first: a folder cannot go while something the undo just emptied is still inside it.
         foreach ($this->byDepth($batch->dirs) as $dir) {
+            $this->assertPathsVisible($root, [$dir]);
             $relative = ltrim($dir, '/');
             if (!$root->nodeExists($relative)) {
                 continue;
@@ -664,9 +683,11 @@ final class Reorganization {
                 $kept[] = $dir;
                 continue;
             }
-            NodeAccess::run(fn () => $folder->delete());
+            NodeAccess::run(fn () => NodeAccess::mutate(fn () => $folder->delete(), $this->visibilityGuard));
+            $this->assertPathsVisible($root, [$dir]);
             $removed[] = $dir;
         }
+        $this->assertUndoVisible($root, $batch);
         $store->markUndone($batchId, $userId, $now);
         return [
             'batch_id' => $batchId,
@@ -675,6 +696,49 @@ final class Reorganization {
             'kept_dirs' => $kept,
             'conflicts' => [],
         ];
+    }
+
+    /**
+     * Refuses the whole undo when anything it would touch is hidden by a tag, directly or through a folder above it.
+     *
+     * What it touches: each item where the batch left it, the place it goes back to (the item already there, or the
+     * nearest folder that exists above it) and each folder the batch created. The tags may have been set after the
+     * batch ran, so the batch record proves nothing. The refusal names no path and no item.
+     *
+     * @param Folder $root the user's folder
+     * @param Batch $batch the batch to undo
+     * @throws ToolFailure when one of those nodes is hidden or cannot be checked
+     */
+    private function assertUndoVisible(Folder $root, Batch $batch): void {
+        $paths = $batch->dirs;
+        foreach ($batch->moves as $move) {
+            $paths[] = $move['to'];
+            $paths[] = $move['from'];
+        }
+        $this->assertPathsVisible($root, $paths);
+    }
+
+    /** @param list<string> $paths paths or nearest existing ancestors to check */
+    private function assertPathsVisible(Folder $root, array $paths): void {
+        if ($this->visibilityGuard === null) {
+            return;
+        }
+        foreach ($paths as $path) {
+            try {
+                $segments = PathGuard::segments(PathGuard::normalize($path, 'moves'));
+                // The node itself when it exists, otherwise the nearest folder above it that does, the user's
+                // folder itself at the top.
+                while ($segments !== [] && !$root->nodeExists(implode('/', $segments))) {
+                    array_pop($segments);
+                }
+                $visible = $this->visibilityGuard->isVisible($segments === [] ? $root : $root->get(implode('/', $segments)));
+            } catch (\Throwable) {
+                $visible = false;
+            }
+            if (!$visible) {
+                throw new ToolFailure(FilesMessages::batchHasHiddenItem());
+            }
+        }
     }
 
     /**
@@ -720,8 +784,9 @@ final class Reorganization {
         try {
             $parent = $this->destination($root, $move['from']);
         } catch (ToolFailure $e) {
-            // The way back lands in a folder this batch created, so the undo puts the folder back first.
-            if (!$this->isRecordedAncestor($batch, $move['from'])) {
+            // The way back lands in a folder this batch created, so the undo puts the folder back first. Only a
+            // folder that is really missing counts: a refusal of one that exists (hidden, not writable) stands.
+            if (!$this->isRecordedAncestor($batch, $move['from']) || $this->parentExists($root, $move['from'])) {
                 throw $e;
             }
             return;
@@ -820,7 +885,7 @@ final class Reorganization {
     private function missingRecordedParents(Folder $root, Batch $batch): array {
         $missing = [];
         foreach ($batch->moves as $move) {
-            $segments = array_values(array_filter(explode('/', PathGuard::normalize($move['from'], 'moves'))));
+            $segments = PathGuard::segments(PathGuard::normalize($move['from'], 'moves'));
             array_pop($segments);
             while ($segments !== []) {
                 $candidate = '/' . implode('/', $segments);
@@ -837,12 +902,22 @@ final class Reorganization {
     }
 
     /**
+     * @param Folder $root the user's folder
+     * @param string $path user-relative path
+     * @return bool whether the folder that would hold the path exists
+     */
+    private function parentExists(Folder $root, string $path): bool {
+        $parent = trim(dirname(PathGuard::normalize($path, 'moves')), '/');
+        return $parent === '' || $root->nodeExists($parent);
+    }
+
+    /**
      * @param Batch $batch the batch that ran
      * @param string $from original path of a recorded move
      * @return bool whether a folder the batch created is the parent of, or an ancestor above, that path
      */
     private function isRecordedAncestor(Batch $batch, string $from): bool {
-        $segments = array_values(array_filter(explode('/', PathGuard::normalize($from))));
+        $segments = PathGuard::segments(PathGuard::normalize($from));
         array_pop($segments);
         while ($segments !== []) {
             if (in_array('/' . implode('/', $segments), $batch->dirs, true)) {
@@ -869,7 +944,7 @@ final class Reorganization {
         $relative = ltrim(self::notBackup(PathGuard::normalize($path)), '/');
         $parent = $root;
         $walk = [];
-        foreach (array_filter(explode('/', $relative)) as $segment) {
+        foreach (PathGuard::segments($relative) as $segment) {
             $walk[] = $segment;
             $below = implode('/', $walk);
             if (!$root->nodeExists($below)) {
@@ -916,7 +991,7 @@ final class Reorganization {
                 continue;
             }
             $walk = [];
-            foreach (array_filter(explode('/', $relative)) as $segment) {
+            foreach (PathGuard::segments($relative) as $segment) {
                 $walk[] = $segment;
                 $below = implode('/', $walk);
                 if ($root->nodeExists($below)) {
@@ -926,7 +1001,8 @@ final class Reorganization {
                     }
                     continue;
                 }
-                NodeAccess::run(fn () => $root->newFolder($below));
+                $folder = NodeAccess::run(fn () => NodeAccess::mutate(fn () => $root->newFolder($below), $this->visibilityGuard));
+                $this->visibilityGuard?->assertVisible($folder);
                 $created[] = '/' . $below;
             }
         }
@@ -1060,7 +1136,7 @@ final class Reorganization {
      * @throws ToolFailure when it does not exist or cannot take new entries
      */
     private function destination(Folder $root, string $path, array $mkdirs = []): Folder {
-        $segments = array_values(array_filter(explode('/', $path)));
+        $segments = PathGuard::segments($path);
         array_pop($segments);
         $parentPath = '/' . implode('/', $segments);
         if ($parentPath !== '/' && !$root->nodeExists(ltrim($parentPath, '/'))) {

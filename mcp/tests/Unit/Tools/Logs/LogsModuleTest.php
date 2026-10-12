@@ -42,7 +42,11 @@ final class LogsModuleTest extends TestCase {
     /** @var list<array{string, array<string, mixed>, string}> app log lines: message, context, level */
     private array $infos = [];
 
+    /** App config of the switch that hides file names; nothing stored means its default, on. */
+    private \OCA\Mcp\Tests\Unit\InMemoryAppConfig $appConfig;
+
     protected function setUp(): void {
+        $this->appConfig = new \OCA\Mcp\Tests\Unit\InMemoryAppConfig();
         $this->config = new InMemoryConfig();
         $this->config->system['logtimezone'] = 'America/Sao_Paulo';
         $this->config->system['loglevel'] = 2;
@@ -77,7 +81,9 @@ final class LogsModuleTest extends TestCase {
         $db = new \OCA\Mcp\Tests\Unit\SqliteDatabase($this, [new \OCA\Mcp\Migration\Version001002Date20261008000000()]);
         $mapper = new \OCA\Mcp\Db\LogsGroupsMapper($db->connection(), (new \OCA\Mcp\Tests\Unit\InMemoryAppConfig())->worker($this));
         $access = new LogsAccess($config, $groups, $mapper, new \OCA\Mcp\Tests\Unit\InMemoryLocks());
-        return new LogsModule($access, new LogScanner(new LogReader($factory)), new LogAudit($dispatcher, $logger), $config);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config, $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class));
+        $fileNames = new \OCA\Mcp\Service\LogFileNames($this->appConfig->worker($this), $guard);
+        return new LogsModule($access, new LogScanner(new LogReader($factory)), new LogAudit($dispatcher, $logger), $config, $fileNames);
     }
 
     /** @return array{0: string, 1: array<string, mixed>} the text and the structured content of a call */
@@ -201,7 +207,7 @@ final class LogsModuleTest extends TestCase {
         $this->assertSame([
             [LogAudit::READ, ['user' => 'root', 'tool' => 'logs_list', 'filters' => '{"app":"webdav","offset":0,"limit":5}']],
             [LogAudit::READ, ['user' => 'root', 'tool' => 'logs_analyze', 'filters' => '{"offset":0}']],
-            [LogAudit::REFUSED, ['outcome' => 'denied', 'user' => 'alice', 'tool' => 'logs_list', 'filters' => '{"contains":"RH"}']],
+            [LogAudit::REFUSED, ['outcome' => 'denied', 'user' => 'alice', 'tool' => 'logs_list', 'filters' => '{"contains":"[hidden]"}']],
             // Refused by the schema: the arguments as sent, without the defaults.
             [LogAudit::REFUSED, ['outcome' => 'invalid', 'user' => 'root', 'tool' => 'logs_list', 'filters' => '{"since":"ontem"}']],
             [LogAudit::READ, ['user' => 'root', 'tool' => 'logs_list', 'filters' => '{"offset":0,"limit":50}']],
@@ -223,10 +229,11 @@ final class LogsModuleTest extends TestCase {
 
     /** What a refused call recorded is bounded: known filters only, scalars only, each cut, whatever the caller sent. */
     public function testTheAuditKeepsOnlyBoundedKnownFilters(): void {
-        $this->module()->audit('logs_list', 'alice', 'denied', ['contains' => str_repeat('x', 500), 'evil' => 'drop me', 'app' => ['nested'], 'offset' => 3]);
+        $this->module()->audit('logs_list', 'alice', 'denied', ['contains' => str_repeat('x', 500), 'user' => str_repeat('y', 500), 'evil' => 'drop me', 'app' => ['nested'], 'offset' => 3]);
         $filters = json_decode($this->audited()[0][1]['filters'], true);
-        $this->assertSame(['contains', 'offset'], array_keys($filters));
-        $this->assertSame(201, mb_strlen($filters['contains']));
+        $this->assertSame(['user', 'contains', 'offset'], array_keys($filters));
+        $this->assertSame(201, mb_strlen($filters['user']));
+        $this->assertSame('[hidden]', $filters['contains'], 'o texto buscado nunca vai para o log');
         $this->assertSame(3, $filters['offset']);
     }
 
@@ -276,5 +283,214 @@ final class LogsModuleTest extends TestCase {
         $failed = $this->registry($this->createMock(IWriter::class))->call('logs_analyze', [], 'root');
         $this->assertSame('This server does not write its log to a file, so there is nothing to read.', $failed['content'][0]['text']);
         $this->assertSame([], $this->events);
+    }
+
+    // ------------------------------------------------------------- hidden messages
+
+    /** Every leak the reviews of the log tools found in free text, one message each. */
+    private const LEAKS = [
+        'File with name /Docs/Salary#Confidential could not be located',
+        'Could not move /Secret Folder/Payroll 2026',
+        'File "README" is locked',
+        'File "salary.secret" is locked',
+        'Upload of image/salary.pdf failed',
+        'Unsupported text/README',
+        'Report 2026/10 not found',
+        'Cannot open Secret Payroll.pdf',
+        'Cannot open report.txt.secret',
+        'Request to /apps/Secret failed',
+        'File with name /remote.php/dav/files/Confidential/payroll could not be located',
+    ];
+    /** Parts of those messages that must never come out while messages are hidden. */
+    private const LEAKED_PARTS = ['Salary', 'salary', 'Confidential', 'Secret', 'Payroll', 'payroll', 'README', 'image/', 'text/',
+        '2026/10', 'report', 'Docs', 'locked', 'could not be located'];
+
+    /** @return list<string> a log with one leak per entry, in the message, the URL and an exception with a previous one */
+    private static function leakyLog(): array {
+        $lines = [];
+        foreach (self::LEAKS as $i => $message) {
+            $lines[] = json_encode([
+                'reqId' => 'r' . $i, 'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'remoteAddr' => '203.0.113.17', 'user' => 'alice',
+                'app' => 'webdav', 'method' => 'GET', 'url' => '/remote.php/dav/files/Confidential/payroll?dir=/Secret', 'message' => $message,
+                'userAgent' => 'curl/8.0',
+                'exception' => ['Exception' => 'OCP\\Files\\NotFoundException', 'Message' => $message, 'Code' => 0,
+                    'File' => '/var/www/nextcloud/lib/private/Files/View.php', 'Line' => 10,
+                    'Trace' => [['class' => 'OC\\Files\\View', 'type' => '->', 'function' => 'fopen', 'file' => '/var/www/nextcloud/lib/private/Files/View.php', 'line' => 12, 'args' => [$message]]],
+                    'Previous' => ['Exception' => 'RuntimeException', 'Message' => $message, 'Code' => 0, 'Trace' => []]],
+            ]);
+        }
+        return $lines;
+    }
+
+    /** Files are hidden by a tag: the hidden-tags setting holds one id. */
+    private function hideByTag(): void {
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["42"]';
+    }
+
+    /** @param string $text an answer of the tools, which must carry none of the leaked parts */
+    private function assertNoLeak(string $text): void {
+        foreach (self::LEAKED_PARTS as $part) {
+            $this->assertStringNotContainsString($part, $text);
+        }
+    }
+
+    public function testWithHiddenTagsTheWholeMessageIsHiddenByDefault(): void {
+        $this->hideByTag();
+        $this->log = new FakeFileLog(self::leakyLog());
+
+        [$listText, $list] = $this->call('logs_list');
+        [$analyzeText, $analyze] = $this->call('logs_analyze');
+
+        $this->assertNoLeak($listText);
+        $this->assertNoLeak($analyzeText);
+        $this->assertTrue($list['source']['messagesHidden']);
+        $this->assertStringContainsString('exception class', $list['source']['messages']);
+        $this->assertCount(count(self::LEAKS), $list['entries']);
+        foreach ($list['entries'] as $entry) {
+            $this->assertSame('[hidden]', $entry['message']);
+            $this->assertSame('/remote.php/dav/files/[hidden]?[hidden]', $entry['url']);
+            $this->assertSame(['alice', 'webdav', 'GET', 'error', '[hidden]', '203.0.x.x'],
+                [$entry['user'], $entry['app'], $entry['method'], $entry['level'], $entry['userAgent'], $entry['remoteAddr']]);
+            $this->assertSame('OCP\\Files\\NotFoundException', $entry['exception']['class']);
+            $this->assertSame('[hidden]', $entry['exception']['message']);
+            $this->assertSame('/var/www/nextcloud/lib/private/Files/View.php:10', $entry['exception']['at'], 'código do servidor fica');
+            $this->assertSame([['call' => 'OC\\Files\\View->fopen', 'at' => '/var/www/nextcloud/lib/private/Files/View.php:12']], $entry['exception']['trace']);
+            $this->assertSame(['RuntimeException', '[hidden]'], [$entry['exception']['previous']['class'], $entry['exception']['previous']['message']]);
+        }
+        $this->assertSame([['signature' => '[hidden]', 'exception' => 'OCP\\Files\\NotFoundException', 'level' => 'error', 'app' => 'webdav',
+            'count' => count(self::LEAKS), 'first' => '2026-10-07T08:12:03-03:00', 'last' => '2026-10-07T08:12:03-03:00', 'example' => '[hidden]']],
+            $analyze['summary']['signatures']);
+        $this->assertSame([['path' => '/remote.php/dav/files/[hidden]/…', 'count' => count(self::LEAKS)]], $analyze['summary']['topUrls']);
+        $this->assertSame(['alice' => count(self::LEAKS)], array_column($analyze['summary']['byUser'], 'count', 'user'));
+    }
+
+    /**
+     * A search inside hidden text would answer, by its count, whether a name is there; refusing it leaves nothing to
+     * ask, while every filter on what stays visible works as before.
+     */
+    public function testContainsIsRefusedWhileMessagesAreHidden(): void {
+        $this->hideByTag();
+        $this->log = new FakeFileLog(self::leakyLog());
+
+        foreach (['logs_list', 'logs_analyze'] as $tool) {
+            foreach (['Confidential', 'is locked', 'zz9'] as $text) {
+                try {
+                    $this->module()->call($tool, ['contains' => $text], 'root');
+                    $this->fail("$tool accepted contains while messages are hidden");
+                } catch (InvalidArgumentException $e) {
+                    $this->assertStringContainsString('contains is not available', $e->getMessage());
+                    $this->assertStringNotContainsString($text, $e->getMessage());
+                }
+            }
+        }
+        $this->assertSame([], $this->log->calls, 'nada do log foi lido');
+        $this->assertSame(count(self::LEAKS), $this->call('logs_list', ['app' => 'webdav', 'user' => 'alice'])[1]['count']);
+    }
+
+    public function testTurnedOffTheLogToolsShowFullMessages(): void {
+        $this->hideByTag();
+        $this->appConfig->stored['mcp'][\OCA\Mcp\Service\LogFileNames::CONFIG_KEY] = '0';
+        $this->log = new FakeFileLog(self::leakyLog());
+
+        [$text, $list] = $this->call('logs_list');
+        [$analyzeText] = $this->call('logs_analyze');
+
+        $this->assertFalse($list['source']['messagesHidden']);
+        $this->assertArrayNotHasKey('messages', $list['source']);
+        $this->assertSame(self::LEAKS, array_reverse(array_column($list['entries'], 'message')));
+        $this->assertStringContainsString('/remote.php/dav/files/Confidential/payroll?dir=/Secret', $text);
+        $this->assertStringContainsString('remote.php/dav/files/Confidential/payroll', $analyzeText);
+        $this->assertSame(2, $this->call('logs_list', ['contains' => 'Confidential'])[1]['count']);
+    }
+
+    public function testWithoutHiddenTagsNothingChanges(): void {
+        $this->log = new FakeFileLog(self::leakyLog());
+
+        [$text, $list] = $this->call('logs_list');
+
+        $this->assertFalse($list['source']['messagesHidden']);
+        $this->assertStringContainsString('Salary#Confidential', $text);
+        $this->assertSame(2, $this->call('logs_list', ['contains' => 'README'])[1]['count']);
+    }
+
+    /** An unreadable hidden-tags setting hides everything in the guard, so the log tools hide messages too. */
+    public function testAnInvalidHiddenTagsSettingHidesMessages(): void {
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '{}';
+        $this->log = new FakeFileLog(self::leakyLog());
+
+        $this->assertNoLeak($this->call('logs_list')[0]);
+    }
+
+    /** The audit records the filters of a call, but never the text searched for. */
+    public function testTheAuditNeverRecordsTheSearchedText(): void {
+        $this->module()->audit('logs_list', 'root', RestrictedModule::SUCCESS, ['contains' => 'secret/salary.txt', 'app' => 'webdav']);
+
+        $recorded = json_encode([$this->events, $this->infos]);
+        $this->assertStringNotContainsString('salary', $recorded);
+        $this->assertStringContainsString('webdav', $recorded);
+    }
+
+    /**
+     * A folder of alice named like a DAV route ("remote.php/dav/files/Confidential") puts a name where an account
+     * goes: nothing after a DAV collection is kept, in the listing or in the top URLs.
+     */
+    public function testNothingAfterADavCollectionIsKept(): void {
+        $this->hideByTag();
+        $lines = [];
+        foreach (['files', 'uploads', 'trashbin', 'versions'] as $i => $collection) {
+            $path = '/remote.php/dav/' . $collection . '/Confidential/payroll';
+            $lines[] = json_encode(['reqId' => 'd' . $i, 'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'remoteAddr' => '203.0.113.17',
+                'user' => 'alice', 'app' => 'webdav', 'method' => 'GET', 'url' => $path,
+                'message' => 'File with name ' . $path . ' could not be located', 'userAgent' => 'curl/8.0']);
+        }
+        $this->log = new FakeFileLog($lines);
+
+        [$listText, $list] = $this->call('logs_list');
+        [$analyzeText, $analyze] = $this->call('logs_analyze');
+
+        foreach ([$listText, $analyzeText] as $text) {
+            $this->assertStringNotContainsString('Confidential', $text);
+            $this->assertStringNotContainsString('payroll', $text);
+        }
+        foreach ($list['entries'] as $entry) {
+            $this->assertSame('alice', $entry['user'], 'a conta continua no campo user');
+            $this->assertMatchesRegularExpression('#^/remote\.php/dav/(files|uploads|trashbin|versions)/\[hidden\]$#', $entry['url']);
+            $this->assertSame('[hidden]', $entry['message']);
+        }
+        $this->assertStringContainsString('/remote.php/dav/files/[hidden]', json_encode($analyze['summary']['topUrls'], JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @return list<string> a log whose user agent carries a file name */
+    private static function agentLog(): array {
+        return [json_encode(['reqId' => 'u1', 'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'remoteAddr' => '203.0.113.17',
+            'user' => 'alice', 'app' => 'webdav', 'method' => 'PUT', 'url' => '/remote.php/webdav/x', 'message' => 'Upload failed',
+            'userAgent' => 'BackupClient/1.0 source=secret/salary.pdf'])];
+    }
+
+    /** The user agent is free text of the client: it goes with the messages. */
+    public function testWithMessagesHiddenTheUserAgentIsHiddenToo(): void {
+        $this->hideByTag();
+        $this->log = new FakeFileLog(self::agentLog());
+
+        [$listText, $list] = $this->call('logs_list');
+        [$analyzeText, $analyze] = $this->call('logs_analyze');
+
+        $this->assertSame('[hidden]', $list['entries'][0]['userAgent']);
+        $this->assertArrayNotHasKey('topUserAgents', $analyze['summary']);
+        $this->assertStringContainsString('user agent', $list['source']['messages']);
+        foreach ([$listText, $analyzeText] as $text) {
+            $this->assertStringNotContainsString('salary', $text);
+            $this->assertStringNotContainsString('BackupClient', $text);
+        }
+    }
+
+    public function testTurnedOffTheUserAgentIsShown(): void {
+        $this->hideByTag();
+        $this->appConfig->stored['mcp'][\OCA\Mcp\Service\LogFileNames::CONFIG_KEY] = '0';
+        $this->log = new FakeFileLog(self::agentLog());
+
+        $this->assertSame('BackupClient/1.0 source=secret/salary.pdf', $this->call('logs_list')[1]['entries'][0]['userAgent']);
+        $this->assertSame([['userAgent' => 'BackupClient/1.0 source=secret/salary.pdf', 'count' => 1]],
+            $this->call('logs_analyze')[1]['summary']['topUserAgents']);
     }
 }

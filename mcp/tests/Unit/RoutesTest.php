@@ -150,6 +150,7 @@ final class RoutesTest extends TestCase {
             'grants#index' => [], 'grants#bulk' => [], 'grants#update' => [], 'grants#service' => [],
             'grants#oauthClients' => [], 'grants#updateOauthClients' => [],
             'grants#logsAccess' => [], 'grants#updateLogsAccess' => [],
+            'logs_privacy#show' => [], 'logs_privacy#update' => [],
             'connections#index' => [], 'connections#revokeUser' => [], 'connections#destroy' => [],
             'checkout_limit#show' => [], 'checkout_limit#update' => [],
             'tags#index' => [], 'tags#update' => [],

@@ -5,6 +5,7 @@
 **App nativo do Nextcloud que transforma o seu Nextcloud em um servidor MCP.**
 Deixe o Claude e outros clientes MCP trabalharem com seus arquivos, notas, calendários, contatos, tarefas, quadros do Deck e conversas do Talk. Cada usuário usa as próprias permissões, e nada sai do servidor sem liberação do admin.
 
+[![Tests](https://github.com/sintax-tech/mcp-for-nextcloud/actions/workflows/tests.yml/badge.svg)](https://github.com/sintax-tech/mcp-for-nextcloud/actions/workflows/tests.yml)
 [![Nextcloud 32–35](https://img.shields.io/badge/Nextcloud-32--35-0082c9?logo=nextcloud&logoColor=white)](https://nextcloud.com)
 [![App Store do Nextcloud](https://img.shields.io/badge/App%20Store-mcp-0082c9?logo=nextcloud&logoColor=white)](https://apps.nextcloud.com/apps/mcp)
 [![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777bb4?logo=php&logoColor=white)](https://www.php.net)
@@ -36,6 +37,11 @@ Desde a 1.0.0 o app está publicado na [App Store do Nextcloud](https://apps.nex
 - **1.0.3: Nextcloud 32–35.** O app declara suporte ao Nextcloud 32 a 35, conferido por testes de contrato de API com Deck 1.16–1.19 e Talk 22–25. Correções: editar um card do Deck na 1.18/1.19 não apaga mais a data de início nem a cor, e o Talk respeita o lobby na leitura e na escrita.
 - **1.0.4: descrição da loja.** A descrição na loja de apps (inglês, português e espanhol) passa a listar o módulo de log do servidor da 1.0.2. Sem mudança funcional.
 - **1.0.5: arquivos travados e licenciamento.** Uma nota ou arquivo aberto no Text ou no Nextcloud Office, travado por outra pessoa ou por um cliente WebDAV deixa de dar erro genérico: o plano avisa, e a escrita é recusada antes de qualquer alteração, dizendo qual app ou pessoa trava, desde quando, até quando e o que fazer. A sua própria trava manual continua deixando você escrever, o app nunca destrava nem assume uma trava, a restauração de versão não grava mais por cima de um editor aberto e o envio do checkout responde 423. O app recusa as travas que o Nextcloud informa no momento da checagem; travas de pessoas e de apps também são aplicadas pelo Nextcloud na escrita (com uma exceção do Text na exclusão e na renomeação), enquanto a trava de token WebDAV é recusada só pela checagem do app, que não é atômica com a escrita e pode não ver uma trava criada durante a mesma requisição (veja as limitações conhecidas no [`CHANGELOG.md`](CHANGELOG.md)). O repositório passa a seguir o REUSE, com `NOTICE`, avisos de terceiros e o crédito "Desenvolvido pela Sintax" na página de administração.
+- **1.0.6: ocultação por tags auditada.**
+  - **Correção:** com uma tag de sistema de ocultação configurada, arquivos e pastas comuns voltam a aparecer; desde a 0.8.0 todos eram dados como não encontrados. Backups de arquivos ocultos continuam ocultos. Agradecimento a @NightDragon1 (#5).
+  - **Segurança:** a ocultação por tags foi auditada em todos os caminhos de acesso e as lacunas foram fechadas: desfazer lote, citações do Talk, categorias do Notes, recursos MCP, arquivos alcançados por compartilhamentos locais, configurações que não podem ser lidas, decisões em cache e pastas chamadas "0". Na dúvida, o app agora recusa. Agradecimento a @matt-ek (#4) pelo relato que motivou a auditoria.
+  - **Log do servidor:** uma nova opção de admin, ligada por padrão, esconde o texto das mensagens do log enquanto houver arquivos ocultos por tags; ela pode ser desligada quando a equipe de TI precisar dos detalhes completos. O log de erros do próprio app passa a guardar só o tipo e o código do erro.
+  - **Documentação e CI:** o README técnico passa a existir em inglês ([`mcp/README.md`](mcp/README.md)) e em português ([`mcp/README.pt-BR.md`](mcp/README.pt-BR.md)), e o GitHub Actions roda a suíte de testes no PHP 8.2, 8.3, 8.4 e 8.5 e confere o pacote em todo push e pull request.
 
 Quem vem da 0.7.0 ou de uma versão posterior: as migrações de esquema rodam sozinhas (tabelas `mcp_file_batches`, `mcp_oauth_spent` e `mcp_logs_groups`), sem passo manual, sem `occ` e sem mudar o `config.php`.
 
@@ -49,7 +55,7 @@ Quem vem da 0.7.0 ou de uma versão posterior: as migrações de esquema rodam s
 | **Contatos** | listar catálogos pessoais/compartilhados, buscar e ler contatos, incluindo o catálogo somente leitura de contas da instância (colegas, com `accountId` para convites) conforme as regras de enumeração do admin | criar e editar preservando campos desconhecidos do vCard; excluir permanentemente só após backup `.vcf` verificado em `/MCP backups/Contacts` |
 | **Tarefas** | listar agendas de tarefas e VTODO, incluindo tarefas sem data; ler tarefas | criar, editar, concluir e excluir tarefas simples pelo CalDAV; exclusão usa a lixeira do calendário e recusa retenção zero |
 | **Deck** | quadros, listas, cards e **acompanhamento** dos quadros que você gerencia: cards por responsável, com prazo, indicação de atraso (no seu fuso) e link do card | criar, editar, mover e excluir cards, e atribuir ou remover responsáveis; criar um quadro com suas listas e primeiros cards, ou uma lista em um quadro que você gerencia; excluir um quadro ou uma lista somente quando estiver vazio, direto para a lixeira do Deck |
-| **Log do servidor** | para administradores e os grupos que eles escolherem: listar as entradas do `nextcloud.log` com filtros e resumi-las (totais, assinaturas frequentes, URLs, user agents, entradas por hora). Desligado por padrão para todos; IPs mascarados, saída marcada como não confiável, toda leitura auditada | — (somente leitura) |
+| **Log do servidor** | para administradores e os grupos que eles escolherem: listar as entradas do `nextcloud.log` com filtros e resumi-las (totais, assinaturas frequentes, URLs, user agents, entradas por hora). Desligado por padrão para todos; IPs mascarados, saída marcada como não confiável, toda leitura auditada. Com etiquetas de ocultação configuradas, a opção de admin "Esconder o texto das mensagens do log" (ligada por padrão) esconde o texto das mensagens e das exceções, o user agent e o detalhe da URL e recusa o filtro `contains`; desligada, o log volta completo para diagnóstico | — (somente leitura) |
 | **Talk** | conversas e mensagens (nunca marca como lido) | responder (podendo citar uma mensagem ou incluir o link de um card do Deck ou evento que você pode ver), mensagem direta para um usuário, lote de mensagens, compartilhar ou citar arquivo, criar conversa em grupo (permissão própria, desligada por padrão). **Nada é enviado antes de o usuário aprovar: chamada sem `confirm: true` devolve só o plano (destinatário, texto final, anexos, o que será criado ou compartilhado) e não executa nada; com `confirm: true` revalida as permissões e envia. Não há approval_id, token nem registro no servidor.** |
 
 E também:
@@ -108,7 +114,7 @@ A exclusão de tarefas usa a lixeira nativa do calendário e é recusada com `da
 
    Ajuste os caminhos e o usuário do servidor web ao seu ambiente. Com Docker, rode o `occ` dentro do container.
 
-Depois, **configure** em *Configurações de administração → MCP for Nextcloud* (o app tem entrada própria, com ícone, no menu de configurações): ligue o serviço, marque quem pode conectar, libere as permissões de escrita necessárias e selecione etiquetas de sistema para ocultar arquivos sensíveis. A página é dividida em blocos: **Status** (endpoint para copiar, serviço, versão do app, usuários habilitados/conectados, conexões ativas e o limite de envio do checkout editável em MiB, ao lado do teto `post_max_size` do PHP), **Clientes OAuth**, **Arquivos e etiquetas ocultas**, **OCR**, **Permissões** (a matriz usuários × permissões, com busca, grupo, filtros "pode conectar / conectados", menu "Todos" por módulo para os usuários da página e paginação em cima e embaixo), **Log do servidor** (os grupos cujos membros podem ler o log do servidor, além dos administradores) e **Conexões ativas**.
+Depois, **configure** em *Configurações de administração → MCP for Nextcloud* (o app tem entrada própria, com ícone, no menu de configurações): ligue o serviço, marque quem pode conectar, libere as permissões de escrita necessárias e selecione etiquetas de sistema para ocultar arquivos sensíveis. A página é dividida em blocos: **Status** (endpoint para copiar, serviço, versão do app, usuários habilitados/conectados, conexões ativas e o limite de envio do checkout editável em MiB, ao lado do teto `post_max_size` do PHP), **Clientes OAuth**, **Arquivos e etiquetas ocultas**, **OCR**, **Permissões** (a matriz usuários × permissões, com busca, grupo, filtros "pode conectar / conectados", menu "Todos" por módulo para os usuários da página e paginação em cima e embaixo), **Log do servidor** (os grupos cujos membros podem ler o log do servidor, além dos administradores, e o interruptor que esconde o texto das mensagens do log enquanto houver arquivos ocultos por etiquetas) e **Conexões ativas**.
 
 Os grupos com acesso ao log do servidor ficam na tabela versionada do próprio app, criada automaticamente pela migração nativa. Os grupos que já estavam no appconfig são importados na primeira leitura. A API de admin devolve `version` no GET e exige o campo no PUT; gravações desatualizadas recebem 409. A comparação atômica no banco continua protegendo as revogações com `filelocking.enabled=false`, quando o bloqueio extra do Nextcloud vira Noop.
 
@@ -207,6 +213,13 @@ curl -u 'alice:SENHA-DE-APP' \
 - A tela de consentimento tem proteção CSRF e não pode ser embutida em frame.
 - Encontrou uma vulnerabilidade? Reporte em privado aos mantenedores, e não numa issue pública.
 
+### Etiquetas ocultas
+
+- A etiqueta em um arquivo ou pasta vale para todos os arquivos e pastas dentro dele.
+- Um item alcançado por um compartilhamento local herda a ocultação da cadeia da pasta de origem do dono; pastas de equipe, storage externo e compartilhamentos federados são verificados pelo caminho montado, e um federado só pelas etiquetas da instalação local.
+- Na dúvida, o app recusa: uma configuração que não pode ser validada ou uma consulta de etiqueta que falha deixa o item oculto, e a página de admin explica o estado e oferece o reparo.
+- A ocultação protege este conector MCP; outros conectores ou ferramentas de IA que leiam o mesmo Nextcloud não são cobertos por ela.
+
 ## Desenvolvimento
 
 ```bash
@@ -215,7 +228,7 @@ composer install
 vendor/bin/phpunit          # testes unitários com mocks do OCP, sem precisar de Nextcloud
 ```
 
-Organização: `lib/Tools/<Módulo>` (um `ToolModule` por app), `lib/OAuth` (servidor de autorização), `lib/Service` (protocolo MCP, política de permissões), `lib/Controller`, `templates`, `js`, `css` e `l10n`. As notas técnicas detalhadas ficam em [`mcp/README.md`](mcp/README.md).
+Organização: `lib/Tools/<Módulo>` (um `ToolModule` por app), `lib/OAuth` (servidor de autorização), `lib/Service` (protocolo MCP, política de permissões), `lib/Controller`, `templates`, `js`, `css` e `l10n`. As notas técnicas detalhadas ficam em [`mcp/README.pt-BR.md`](mcp/README.pt-BR.md).
 
 O protótipo original em Node.js via stdio (só leitura) foi removido; continua no histórico do git até o commit 27739f0 (tag v0.11.0).
 
@@ -234,6 +247,8 @@ AGPL-3.0-or-later, com o termo adicional de atribuição da seção 7(b) no [NOT
 ## Créditos
 
 O pacote inclui Smalot PdfParser, Symfony Polyfill Mbstring e o autoloader do Composer. Consulte versões, licenças, autoria e dependências de desenvolvimento em [THIRD-PARTY-NOTICES.md](mcp/THIRD-PARTY-NOTICES.md).
+
+**Contribuidores.** Agradecimento a @NightDragon1 (#5) pela checagem de visibilidade da raiz e a @matt-ek (#4) pelo relato que motivou a auditoria da ocultação por tags.
 
 ## Sobre a Sintax
 

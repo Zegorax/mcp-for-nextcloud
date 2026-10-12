@@ -23,6 +23,20 @@ use OCP\Lock\ManuallyLockedException;
 final class NodeAccess {
     /**
      * @template T
+     * @param callable():T $write mutation through the OCP node API
+     * @return T
+     */
+    public static function mutate(callable $write, ?\OCA\Mcp\Service\VisibilityGuard $guard = null): mixed {
+        try {
+            return $write();
+        } finally {
+            // A storage/hook can throw after it has already changed the tree.
+            $guard?->clearCache();
+        }
+    }
+
+    /**
+     * @template T
      * @param callable():T $action file operation to run
      * @return T
      * @throws ToolFailure mapped from NotFound, NotPermitted/Forbidden, Locked and NotEnoughSpace; a files_lock
@@ -94,21 +108,29 @@ final class NodeAccess {
      *
      * @param Folder $root base folder
      * @param string $relative path below $root ('' or '/' returns $root)
+     * @param \OCA\Mcp\Service\VisibilityGuard|null $guard when given, the root and every ancestor that
+     *        already exists are checked before anything is created: a hidden one refuses the whole path
+     *        like one that does not exist, and no folder is built on the way to a refusal
      * @return Folder existing or newly created folder
      * @throws InvalidArgumentException for traversal or control characters
      * @throws ToolFailure when a file already uses one of the folder names
      */
-    public static function ensureFolder(Folder $root, string $relative): Folder {
+    public static function ensureFolder(Folder $root, string $relative, ?\OCA\Mcp\Service\VisibilityGuard $guard = null): Folder {
+        // Checked before the first newFolder: a refusal after creating segments would leave folders behind
+        // for a path the caller was never allowed to reach.
+        $guard?->assertVisible($root);
         $folder = $root;
-        foreach (array_filter(explode('/', PathGuard::normalize($relative))) as $segment) {
+        foreach (PathGuard::segments(PathGuard::normalize($relative)) as $segment) {
             if ($folder->nodeExists($segment)) {
                 $next = $folder->get($segment);
+                $guard?->assertVisible($next);
                 if (!$next instanceof Folder) {
                     throw new ToolFailure(CommonMessages::fileInTargetFolderPath());
                 }
                 $folder = $next;
             } else {
-                $folder = $folder->newFolder($segment);
+                $folder = self::mutate(fn () => $folder->newFolder($segment), $guard);
+                $guard?->assertVisible($folder);
             }
         }
         return $folder;

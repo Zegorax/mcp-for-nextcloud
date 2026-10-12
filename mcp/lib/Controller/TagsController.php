@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\Mcp\Controller;
 
 use InvalidArgumentException;
+use OCA\Mcp\Service\HiddenTagsUnavailableException;
 use OCA\Mcp\Service\VisibilityGuard;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
@@ -33,7 +34,8 @@ class TagsController extends Controller {
     /**
      * Lists available system tags and the currently configured hidden tag IDs.
      *
-     * @return JSONResponse {tags: list<array<string, mixed>>, selected: list<string>}
+     * @return JSONResponse {tags: list<array<string, mixed>>, selected: list<string>, invalid: bool}
+     *                      invalid: the stored configuration cannot be read and every file is refused until saved again
      */
     public function index(): JSONResponse {
         $selected = $this->visibilityGuard->getHiddenTagIds();
@@ -73,6 +75,7 @@ class TagsController extends Controller {
         return new JSONResponse([
             'tags' => $tags,
             'selected' => $selected,
+            'invalid' => !$this->visibilityGuard->isConfigurationValid(),
         ]);
     }
 
@@ -80,7 +83,8 @@ class TagsController extends Controller {
      * Saves the configured hidden system tag IDs.
      * Body: {tagIds: list<string|int>}
      *
-     * @return JSONResponse {selected: list<string>}, or 400
+     * @return JSONResponse {selected: list<string>}, 400, or 503 {error: 'tags_unavailable'} when the system tags
+     *                      cannot be checked and the previous configuration was kept
      */
     public function update(): JSONResponse {
         $tagIds = $this->request->getParam('tagIds');
@@ -100,6 +104,8 @@ class TagsController extends Controller {
             return new JSONResponse([
                 'selected' => $this->visibilityGuard->getHiddenTagIds(),
             ]);
+        } catch (HiddenTagsUnavailableException) {
+            return new JSONResponse(['error' => 'tags_unavailable'], Http::STATUS_SERVICE_UNAVAILABLE);
         } catch (\Throwable) {
             return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
         }

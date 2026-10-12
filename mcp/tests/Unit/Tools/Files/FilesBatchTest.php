@@ -28,6 +28,34 @@ final class FilesBatchTest extends FilesToolsTestCase {
         $this->tree->addFolder('/alice/files/Arquivado');
     }
 
+    public function testBatchMutationHidesSecondItemAndNeverPublishesItsPath(): void {
+        $hidden = [];
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$hidden): array {
+            return array_combine($ids, array_map(static fn ($id): array => in_array((int)$id, $hidden, true) ? ['999'] : [], $ids));
+        });
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $mapper, $this->visibilityRoot());
+        $this->setUp();
+        $this->tree->addFolder('/alice/files/Incoming');
+        $this->tree->addFile('/alice/files/Arquivado/item-secret.txt', 'x');
+        // Simulate a privacy hook setting a tag after the first move. The plan
+        // has already verified/cached the child, whose id survives the move.
+        $this->tree->afterMove = function (string $from, string $to) use (&$hidden): void {
+            if ($from === '/alice/files/Incoming') {
+                $hidden[] = (int)$this->tree->node(dirname($to))->getId();
+            }
+        };
+        $out = $this->failure('files_move_batch', ['moves' => [
+            ['from' => '/Incoming', 'to' => '/Arquivado/Incoming'],
+            ['from' => '/Arquivado/item-secret.txt', 'to' => '/item-secret.txt'],
+        ], 'confirm' => true]);
+        $this->assertStringNotContainsString('item-secret', $out);
+        $this->assertArrayHasKey('/alice/files/Arquivado/item-secret.txt', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/item-secret.txt', $this->tree->nodes);
+        $this->assertCount(1, $this->batches->rows, 'The performed move is still recorded for recovery');
+    }
+
     private const BATCH = ['moves' => [
         ['from' => '/Documentos/ata.md', 'to' => '/Arquivado/ata.md'],
         ['from' => '/Documentos/plano.md', 'to' => '/Arquivado/plano.md'],
@@ -129,7 +157,7 @@ final class FilesBatchTest extends FilesToolsTestCase {
     public function testMkdirsDoesNotBypassDestinationVisibility(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
         $hiddenId = $this->tree->addFolder('/alice/files/Hidden');
         $tagMapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use ($hiddenId): array {
@@ -157,7 +185,7 @@ final class FilesBatchTest extends FilesToolsTestCase {
     public function testMkdirsNeverCreatesAFolderInsideAHiddenOne(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
         $hiddenId = $this->tree->addFolder('/alice/files/Hidden');
         $tagMapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use ($hiddenId): array {
@@ -528,5 +556,16 @@ final class FilesBatchTest extends FilesToolsTestCase {
             }
         }
         $this->assertNull($db->rows(\OCA\Mcp\Tools\Files\BatchStore::TABLE)[1]['undone_at'], 'o lote de bob segue intacto');
+    }
+
+    /** A destination inside a folder named "0", created by the batch, is where the item lands. */
+    public function testABatchMovesIntoAFolderNamedZero(): void {
+        $args = ['moves' => [['from' => '/Documentos/plano.md', 'to' => '/Arquivado/0/plano.md']], 'mkdirs' => ['/Arquivado/0']];
+
+        $this->assertTrue($this->plan('files_move_batch', $args)['ok']);
+        $this->json('files_move_batch', $args + ['confirm' => true]);
+
+        $this->assertArrayHasKey('/alice/files/Arquivado/0/plano.md', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Arquivado/plano.md', $this->tree->nodes);
     }
 }

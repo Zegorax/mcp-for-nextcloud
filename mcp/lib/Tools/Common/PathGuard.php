@@ -37,6 +37,17 @@ final class PathGuard {
     }
 
     /**
+     * The names of a path, every one that is not empty. "0" is a name like any other, so a path is never split with
+     * array_filter() without a predicate, which would drop it and check or write one level up.
+     *
+     * @param string $path a path, with or without its leading slash
+     * @return list<string> its segments, in order
+     */
+    public static function segments(string $path): array {
+        return array_values(array_filter(explode('/', $path), static fn (string $segment): bool => $segment !== ''));
+    }
+
+    /**
      * @param string $field argument the path came from
      * @return ArgumentValidationException carrying the argument and the fixed rule, nothing of the path
      */

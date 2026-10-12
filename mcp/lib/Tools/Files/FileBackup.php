@@ -88,7 +88,7 @@ class FileBackup {
         // The node the copy was working on when it failed, so a lock refusal names the backup and not the original.
         $target = $root;
         try {
-            $folder = NodeAccess::ensureFolder($root, self::FOLDER . dirname($path));
+            $folder = NodeAccess::mutate(fn () => NodeAccess::ensureFolder($root, self::FOLDER . dirname($path)), $this->visibilityGuard);
             $target = $folder;
             $base = $file->getName() . '.' . $this->stamp($userId);
             $name = $base . '.bak';
@@ -96,7 +96,7 @@ class FileBackup {
                 $name = $base . '-' . $i . '.bak';
             }
             // Establish privacy while the new backup contains no sensitive bytes.
-            $copy = $folder->newFile($name);
+            $copy = NodeAccess::mutate(fn () => $folder->newFile($name), $this->visibilityGuard);
             $target = $copy;
             $this->visibilityGuard?->copyHiddenTags($file, $copy);
             $stream = $file->fopen('rb');
@@ -106,7 +106,7 @@ class FileBackup {
             try {
                 // The new copy is checked right before the original goes into it: a WebDAV client may have locked it.
                 $put = static fn () => $copy->putContent($stream);
-                $this->locks === null ? $put() : $this->locks->run($put, $copy, $userId, null, $asUser);
+                NodeAccess::mutate(fn () => $this->locks === null ? $put() : $this->locks->run($put, $copy, $userId, null, $asUser), $this->visibilityGuard);
             } finally {
                 if (is_resource($stream)) {
                     fclose($stream);

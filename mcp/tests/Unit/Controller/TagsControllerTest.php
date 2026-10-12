@@ -125,4 +125,69 @@ final class TagsControllerTest extends TestCase {
         $this->assertSame(['10'], $res->getData()['selected']);
         $this->assertSame(['10'], $guardWithManager->getHiddenTagIds());
     }
+
+    public function testUpdateRefusesWhenTagsCannotBeCheckedAndKeepsConfiguration(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["10"]';
+        $this->tagManager->method('getTagsByIds')->willThrowException(new \RuntimeException('down'));
+        $this->tagManager->method('getAllTags')->willThrowException(new \RuntimeException('down'));
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, null, $this->tagManager);
+        $controller = new TagsController('mcp', $this->request, $guard, $this->tagManager);
+
+        $this->request->method('getParam')->with('tagIds')->willReturn(['10', '30']);
+        $res = $controller->update();
+
+        $this->assertSame(Http::STATUS_SERVICE_UNAVAILABLE, $res->getStatus());
+        $this->assertSame(['error' => 'tags_unavailable'], $res->getData());
+        $this->assertSame('["10"]', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+    }
+
+    public function testUpdateAllowsRemovingAllTagsWhileTagManagerFails(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["10"]';
+        $this->tagManager->method('getTagsByIds')->willThrowException(new \RuntimeException('down'));
+        $this->tagManager->method('getAllTags')->willThrowException(new \RuntimeException('down'));
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, null, $this->tagManager);
+        $controller = new TagsController('mcp', $this->request, $guard, $this->tagManager);
+
+        $this->request->method('getParam')->with('tagIds')->willReturn([]);
+        $res = $controller->update();
+
+        $this->assertSame(Http::STATUS_OK, $res->getStatus());
+        $this->assertSame([], $res->getData()['selected']);
+        $this->assertSame('[]', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+    }
+
+    public function testIndexReportsInvalidConfigurationAndSavingRepairsIt(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["10"';
+        $this->tagManager->method('getAllTags')->willReturn([]);
+
+        $data = $this->controller()->index()->getData();
+        $this->assertTrue($data['invalid']);
+        $this->assertSame([], $data['selected']);
+        $this->assertSame('["10"', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+
+        $this->request->method('getParam')->with('tagIds')->willReturn(['10']);
+        $this->assertSame(Http::STATUS_OK, $this->controller()->update()->getStatus());
+        $this->assertFalse($this->controller()->index()->getData()['invalid']);
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function storedValues(): iterable {
+        yield 'empty object' => ['{}', true];
+        yield 'object with list-like keys' => ['{"0":"10"}', true];
+        yield 'empty list' => ['[]', false];
+    }
+
+    /** @dataProvider storedValues */
+    public function testIndexFlagsAJsonObjectAsInvalidButNotTheEmptyList(string $raw, bool $invalid): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = $raw;
+        $this->tagManager->method('getAllTags')->willReturn([]);
+
+        $data = $this->controller()->index()->getData();
+
+        $this->assertSame($invalid, $data['invalid']);
+        $this->assertSame([], $data['selected']);
+        $this->assertSame($raw, $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+    }
 }

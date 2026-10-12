@@ -309,7 +309,7 @@ final class FilesImageToolsTest extends FilesToolsTestCase {
     public function testHiddenImageIsHiddenFromViewAndSearch(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
 
         $this->tree->addFolder('/alice/files/Photos');
@@ -339,7 +339,7 @@ final class FilesImageToolsTest extends FilesToolsTestCase {
     private function photosWithAHiddenImage(): array {
         $guardTags = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $guardTags);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $guardTags, $this->visibilityRoot());
         $this->setUp();
         $ids = [
             'secret' => $this->tree->addFile('/alice/files/Photos/secret.jpg', 'S', 'image/jpeg'),
@@ -391,7 +391,7 @@ final class FilesImageToolsTest extends FilesToolsTestCase {
     public function testImageSearchInAHiddenFolderAnswersLikeAMissingOne(): void {
         $guardTags = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $guardTags);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $guardTags, $this->visibilityRoot());
         $this->setUp();
         $hidden = $this->tree->addFolder('/alice/files/Secreta');
         $this->tree->addFile('/alice/files/Secreta/foto.jpg', 'F', 'image/jpeg');

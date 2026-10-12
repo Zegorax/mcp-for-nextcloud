@@ -48,6 +48,7 @@ final class VersionTools {
         private ContainerInterface $container,
         private OcrSupport $ocr,
         private ?LockAwareWrite $locks = null,
+        private ?\OCA\Mcp\Service\VisibilityGuard $visibilityGuard = null,
     ) {}
 
     /**
@@ -171,13 +172,15 @@ final class VersionTools {
         $version = $this->find($user, $file, $revision);
         // The backup refuses a locked file before copying it.
         $copy = $this->backup->prepare($root, $file, $path, $viewerUid, null);
+        $this->visibilityGuard?->assertVisible($file);
         $manager = $this->manager();
         if ($this->locks !== null && $this->locks->providerAvailable()) {
             $this->writeVersion($manager, $version, $file, $path, $viewerUid, $copy);
-        } elseif ($manager->rollback($version) === false) {
+        } elseif (NodeAccess::mutate(fn () => $manager->rollback($version), $this->visibilityGuard) === false) {
             throw new ToolFailure(FilesMessages::versionRestoreFailed());
         }
-        $node = NodeAccess::requireFile(NodeAccess::get($root, $path));
+        $node = NodeAccess::requireFile(NodeAccess::get($root, $path, $this->visibilityGuard));
+        $this->visibilityGuard?->assertVisible($node);
         return [
             'path' => $path,
             'size' => (int)$node->getSize(),
@@ -205,7 +208,7 @@ final class VersionTools {
             throw new ToolFailure(FilesMessages::versionRestoreFailed());
         }
         try {
-            $this->locks->run(static fn () => $file->putContent($stream), $file, $viewerUid, $path);
+            NodeAccess::mutate(fn () => $this->locks->run(static fn () => $file->putContent($stream), $file, $viewerUid, $path), $this->visibilityGuard);
         } catch (LockWriteFailure $e) {
             throw $e->withNote(FilesMessages::originalKept($copy));
         } finally {

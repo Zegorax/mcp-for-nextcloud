@@ -10,6 +10,7 @@ namespace OCA\Mcp\Tests\Unit\Tools;
 use OCP\Files\File;
 use OCP\Files\FileInfo;
 use OCP\Files\Folder;
+use OCP\Files\IRootFolder;
 use OCP\Files\Node;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
@@ -79,6 +80,8 @@ final class FakeTree {
     public ?\Closure $afterCreate = null;
     /** @var (\Closure(string): void)|null runs after each successful putContent() with the path written */
     public ?\Closure $afterWrite = null;
+    /** @var (\Closure(string): void)|null hook after deleting an empty directory */
+    public ?\Closure $afterDelete = null;
     /** @var list<\OCP\Files\Search\ISearchQuery> queries received by Folder::search */
     public array $searches = [];
     private int $nextId = 100;
@@ -118,6 +121,19 @@ final class FakeTree {
         return $this->nodes[$path]['type'] === 'dir' ? $this->folder($path) : $this->file($path);
     }
 
+    /**
+     * Mirrors Nextcloud's Root above the user folder: id 0, and getParent() throws by design.
+     */
+    public function filesystemRoot(): IRootFolder {
+        $root = $this->mock(IRootFolder::class);
+        $root->method('getId')->willReturn(0);
+        $root->method('getName')->willReturn('');
+        $root->method('getPath')->willReturn('/');
+        $root->method('getUserFolder')->willReturnCallback(fn () => $this->rootFolder());
+        $root->method('getParent')->willThrowException(new NotFoundException());
+        return $root;
+    }
+
     private static function defaults(): array {
         return ['readable' => true, 'updateable' => true, 'deletable' => true];
     }
@@ -142,10 +158,13 @@ final class FakeTree {
         $mock->method('getPermissions')->willReturnCallback(fn () => $this->nodes[$path]['permissions'] ?? \OCP\Constants::PERMISSION_ALL);
         $mock->method('isShareable')->willReturnCallback(fn () => $this->nodes[$path]['shareable'] ?? true);
         $mock->method('isShared')->willReturnCallback(fn () => ($this->nodes[$path]['scope'] ?? 'personal') === 'shared');
-        $mock->method('getParent')->willReturnCallback(fn () => $this->node($path === $this->root ? $path : dirname($path)));
+        $mock->method('getParent')->willReturnCallback(fn () => $path === $this->root ? $this->filesystemRoot() : $this->node(dirname($path)));
         $mock->method('delete')->willReturnCallback(function () use ($path): void {
             $this->ops[] = "delete $path";
             unset($this->nodes[$path]);
+            if ($this->afterDelete !== null) {
+                ($this->afterDelete)($path);
+            }
         });
         $mock->method('move')->willReturnCallback(function (string $target) use ($path): Node {
             $this->ops[] = "move $path $target";

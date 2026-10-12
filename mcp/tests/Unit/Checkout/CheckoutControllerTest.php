@@ -802,7 +802,7 @@ final class CheckoutControllerTest extends TestCase {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
         $tagMapper->method('getTagIdsForObjects')->willReturn([(string)$this->tree->nodes['/alice/files/Documentos/ata.md']['id'] => ['999']]);
-        $guard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->tree->filesystemRoot());
 
         $root = $this->createMock(IRootFolder::class);
         $root->method('getUserFolder')->willReturnCallback(fn (string $uid) => $uid === 'alice'

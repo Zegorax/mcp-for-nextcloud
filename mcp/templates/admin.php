@@ -98,6 +98,10 @@
             <div id="mcp-tags-list" class="mcp-tags-container" aria-busy="true">
                 <span class="mcp-tags-loading"><?php p($l->t('Loading tags…')); ?></span>
             </div>
+            <div id="mcp-tags-invalid" class="mcp-tags-warning" role="alert" style="display: none;">
+                <p><?php p($l->t('The saved hidden tags setting cannot be read, so the MCP tools treat every file and folder as not found. Choose the hidden tags and save them again.')); ?></p>
+                <button type="button" id="mcp-tags-repair"><?php p($l->t('Save hidden tags')); ?></button>
+            </div>
             <div id="mcp-tags-warning" class="mcp-tags-warning" style="display: none;">
                 <?php p($l->t('Warning: one or more selected tags are collaborative. Users with edit access can remove collaborative tags, which may expose hidden files.')); ?>
             </div>
@@ -171,6 +175,12 @@
             <span class="mcp-tags-loading"><?php p($l->t('Loading groups…')); ?></span>
         </div>
         <span class="mcp-status" id="mcp-logs-status" aria-live="polite"></span>
+        <p>
+            <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
+            <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
+            <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
+        </p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while hidden tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the hiding by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">

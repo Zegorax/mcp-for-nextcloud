@@ -24,6 +24,8 @@ return ['routes' => [
     ['name' => 'grants#updateOauthClients', 'url' => '/api/oauth-clients', 'verb' => 'PUT'],
     ['name' => 'grants#logsAccess', 'url' => '/api/logs-access', 'verb' => 'GET'],
     ['name' => 'grants#updateLogsAccess', 'url' => '/api/logs-access', 'verb' => 'PUT'],
+    ['name' => 'logs_privacy#show', 'url' => '/api/logs-privacy', 'verb' => 'GET'],
+    ['name' => 'logs_privacy#update', 'url' => '/api/logs-privacy', 'verb' => 'PUT'],
     ['name' => 'connections#index', 'url' => '/api/connections', 'verb' => 'GET'],
     // Two path segments, so a user id never collides with a numeric connection id.
     ['name' => 'connections#revokeUser', 'url' => '/api/connections/users/{uid}', 'verb' => 'DELETE'],

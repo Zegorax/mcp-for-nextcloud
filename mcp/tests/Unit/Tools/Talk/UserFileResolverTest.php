@@ -133,11 +133,17 @@ class UserFileResolverTest extends TestCase {
     public function testHiddenFileIsRefusedAsNotFound(): void {
         $file = $this->givenFile(Constants::PERMISSION_READ | Constants::PERMISSION_SHARE);
         $file->method('getId')->willReturn(12345);
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $file->method('getOwner')->willReturn($owner);
+        $file->method('getParent')->willReturn($this->userFolder);
+        $this->userFolder->method('getId')->willReturn(1);
+        $this->userFolder->method('getById')->with(12345)->willReturn([$file]);
         $config = new \OCA\Mcp\Tests\Unit\InMemoryConfig();
         $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $tagMapper->method('getTagIdsForObjects')->willReturn(['12345' => ['999']]);
-        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper, $this->rootFolder);
         $resolver = new UserFileResolver($this->rootFolder, $guard);
 
         $this->expectException(FileAccessException::class);

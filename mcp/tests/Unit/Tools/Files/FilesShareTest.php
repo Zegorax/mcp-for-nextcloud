@@ -446,7 +446,7 @@ final class FilesShareTest extends FilesToolsTestCase {
             return array_combine($ids, array_map(static fn ($id): array => in_array((string)$id, $hidden, true) ? ['999'] : [], $ids));
         });
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
         $this->tree->addFile('/alice/files/Recebido.pdf', 'x', 'application/pdf', ['scope' => 'shared']);
         $arguments = ['path' => '/Documentos/ata.md', 'with' => 'user:bruno'];
