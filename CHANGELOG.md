@@ -28,6 +28,7 @@ All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/a
 
 - logs: the app's own error log now records only the class and the code of an unexpected exception, never its message, on every installation: a message can carry the names and paths of the user's files in any form, so this privacy trade-off gives that detail up for good.
 - admin: saving an empty hidden-tags list — by the repair button or by unchecking the last tag — asks for confirmation before it turns the protection off.
+- docs: the technical README of the app is now available in English (`mcp/README.md`) and Portuguese (`mcp/README.pt-BR.md`).
 
 ### Known limitations
 

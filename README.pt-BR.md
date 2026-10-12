@@ -223,7 +223,7 @@ composer install
 vendor/bin/phpunit          # testes unitários com mocks do OCP, sem precisar de Nextcloud
 ```
 
-Organização: `lib/Tools/<Módulo>` (um `ToolModule` por app), `lib/OAuth` (servidor de autorização), `lib/Service` (protocolo MCP, política de permissões), `lib/Controller`, `templates`, `js`, `css` e `l10n`. As notas técnicas detalhadas ficam em [`mcp/README.md`](mcp/README.md).
+Organização: `lib/Tools/<Módulo>` (um `ToolModule` por app), `lib/OAuth` (servidor de autorização), `lib/Service` (protocolo MCP, política de permissões), `lib/Controller`, `templates`, `js`, `css` e `l10n`. As notas técnicas detalhadas ficam em [`mcp/README.pt-BR.md`](mcp/README.pt-BR.md).
 
 O protótipo original em Node.js via stdio (só leitura) foi removido; continua no histórico do git até o commit 27739f0 (tag v0.11.0).
 

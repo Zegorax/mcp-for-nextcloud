@@ -1,336 +1,339 @@
-# App MCP para Nextcloud
+# MCP App for Nextcloud
 
-Versão para **Nextcloud 32 a 35** (o `info.xml` declara 32–35; o contrato de API tem fixtures de 31 a 35, e o 31 segue conferido sem ser declarado). O endpoint atende clientes MCP 2026-07-28, sem estado, via `server/discover` e `_meta` por requisição, e também clientes anteriores, que usam `initialize` com 2025-06-18. Expõe MCP `2025-06-18` via Streamable HTTP sem sessão e sem SSE, na rota do próprio app:
+Português (Brasil): [README.pt-BR.md](README.pt-BR.md)
 
-- `https://<instância>/apps/mcp/` com URLs limpas;
-- `https://<instância>/index.php/apps/mcp/` sem URLs limpas.
+Version for **Nextcloud 32 to 35** (`info.xml` declares 32–35; the API contract has fixtures for 31 to 35, and 31 is still checked without being declared). The endpoint serves MCP 2026-07-28 clients, stateless, through `server/discover` and per-request `_meta`, and also earlier clients, which use `initialize` with 2025-06-18. It exposes MCP `2025-06-18` over sessionless Streamable HTTP without SSE, on the app's own route:
 
-A URL exata da instância aparece nas páginas de administração e pessoal.
+- `https://<instance>/apps/mcp/` with clean URLs;
+- `https://<instance>/index.php/apps/mcp/` without clean URLs.
 
-## Contatos e Tarefas (0.8.0)
+The exact URL of the instance appears on the administration and personal pages.
 
-| Módulo | Tools | Dependência |
+## Contacts and Tasks (0.8.0)
+
+| Module | Tools | Dependency |
 |---|---|---|
-| Contacts | `contacts_list_addressbooks`, `contacts_search_contacts`, `contacts_read_contact`, `contacts_create_contact`, `contacts_edit_contact`, `contacts_delete_contact` | app Contacts habilitado; core CardDAV |
-| People | `users_search` | busca de contas — e, com `include_groups: true`, de grupos, devolvendo `type` `user` ou `group` — pelo compartilhamento do Nextcloud (respeita as restrições do admin); sem app opcional |
-| Logs | `logs_list`, `logs_analyze` | só leitura do `nextcloud.log` pelo `ILogFactory`/`IFileBased::getEntries` do core; exige `log_type` em arquivo (padrão); ver [Log do servidor](#log-do-servidor-102) |
-| Tasks | `tasks_list_calendars`, `tasks_list_tasks`, `tasks_read_task`, `tasks_create_task`, `tasks_edit_task`, `tasks_complete_task`, `tasks_delete_task` | core DAV; não exige app Tasks ou Calendar |
+| Contacts | `contacts_list_addressbooks`, `contacts_search_contacts`, `contacts_read_contact`, `contacts_create_contact`, `contacts_edit_contact`, `contacts_delete_contact` | Contacts app enabled; core CardDAV |
+| People | `users_search` | account search — and, with `include_groups: true`, group search, returning `type` `user` or `group` — through Nextcloud sharing (honors the admin restrictions); no optional app |
+| Logs | `logs_list`, `logs_analyze` | read-only access to `nextcloud.log` through the core's `ILogFactory`/`IFileBased::getEntries`; requires a file-based `log_type` (the default); see [Server log](#server-log-102) |
+| Tasks | `tasks_list_calendars`, `tasks_list_tasks`, `tasks_read_task`, `tasks_create_task`, `tasks_edit_task`, `tasks_complete_task`, `tasks_delete_task` | core DAV; does not require the Tasks or Calendar app |
 
-Os catálogos de Contatos são próprios/compartilhados, filtrando explicitamente qualquer principal de sistema. Leituras usam adapters lazy do backend nativo, depois do filtro de acesso; escritas passam pelo Sabre do core (dispatcher CardDAV separado e o `EmbeddedDavDispatcher` existente para VTODO). A sessão precisa corresponder ao ator e o principal é fixado na execução. `CalendarAccess` mantém VEVENT como padrão e recebe VTODO apenas no módulo Tasks.
+The Contacts catalogs are own/shared, explicitly filtering any system principal. Reads use lazy adapters of the native backend, after the access filter; writes go through the core's Sabre (a separate CardDAV dispatcher and the existing `EmbeddedDavDispatcher` for VTODO). The session must match the actor and the principal is fixed at execution. `CalendarAccess` keeps VEVENT as the default and receives VTODO only in the Tasks module.
 
-`GrantPolicy`/`GrantMatrix` incluem `contacts` e `tasks` com read/create/edit/delete, escritas desligadas por padrão. Concluir tarefa usa edit. `PreviewsWrites` produz o plano sem efeitos colaterais; `WriteGate` exige confirm:true; shares exigem confirm_shared; ETag fornecido é conferido e If-Match usa o relido. Edição de vCard preserva campos desconhecidos, parâmetros, grupos e versão; o plano inclui todas as propriedades antes/depois e o vCard completo.
+`GrantPolicy`/`GrantMatrix` include `contacts` and `tasks` with read/create/edit/delete, with writes off by default. Completing a task uses edit. `PreviewsWrites` produces the plan with no side effects; `WriteGate` requires confirm:true; shares require confirm_shared; a supplied ETag is checked and If-Match uses the re-read one. Editing a vCard preserves unknown fields, parameters, groups and the version; the plan includes every before/after property and the full vCard.
 
-**Excluir contato é PERMANENTE no Nextcloud 33, sem lixeira.** Só depois de confirmar, `ContactBackup` salva o vCard original completo em `/MCP backups/Contacts/<catálogo>/<nome-ou-uid>.<AAAAmmdd-HHMMSS>-<sufixo-único>.vcf`, no fuso da conta e na pasta do ator. Usa mutex de aplicativo, sufixo aleatório e checagem de colisão para não selecionar arquivos existentes, e confere a cópia relendo os bytes. Falha impede DELETE CardDAV; o resultado informa backupPath. Reimporte pela interface Contacts para recuperar. Nenhum backup é criado no preview.
+**Deleting a contact is PERMANENT in Nextcloud 33, with no trash bin.** Only after confirmation, `ContactBackup` saves the complete original vCard in `/MCP backups/Contacts/<catalog>/<name-or-uid>.<YYYYmmdd-HHMMSS>-<unique-suffix>.vcf`, in the account's time zone and in the actor's folder. It uses an application mutex, a random suffix and a collision check so it never selects existing files, and verifies the copy by re-reading the bytes. A failure prevents the CardDAV DELETE; the result reports backupPath. Re-import through the Contacts interface to recover. No backup is created in the preview.
 
-Tarefas usam VTODO, incluem tarefas sem data, ocultam PRIVATE/CONFIDENTIAL de outro dono e excluem objetos em lixeira. Ler recorrência é permitido; escritas em séries ou tarefas com participantes são recusadas. Campos não alterados permanecem no iCalendar; completar grava STATUS/PERCENT-COMPLETE/COMPLETED, e reduzir progresso reabre a tarefa. Excluir usa a lixeira CalDAV, recusa retenção zero e verifica deleted-at após o DELETE. Listagens usam limit/offset/nextOffset; concluídas exigem include_completed.
+Tasks use VTODO, include undated tasks, hide PRIVATE/CONFIDENTIAL ones of another owner and exclude objects in the trash bin. Reading recurrence is allowed; writes on series or tasks with attendees are refused. Fields that did not change stay in the iCalendar; completing writes STATUS/PERCENT-COMPLETE/COMPLETED, and lowering progress reopens the task. Deleting uses the CalDAV trash bin, refuses zero retention and checks deleted-at after the DELETE. Listings use limit/offset/nextOffset; completed tasks require include_completed.
 
-Não há migration, approval_id, registro de aprovação, requisito de occ, serviço extra ou banco auxiliar. Descrições/ToolGuideNotes ficam em inglês; títulos e mensagens usam Translator com paridade pt_BR/es. Testes cobrem planos, backup, ACL, grants, ETag, preservação e dispatch real Sabre; não provam os plugins internos em uma instalação Nextcloud real.
+There is no migration, approval_id, approval record, occ requirement, extra service or auxiliary database. Descriptions/ToolGuideNotes stay in English; titles and messages use Translator with pt_BR/es parity. Tests cover plans, backup, ACL, grants, ETag, preservation and real Sabre dispatch; they do not prove the internal plugins on a real Nextcloud installation.
 
 ## Tools
 
-Cada tool só aparece em `tools/list` e só pode ser chamada quando o usuário tem o grant da operação, e o app exigido está habilitado para ele. Grant e app são verificados de novo a cada chamada. Tudo roda como o usuário autenticado, pela pasta dele no Nextcloud, e as permissões e compartilhamentos do Nextcloud continuam valendo.
+Each tool only appears in `tools/list` and can only be called when the user has the grant for the operation and the required app is enabled for them. Grant and app are checked again on every call. Everything runs as the authenticated user, through their own Nextcloud folder, and the Nextcloud permissions and shares keep applying.
 
-### Guia das ferramentas (`mcp_guide`)
+### Tool guide (`mcp_guide`)
 
-`mcp_guide` (título **Guia das ferramentas**) descreve as ferramentas ao próprio modelo, para que ele não precise adivinhar o que cada uma faz:
+`mcp_guide` (title **Tool guide**) describes the tools to the model itself, so it does not have to guess what each one does:
 
-- **sem argumento** — uma linha por módulo com os títulos das ferramentas, apenas dos módulos disponíveis **para aquele usuário** (o mesmo filtro de grant e app do `tools/list`: módulo desabilitado ou sem grant não aparece);
-- **com `module`** (`files`, `notes`, `calendar`, `deck`, `talk`) — cada ferramenta do módulo: descrição, se lê ou escreve, parâmetros com tipo, obrigatoriedade, descrição, `enum` e limites, e as confirmações que exige;
-- **com `tool`** — uma só ferramenta, com o módulo a que pertence.
+- **no argument** — one line per module with the tool titles, only for the modules available **to that user** (the same grant and app filter as `tools/list`: a disabled module or one without a grant does not appear);
+- **with `module`** (`files`, `notes`, `calendar`, `contacts`, `tasks`, `deck`, `talk`, `people`, `logs`) — each tool of the module: description, whether it reads or writes, parameters with type, whether required, description, `enum` and limits, and the confirmations it requires;
+- **with `tool`** — a single tool, with the module it belongs to.
 
-O texto vem das definições reais (`ToolModule::definitions()`, `inputSchema`, `annotations` e `ToolPresentation`), então mudar o schema de uma ferramenta muda o guia: não existe uma segunda cópia da documentação para manter em dia. O que o schema não carrega — como encontrar as coisas, com quais caminhos e IDs, e onde as escritas param — entra em `ToolGuideNotes::guideNotes()`, uma nota curta por módulo, escrita ao lado do módulo. A resposta traz o mesmo conteúdo em markdown e em `structuredContent`, e a tool é read-only: ela lê definições, nunca executa uma ferramenta.
+The text comes from the real definitions (`ToolModule::definitions()`, `inputSchema`, `annotations` and `ToolPresentation`), so changing a tool's schema changes the guide: there is no second copy of the documentation to keep up to date. What the schema does not carry — how to find things, with which paths and IDs, and where writes stop — goes in `ToolGuideNotes::guideNotes()`, a short note per module, written next to the module. The response carries the same content in markdown and in `structuredContent`, and the tool is read-only: it reads definitions, it never runs a tool.
 
-Módulo ou ferramenta que o usuário não pode ver é recusado com uma mensagem que lista o que ele pode usar. Não há aprovação gravada no servidor: a regra de confirmar antes de escrever está nas `instructions` do `initialize` e vale para toda tool que altera algo.
+A module or tool the user cannot see is refused with a message that lists what they can use. There is no approval stored on the server: the rule of confirming before writing lives in the `instructions` of `initialize` and applies to every tool that changes something.
 
-| Tool | Grant | Observações |
+| Tool | Grant | Notes |
 | --- | --- | --- |
-| `mcp_status` | — | Diagnóstico; não lê dados do usuário. |
-| `files_list` `{path="/"}` | files.read | Filhos diretos da pasta, no formato `{name, path, isDir, size, mtime, contentType}`. |
-| `files_search` `{query, limit=25, mode="auto"}` | files.read | Busca por conteúdo quando `fulltextsearch` e `files_fulltextsearch` estão ativos e indexados (com trechos destacados); senão ou em erro, busca por nome (`%`, `_` e `\` são literais), de 1 a 100 resultados. Parâmetro `mode` (`auto` ou `name`) permite forçar busca por nome. |
-| `files_read` `{path}` | files.read | Texto puro, PDF, DOCX e ODT. Arquivo acima de 20 MiB é recusado antes da leitura, e o texto é truncado em 100 000 caracteres. PDF ou imagem sem camada de texto retorna `text_layer: false` com um aviso (não é erro); se o app opcional **Workflow OCR** (`workflow_ocr`, exige `ocrmypdf` no servidor) estiver ativo, ele grava o texto no PDF em segundo plano e uma nova leitura já o traz. A tela de admin mostra o status do Workflow OCR. |
-| `files_tree` `{path="/", depth=5, limit=2000}` | files.read | Árvore da pasta com o dono de cada item, para planejar reorganização sem uma chamada por pasta. Respeita profundidade (até 5) e contagem (até 2000) e avisa quando trunca. |
-| `files_image_view` `{path, max_size=1568}` | files.read | Preview reduzido em base64 (JPEG/PNG/WebP/GIF/TIFF/PDF) sob limite de bytes (padrão 1 MB), com fallback ao original para formatos seguros. Inclui metadados breves. |
-| `files_images_view` `{paths?, folder?, limit=6, max_size=1568}` | files.read | Pré-visualização de várias imagens (até 6) sob orçamento total de bytes (padrão 4 MB); itens descartados são informados no sumário. |
-| `files_image_search` `{query?, folder?, modified_after?, modified_before?, tag?, limit=25}` | files.read | Busca exclusiva por arquivos de imagem (`image/%`), com filtros de nome, pasta, datas ISO e system tags (inclui tags automáticas do Recognize). |
-| `files_edit` `{path, content, etag?}` | files.edit | Só arquivo de texto existente, com no máximo 10 MiB. Antes de gravar, exige o `files_versions` ativo e copia o original para `/MCP backups/<caminho>/<nome>.<AAAAmmdd-HHMMSS>.bak`; se qualquer passo falhar, nada é gravado. Com `etag` divergente, nada é gravado. Não cria, move nem exclui. Fora da pasta pessoal, exige `confirm_shared: true` depois de perguntar ao usuário. |
-| `files_replace` `{path, old, new, etag?}` | files.edit | Troca um trecho que precisa aparecer exatamente uma vez e devolve o diff. Mesmas exigências do `files_edit`: versionamento ativo, backup em `/MCP backups` e `etag` divergente não grava nada. Fora da pasta pessoal, exige `confirm_shared: true`. |
-| `files_checkout` `{path}` | files.edit | Aceita qualquer tipo de arquivo (DOCX, XLSX, PDF, imagens) até o limite de envio; `files_edit`/`files_replace` seguem só para texto. Devolve dois links de uso único para editar com ferramenta local (curl) sem passar o conteúdo pelo modelo: download válido por 5 minutos e upload por 15. Cada link é a credencial, preso ao usuário, ao arquivo e ao ETag vigente; se o arquivo mudar antes do upload, nada é gravado. O upload cria o mesmo backup do `files_edit`. Fora da pasta pessoal, só emite os links com `confirm_shared: true`. |
-| `files_upload` `{path, size?}` | files.create | Cria um arquivo **novo** de qualquer tipo (DOCX, XLSX, PDF, imagem) gerado localmente pelo cliente, sem passar o conteúdo pelo modelo. O plano mostra o nome, a pasta, a validade do link e o limite de envio (o mesmo do `files_checkout`); `size` acima do limite é recusado antes de emitir o link. O confirm devolve `uploadUrl`, link de uso único válido por 15 minutos, preso ao usuário e ao caminho, e o comando `curl -sS -T arquivo -X PUT -H "Content-Type: application/octet-stream" "<uploadUrl>"`; a resposta do PUT (201) traz `path`, `size`, `etag` e `fileId`. Nunca sobrescreve arquivo com conteúdo: nome existente é recusado no plano, no confirm e no envio; se outro cliente cria o nome com conteúdo no meio, ou muda o arquivo entre a criação e a gravação, a resposta é 409 e nada é gravado (um arquivo vazio criado no mesmo instante é assumido). Corpo vazio cria arquivo vazio, salvo quando o plano declarou `size` > 0 (400). Link inexistente, gasto ou expirado é recusado antes de o corpo ir para o disco. Corpo multipart (400), acima do limite (413), nome já existente (409), pasta removida (404), pasta que passou a ser compartilhada (409) ou sem permissão (403) não gastam o link. A pasta precisa existir (`files_mkdir`); pasta oculta responde como inexistente. Fora da pasta pessoal, exige `confirm_shared: true`. Não há backup: não existe original. |
-| `files_create` `{path, content}` | files.create | Cria um arquivo de texto **novo** com o conteúdo inline (`.md`, `.txt`, `.csv`, `.json`, `.html`, `.xml`, `.yaml`, `.yml`), até 1 MB em UTF-8. O plano mostra nome, pasta, tamanho e o começo do texto citado. Mesmas regras do `files_upload`: nunca sobrescreve arquivo com conteúdo, nomes que o Nextcloud recusa (`IFilenameValidator`) são erro de argumento sem ecoar o valor, a pasta precisa existir, `confirm_shared` fora da pasta pessoal. Para outro tipo ou arquivo maior, `files_upload`; para substituir um arquivo existente, `files_checkout`. |
-| `files_mkdir` `{path}` | files.create | Cria pasta, incluindo níveis intermediários. Recusa destino já existente e nunca apaga conteúdo. Fora da pasta pessoal, exige `confirm_shared: true`. |
-| `files_copy` `{from, to, etag?}` | files.create | Copia arquivo ou pasta para outro caminho, criando um nó novo com id novo; nunca sobrescreve o destino. A cópia não preserva id, versões nem compartilhamentos. Limite de 2000 itens e 1 GiB, medido antes de copiar. Fora da pasta pessoal, origem ou destino exigem `confirm_shared: true`. |
-| `files_move` `{from, to, etag?}` | files.move | Move ou renomeia dentro do mesmo storage, sem sobrescrever o destino. Devolve o id antes e depois, e as contagens de versão e compartilhamento quando os apps estão ativos. Entre storages o Nextcloud trata como cópia e o id muda. Fora da pasta pessoal, origem ou destino exigem `confirm_shared: true`. |
-| `files_move_batch` `{moves, mkdirs?, confirm?}` | files.move | Até 200 movimentações, com pastas criadas antes na ordem dada. Sem `confirm: true` não grava e devolve o plano: o que passaria, os conflitos, o que o Nextcloud nega e o que pertence a outra pessoa. Com `confirm: true` executa e devolve o `batch_id` do `files_undo_batch`. Um item que falhar no meio interrompe o lote, e o que já foi movido fica registrado para desfazer. Itens de outra pessoa exigem `confirm_shared: true`. |
-| `files_undo_batch` `{batch_id, confirm: true}` | files.move | Desfaz um `files_move_batch` na ordem inversa. Antes de mudar alguma coisa confere o lote inteiro: se algum item não for mais o que o lote colocou no destino, se o caminho de origem já estiver ocupado ou se as permissões mudaram, nada é desfeito e a resposta aponta o item que travou. Só remove pastas vazias criadas pelo próprio lote; pasta com conteúdo é preservada e vai em `kept_dirs`. É o único lugar em que Files remove alguma coisa. |
-| `files_versions_list` `{path, limit=50}` | files.read | Versões do arquivo pelo app `files_versions`, da mais nova para a mais antiga. |
-| `files_version_read` `{path, version}` | files.read | Texto de uma versão anterior, com o mesmo limite e a mesma extração de texto do `files_read`. |
-| `files_version_restore` `{path, version, confirm: true}` | files.restore | Restaura o conteúdo de uma versão guardada, depois do backup do conteúdo atual em `/MCP backups`; o versionamento segue a política do Nextcloud. Exige `confirm: true` e recusa a própria pasta de backup, como a edição já fazia. Fora da pasta pessoal, exige também `confirm_shared: true`. |
-| `files_list_shares` `{path?, offset=0}` | files.read | Compartilhamentos que o próprio usuário criou. Com `path`, os do arquivo ou pasta dele (nó de outro dono é recusado; nó oculto é tratado como inexistente). Sem `path`, todos, 50 por página, com `offset` até 1000. Cada item traz `shareId`, `type` (`user`, `group`, `link` ou `room`), `with` (id e nome de exibição), `permission` (`view`, `edit` ou `custom`), `reshare`, `expires`, `hasPassword`, `url` (só link), `removable` e `path`. A senha nunca sai. Anexo do Talk (`room`) aparece com `removable: false` e se remove pelo Talk. Criar e remover compartilhamentos exigem as permissões `files.share` (pessoas e grupos) e `files.link` (link público), negadas por padrão. |
-| `files_share` `{path, with, permission="view", expires?, note?, password?, confirm: true, plan_state}` | files.share (pessoa/grupo) ou files.link (link) | Compartilha um arquivo ou pasta do próprio usuário com uma pessoa (`user:<uid>`) ou um grupo (`group:<gid>`); ache o id com `users_search` (`include_groups: true` para grupos). Compartilhar de novo com o mesmo destinatário altera o compartilhamento existente, e o plano mostra antes → depois, inclusive o recompartilhamento que um compartilhamento feito pela web perde. Se nada muda, o plano diz "nada a alterar" e o confirm não grava. `view` = ver e baixar; `edit` = editar (em pasta, também adicionar e apagar); nunca dá direito de repassar. `expires` (AAAA-MM-DD, no fuso da conta, a partir de amanhã) respeita o máximo do admin; sem ele, um compartilhamento novo recebe o padrão do admin. As regras do admin (compartilhamento desligado, só com membros dos grupos, grupos desligados) são explicadas antes de gravar; recusas do core viram mensagens traduzidas, e o log guarda só a classe. O Nextcloud avisa quem recebe. Link público (`with: "link"`, permissão `files.link`): um por arquivo, só `view`, e o plano avisa que qualquer pessoa com o link pode abrir. Recusa quando o admin desligou os links e respeita a validade máxima e o padrão de links. A senha é gerada pelo servidor (evento `GenerateSecurePasswordEvent` do `password_policy`; sem ele, 16 caracteres do `ISecureRandom` com letras, dígitos e símbolos), validada pela política antes de gravar e criada quando se pede `password: true` ou quando o admin exige senha. Ela nunca aparece no plano, no log nem no `files_list_shares`: só no resultado da execução que a gerou, uma única vez. Sem `password: true`, a senha atual é mantida e não é mostrada. O plano traz `plan_state` (impressão opaca da ação, do compartilhamento e dos campos antes/depois, sem senha), que o confirm devolve: se o compartilhamento mudou desde o plano, nada é gravado e a resposta é o plano novo, com o aviso para conferir de novo; confirm sem `plan_state` é erro de argumento. |
-| `files_unshare` `{shareId}` ou `{path, with}` + `confirm: true` e `plan_state` | files.share (pessoa/grupo) ou files.link (link), conforme o tipo removido | Remove um compartilhamento que o próprio usuário criou de um arquivo ou pasta dele; o arquivo nunca é tocado. Nomeia-se o compartilhamento pelo `shareId` de `files_list_shares` (por exemplo `ocinternal:123`) ou por `path` com `with` (`user:<uid>`, `group:<gid>` ou `link`). O plano diz quem perde o acesso ("Fulano deixará de ter acesso a X", "todos os membros do grupo G perderão o acesso", "o link de X deixará de funcionar"). Compartilhamento de outra pessoa, de arquivo de outro dono, de nó oculto, de tipo não gerenciado ou id inexistente respondem todos "não encontrado", sem revelar nada; só o anexo do Talk do próprio usuário recebe a mensagem de que se remove pelo Talk. O grant do tipo é conferido depois da posse, e tudo é conferido de novo no confirm. Como no `files_share`, o confirm devolve o `plan_state` do plano; se o compartilhamento mudou ou foi refeito desde o plano, nada é removido e a resposta é o plano novo. |
-| `notes_list` `{}` | notes.read | Notas `.md`/`.txt` da pasta do app Notes (preferência `notesPath`, padrão `Notes`). |
-| `notes_search` `{query, limit=20, category=""}` | notes.read | Busca por título e conteúdo Markdown (até 1 MiB), com trecho contextual da ocorrência. Opcionalmente restrita a uma categoria. |
-| `notes_read` `{id}` | notes.read | Nota com conteúdo; limite de 1 MiB. |
-| `notes_create` `{title, content="", category=""}` | notes.create | Nunca sobrescreve; em colisão, usa `Título (2)`. |
-| `notes_edit` `{id, content?, title?, etag?}` | notes.edit | Conteúdo e/ou título. |
-| `notes_move` `{id, category, etag?}` | notes.move | Troca de categoria (subpasta), sem sobrescrever. |
-| `notes_delete` `{id, etag?}` | notes.delete | Exige `confirm: true`, a lixeira (`files_trashbin`) ativa e o storage da nota coberto por ela; em storage externo sem lixeira, a exclusão é bloqueada. |
+| `mcp_status` | — | Diagnostics; does not read user data. |
+| `files_list` `{path="/"}` | files.read | Direct children of the folder, as `{name, path, isDir, size, mtime, contentType}`. |
+| `files_search` `{query, limit=25, mode="auto"}` | files.read | Content search when `fulltextsearch` and `files_fulltextsearch` are active and indexed (with highlighted snippets); otherwise, or on error, name search (`%`, `_` and `\` are literal), 1 to 100 results. The `mode` parameter (`auto` or `name`) forces name search. |
+| `files_read` `{path}` | files.read | Plain text, PDF, DOCX and ODT. A file above 20 MiB is refused before reading, and the text is truncated at 100 000 characters. A PDF or image without a text layer returns `text_layer: false` with a notice (not an error); if the optional **Workflow OCR** app (`workflow_ocr`, requires `ocrmypdf` on the server) is active, it writes the text into the PDF in the background and a new read already returns it. The admin page shows the Workflow OCR status. |
+| `files_tree` `{path="/", depth=5, limit=2000}` | files.read | Folder tree with the owner of each item, to plan a reorganization without one call per folder. Honors depth (up to 5) and count (up to 2000) and warns when it truncates. |
+| `files_image_view` `{path, max_size=1568}` | files.read | Downscaled preview in base64 (JPEG/PNG/WebP/GIF/TIFF/PDF) under a byte limit (default 1 MB), with a fallback to the original for safe formats. Includes brief metadata. |
+| `files_images_view` `{paths?, folder?, limit=6, max_size=1568}` | files.read | Preview of several images (up to 6) under a total byte budget (default 4 MB); dropped items are reported in the summary. |
+| `files_image_search` `{query?, folder?, modified_after?, modified_before?, tag?, limit=25}` | files.read | Search exclusively for image files (`image/%`), with filters for name, folder, ISO dates and system tags (includes the automatic Recognize tags). |
+| `files_edit` `{path, content, etag?}` | files.edit | Only an existing text file, at most 10 MiB. Before writing, requires `files_versions` to be active and copies the original to `/MCP backups/<path>/<name>.<YYYYmmdd-HHMMSS>.bak`; if any step fails, nothing is written. With a mismatching `etag`, nothing is written. It does not create, move or delete. Outside the personal folder, requires `confirm_shared: true` after asking the user. |
+| `files_replace` `{path, old, new, etag?}` | files.edit | Replaces a snippet that must appear exactly once and returns the diff. Same requirements as `files_edit`: versioning active, backup in `/MCP backups`, and a mismatching `etag` writes nothing. Outside the personal folder, requires `confirm_shared: true`. |
+| `files_checkout` `{path}` | files.edit | Accepts any file type (DOCX, XLSX, PDF, images) up to the upload limit; `files_edit`/`files_replace` remain text only. Returns two one-time links to edit with a local tool (curl) without passing the content through the model: the download is valid for 5 minutes and the upload for 15. Each link is the credential, bound to the user, the file and the current ETag; if the file changes before the upload, nothing is written. The upload creates the same backup as `files_edit`. Outside the personal folder, it only issues the links with `confirm_shared: true`. |
+| `files_upload` `{path, size?}` | files.create | Creates a **new** file of any type (DOCX, XLSX, PDF, image) generated locally by the client, without passing the content through the model. The plan shows the name, the folder, the link validity and the upload limit (the same as `files_checkout`); a `size` above the limit is refused before the link is issued. The confirm returns `uploadUrl`, a one-time link valid for 15 minutes, bound to the user and the path, and the command `curl -sS -T /path/to/local/file -X PUT -H "Content-Type: application/octet-stream" "<uploadUrl>"`; the PUT response (201) carries `path`, `size`, `etag` and `fileId`. It never overwrites a file that has content: an existing name is refused in the plan, in the confirm and in the upload; if another client creates the name with content in between, or changes the file between creation and writing, the response is 409 and nothing is written (an empty file created at the same instant is taken over). An empty body creates an empty file, except when the plan declared `size` > 0 (400). A missing, spent or expired link is refused before the body goes to disk. A multipart body (400), above the limit (413), an already existing name (409), a removed folder (404), a folder that became shared (409) or no permission (403) do not spend the link. The folder must exist (`files_mkdir`); a hidden folder answers as nonexistent. Outside the personal folder, requires `confirm_shared: true`. There is no backup: there is no original. |
+| `files_create` `{path, content}` | files.create | Creates a **new** text file with inline content (`.md`, `.txt`, `.csv`, `.json`, `.html`, `.xml`, `.yaml`, `.yml`), up to 1 MB in UTF-8. The plan shows name, folder, size and the quoted beginning of the text. Same rules as `files_upload`: it never overwrites a file that has content, names that Nextcloud refuses (`IFilenameValidator`) are an argument error without echoing the value, the folder must exist, `confirm_shared` outside the personal folder. For another type or a larger file, `files_upload`; to replace an existing file, `files_checkout`. |
+| `files_mkdir` `{path}` | files.create | Creates a folder, including intermediate levels. Refuses an already existing destination and never deletes content. Outside the personal folder, requires `confirm_shared: true`. |
+| `files_copy` `{from, to, etag?}` | files.create | Copies a file or folder to another path, creating a new node with a new id; it never overwrites the destination. The copy does not preserve id, versions or shares. Limit of 2000 items and 1 GiB, measured before copying. Outside the personal folder, source or destination require `confirm_shared: true`. |
+| `files_move` `{from, to, etag?}` | files.move | Moves or renames within the same storage, without overwriting the destination. Returns the id before and after, and the version and share counts when the apps are active. Across storages Nextcloud treats it as a copy and the id changes. Outside the personal folder, source or destination require `confirm_shared: true`. |
+| `files_move_batch` `{moves, mkdirs?, confirm?}` | files.move | Up to 200 moves, with folders created first in the given order. Without `confirm: true` it writes nothing and returns the plan: what would go through, the conflicts, what Nextcloud denies and what belongs to someone else. With `confirm: true` it executes and returns the `batch_id` for `files_undo_batch`. An item that fails midway stops the batch, and what was already moved stays recorded for undo. Items of someone else require `confirm_shared: true`. |
+| `files_undo_batch` `{batch_id, confirm: true}` | files.move | Undoes a `files_move_batch` in reverse order. Before changing anything it checks the whole batch: if any item is no longer what the batch put at the destination, if the source path is already taken or if permissions changed, nothing is undone and the response points to the item that blocked it. It only removes empty folders created by the batch itself; a folder with content is preserved and goes in `kept_dirs`. It is the only place where Files removes anything. |
+| `files_versions_list` `{path, limit=50}` | files.read | File versions through the `files_versions` app, newest to oldest. |
+| `files_version_read` `{path, version}` | files.read | Text of an earlier version, with the same limit and the same text extraction as `files_read`. |
+| `files_version_restore` `{path, version, confirm: true}` | files.restore | Restores the content of a stored version, after backing up the current content in `/MCP backups`; versioning follows the Nextcloud policy. Requires `confirm: true` and refuses the backup folder itself, as editing already did. Outside the personal folder, it also requires `confirm_shared: true`. |
+| `files_list_shares` `{path?, offset=0}` | files.read | Shares the user themselves created. With `path`, those of their file or folder (a node of another owner is refused; a hidden node is treated as nonexistent). Without `path`, all of them, 50 per page, with `offset` up to 1000. Each item carries `shareId`, `type` (`user`, `group`, `link` or `room`), `with` (id and display name), `permission` (`view`, `edit` or `custom`), `reshare`, `expires`, `hasPassword`, `url` (link only), `removable` and `path`. The password never leaves. A Talk attachment (`room`) appears with `removable: false` and is removed through Talk. Creating and removing shares require the `files.share` (people and groups) and `files.link` (public link) permissions, denied by default. |
+| `files_share` `{path, with, permission="view", expires?, note?, password?, confirm: true, plan_state}` | files.share (person/group) or files.link (link) | Shares a file or folder of the user themselves with a person (`user:<uid>`) or a group (`group:<gid>`); find the id with `users_search` (`include_groups: true` for groups). Sharing again with the same recipient changes the existing share, and the plan shows before → after, including the reshare that a share made through the web loses. If nothing changes, the plan says "nothing to change" and the confirm writes nothing. `view` = view and download; `edit` = edit (in a folder, also add and delete); it never grants the right to pass it on. `expires` (YYYY-MM-DD, in the account's time zone, from tomorrow) honors the admin maximum; without it, a new share receives the admin default. The admin rules (sharing off, only with members of the groups, groups off) are explained before writing; core refusals become translated messages, and the log keeps only the class. Nextcloud notifies the recipient. Public link (`with: "link"`, permission `files.link`): one per file, `view` only, and the plan warns that anyone with the link can open it. It refuses when the admin turned links off and honors the maximum expiration and the link default. The password is generated by the server (`GenerateSecurePasswordEvent` event of `password_policy`; without it, 16 characters from `ISecureRandom` with letters, digits and symbols), validated by the policy before writing and created when `password: true` is requested or when the admin requires a password. It never appears in the plan, in the log or in `files_list_shares`: only in the result of the execution that generated it, a single time. Without `password: true`, the current password is kept and not shown. The plan carries `plan_state` (opaque fingerprint of the action, the share and the before/after fields, without password), which the confirm returns: if the share changed since the plan, nothing is written and the response is the new plan, with a notice to check again; a confirm without `plan_state` is an argument error. |
+| `files_unshare` `{shareId}` or `{path, with}` + `confirm: true` and `plan_state` | files.share (person/group) or files.link (link), according to the type removed | Removes a share the user themselves created on a file or folder of theirs; the file is never touched. The share is named by the `shareId` from `files_list_shares` (for example `ocinternal:123`) or by `path` with `with` (`user:<uid>`, `group:<gid>` or `link`). The plan says who loses access ("Alex will no longer have access to X", "all members of group G will lose access", "the link of X will stop working"). A share of someone else, of a file of another owner, of a hidden node, of an unmanaged type or a nonexistent id all answer "not found", revealing nothing; only the user's own Talk attachment receives the message that it is removed through Talk. The grant of the type is checked after ownership, and everything is checked again at the confirm. As with `files_share`, the confirm returns the `plan_state` of the plan; if the share changed or was recreated since the plan, nothing is removed and the response is the new plan. |
+| `notes_list` `{}` | notes.read | `.md`/`.txt` notes in the Notes app folder (`notesPath` preference, default `Notes`). |
+| `notes_search` `{query, limit=20, category=""}` | notes.read | Search by title and Markdown content (up to 1 MiB), with a contextual snippet of the match. Optionally restricted to a category. |
+| `notes_read` `{id}` | notes.read | Note with content; limit of 1 MiB. |
+| `notes_create` `{title, content="", category=""}` | notes.create | Never overwrites; on collision, uses `Title (2)`. |
+| `notes_edit` `{id, content?, title?, etag?}` | notes.edit | Content and/or title. |
+| `notes_move` `{id, category, etag?}` | notes.move | Changes category (subfolder), without overwriting. |
+| `notes_delete` `{id, etag?}` | notes.delete | Requires `confirm: true`, the trash bin (`files_trashbin`) active and the note's storage covered by it; on external storage without a trash bin, deletion is blocked. |
 
-| `calendar_list_calendars` `{}` | calendar.read | Calendários visíveis ao usuário, próprios e compartilhados. |
-| `calendar_list_events` `{calendar?, from?, to?}` | calendar.read | Eventos no intervalo (padrão: próximos 7 dias), com recorrência expandida. |
+| `calendar_list_calendars` `{}` | calendar.read | Calendars visible to the user, own and shared. |
+| `calendar_list_events` `{calendar?, from?, to?}` | calendar.read | Events in the range (default: next 7 days), with recurrence expanded. |
 
-Calendar expõe leitura e as cinco escritas, sem nenhum passo no terminal. As escritas nascem desligadas na matriz do admin (Administração → MCP) e só aparecem para quem recebeu o grant; toda escrita exige ainda `confirm: true`, a ACL do Nextcloud (e `confirm_shared` em agenda alheia) e o ETag opcional. Compatibilidade: o app declara `min-version` 32 e `max-version` 35 em `info.xml`; a parte interna (`EmbeddedCalDavServer` do core) é coberta pelos testes e por essa faixa, e uma versão nova do Nextcloud exige uma nova versão do app. O app Calendar precisa estar habilitado para o usuário. Sabre e Symfony Console vêm do core do Nextcloud e ficam fora do `vendor/` do pacote.
+Calendar exposes reading and the five writes, with no terminal step. The writes start off in the admin matrix (Administration → MCP) and only appear for those who received the grant; every write also requires `confirm: true`, the Nextcloud ACL (and `confirm_shared` on someone else's calendar) and the optional ETag. Compatibility: the app declares `min-version` 32 and `max-version` 35 in `info.xml`; the internal part (the core's `EmbeddedCalDavServer`) is covered by the tests and by that range, and a new Nextcloud version requires a new version of the app. The Calendar app must be enabled for the user. Sabre and Symfony Console come from the Nextcloud core and stay out of the package's `vendor/`.
 
-| Tool de escrita | Grant | Comportamento |
+| Write tool | Grant | Behavior |
 | --- | --- | --- |
-| `calendar_create_event` | calendar.create | Evento simples; `attendees` são UIDs internos resolvidos para o e-mail da conta. |
-| `calendar_update_event` | calendar.edit | Atualiza texto/datas e substitui participantes; `attendees: []` remove todos. Mudança de participantes em série ou por outro organizador é recusada. |
-| `calendar_move_event` | calendar.move | MOVE no mesmo dono; participantes não são avisados, como no app Calendar. |
-| `calendar_delete_event` | calendar.delete | Exclui a série na lixeira; exige retenção ativa. |
-| `calendar_transfer_event` | calendar.transfer | MOVE para agenda de outro dono compartilhada com escrita; recusa participantes. |
+| `calendar_create_event` | calendar.create | Simple event; `attendees` are internal UIDs resolved to the account's email. |
+| `calendar_update_event` | calendar.edit | Updates text/dates and replaces attendees; `attendees: []` removes all. An attendee change on a series or by another organizer is refused. |
+| `calendar_move_event` | calendar.move | MOVE within the same owner; attendees are not notified, as in the Calendar app. |
+| `calendar_delete_event` | calendar.delete | Deletes the series into the trash bin; requires active retention. |
+| `calendar_transfer_event` | calendar.transfer | MOVE to a calendar of another owner shared with write access; refuses attendees. |
 
-Create, update e delete usam `send_invitations: false` por padrão (`x-nc-scheduling: false`). `true` entrega o convite ao agendamento CalDAV do Nextcloud, inclusive para convidados existentes e CANCEL. O plano e o resultado informam `imipEnabled`, lido da configuração nativa `dav/sendInvitations`: com ela desligada o servidor não envia e-mail (o iTIP interno ainda chega à caixa do convidado) e o assistente deve dizer isso ao usuário. O app nunca confirma recebimento de e-mail. Escritas em agenda de outra pessoa ainda exigem `confirm_shared: true` após confirmação do usuário.
+Create, update and delete use `send_invitations: false` by default (`x-nc-scheduling: false`). `true` hands the invitation to Nextcloud's CalDAV scheduling, including existing guests and CANCEL. The plan and the result report `imipEnabled`, read from the native `dav/sendInvitations` setting: with it off the server does not send email (the internal iTIP still reaches the guest's inbox) and the assistant must tell the user so. The app never confirms email delivery. Writes on someone else's calendar still require `confirm_shared: true` after user confirmation.
 
-**Confirmação antes de toda escrita (sem estado no servidor).** As cinco escritas, chamadas sem `confirm: true`, só devolvem um plano (`requiresConfirmation: true`): valores atuais e propostos, participantes adicionados/removidos, destino, consequência para convites/CANCEL/lixeira e o `etag` atual. Nada é escrito nem agendado. O assistente deve mostrar o plano, perguntar ao usuário e só após um sim explícito repetir a chamada com `confirm: true` e os mesmos argumentos, reenviando o `etag` do plano (opcional; se vier e divergir, a escrita é recusada e um novo plano é necessário). Não há tabela, token nem registro de aprovação: o servidor não prova o sim humano, mas permissões, ACL, grants e `confirm_shared` seguem valendo. O selftest usa os handlers diretamente e não passa por esse fluxo.
+**Confirmation before every write (no state on the server).** The five writes, called without `confirm: true`, only return a plan (`requiresConfirmation: true`): current and proposed values, attendees added/removed, destination, consequence for invitations/CANCEL/trash bin and the current `etag`. Nothing is written or scheduled. The assistant must show the plan, ask the user and only after an explicit yes repeat the call with `confirm: true` and the same arguments, resending the `etag` of the plan (optional; if it comes and differs, the write is refused and a new plan is needed). There is no table, token or approval record: the server does not prove the human yes, but permissions, ACL, grants and `confirm_shared` keep applying. The selftest uses the handlers directly and does not go through this flow.
 
-### Deck: cartões, quadros e listas
+### Deck: cards, boards and lists
 
-As escritas do Deck usam os grants `deck.create`, `deck.edit`, `deck.move` e `deck.delete`, todas desligadas por padrão, e `confirm_shared: true` em quadro de outro dono. O app sempre confirma com o Deck se a escrita foi gravada, mesmo depois de um erro do Deck.
+The Deck writes use the grants `deck.create`, `deck.edit`, `deck.move` and `deck.delete`, all off by default, and `confirm_shared: true` on a board of another owner. The app always confirms with Deck whether the write was saved, even after a Deck error.
 
-| Tool de escrita | Grant | Comportamento |
+| Write tool | Grant | Behavior |
 | --- | --- | --- |
-| `deck_create_board` `{title, stacks?, confirm: true}` | deck.create | Cria um quadro do próprio usuário com suas listas e primeiros cards (até 20 listas e 100 cards), com cor opcional. Num quadro novo os responsáveis são o próprio usuário, porque mais ninguém tem acesso. O plano mostra a árvore inteira; se um passo falhar no meio, nada é desfeito e o resultado traz `created`, `failed` (com motivo seguro) e `warnings`, para a repetição não duplicar nada. |
-| `deck_create_stack` `{boardId, title, position?, confirm: true}` | deck.create | Acrescenta uma lista a um quadro que o usuário gerencia, no fim ou numa posição. |
-| `deck_delete_stack` `{stackId, confirm: true}` | deck.delete | Exclui uma lista **somente quando está vazia**: qualquer card, ativo ou arquivado, recusa a chamada dizendo quantos restam, e a contagem é refeita no confirm. Vai para a lixeira do Deck. |
-| `deck_delete_board` `{boardId, confirm: true}` | deck.delete | Igual para o quadro, e só o dono pode excluir. Se um card aparecer entre a contagem e a exclusão, o quadro volta com o próprio undo do Deck e a chamada é recusada dizendo que nada foi excluído. |
+| `deck_create_board` `{title, stacks?, confirm: true}` | deck.create | Creates a board of the user themselves with its lists and first cards (up to 20 lists and 100 cards), with an optional color. On a new board the assignees are the user themselves, because no one else has access. The plan shows the whole tree; if a step fails midway, nothing is undone and the result carries `created`, `failed` (with a safe reason) and `warnings`, so a retry does not duplicate anything. |
+| `deck_create_stack` `{boardId, title, position?, confirm: true}` | deck.create | Adds a list to a board the user manages, at the end or at a position. |
+| `deck_delete_stack` `{stackId, confirm: true}` | deck.delete | Deletes a list **only when it is empty**: any card, active or archived, refuses the call saying how many remain, and the count is redone at the confirm. It goes to the Deck trash bin. |
+| `deck_delete_board` `{boardId, confirm: true}` | deck.delete | Same for the board, and only the owner can delete. If a card appears between the count and the deletion, the board comes back with Deck's own undo and the call is refused saying that nothing was deleted. |
 
-`deck_create_card`, `deck_edit_card`, `deck_move_card`, `deck_delete_card` e a atribuição de responsáveis usam os mesmos grants e a mesma confirmação; os responsáveis são membros do quadro.
+`deck_create_card`, `deck_edit_card`, `deck_move_card`, `deck_delete_card` and the assignment of assignees use the same grants and the same confirmation; the assignees are board members.
 
-Depois de um erro vindo do Deck, toda escrita relê o estado real antes de responder: se o item foi gravado, a resposta é sucesso com o aviso "Saved; Deck reported an error afterwards (notification or activity)"; se não foi, é o erro de sempre; e se o estado não pode ser lido, a resposta não é erro e manda ler com `deck_list_cards`, `deck_read_card`, `deck_list_stacks` ou `deck_list_boards`. Um item reencontrado só por semelhança (mesmo dono, mesmo título, criado há pouco) vem como `confirmed: "probable"`, com aviso para conferir, e nada mais é escrito nele. Só as recusas que o próprio app faz antes de chamar o Deck (regras da tool, sessão, conflitos, argumentos) pulam essa releitura.
+After an error coming from Deck, every write re-reads the real state before answering: if the item was saved, the response is a success with the notice "Saved; Deck reported an error afterwards (notification or activity)"; if not, it is the usual error; and if the state cannot be read, the response is not an error and tells the assistant to read with `deck_list_cards`, `deck_read_card`, `deck_list_stacks` or `deck_list_boards`. An item found again only by similarity (same owner, same title, created a moment ago) comes as `confirmed: "probable"`, with a notice to check, and nothing else is written to it. Only the refusals the app itself makes before calling Deck (tool rules, session, conflicts, arguments) skip this re-read.
 
-A exclusão "somente quando vazia" não é atômica: o Deck não olha o `deleted_at` da lista ao criar um card, então um card criado por outra requisição logo após a segunda contagem pode ir para a lixeira junto com a lista ou o quadro, de onde é recuperável. Isso está na descrição da tool e no gateway.
+The "only when empty" deletion is not atomic: Deck does not look at the list's `deleted_at` when creating a card, so a card created by another request right after the second count may go to the trash bin together with the list or the board, from where it is recoverable. This is in the tool description and in the gateway.
 
-### Diagnóstico opcional do Calendar (`occ mcp:calendar-selftest`)
+### Optional Calendar diagnostics (`occ mcp:calendar-selftest`)
 
-Não é pré-requisito: nada depende dele para as tools aparecerem ou funcionarem, e ele não grava nem esconde nada. É uma ferramenta de diagnóstico opcional e avançada para quem administra o servidor e quer ver, passo a passo, o CalDAV real respondendo. Rode na raiz do Nextcloud como o usuário do servidor web. O UID organizador precisa ter conta habilitada, e-mail válido e Calendar habilitado; a retenção `dav/calendarRetentionObligation` não pode ser `0` (a limpeza seria permanente, então ele falha antes de criar qualquer objeto).
+It is not a prerequisite: nothing depends on it for the tools to appear or work, and it neither writes nor hides anything. It is an optional, advanced diagnostic tool for those who administer the server and want to see, step by step, the real CalDAV responding. Run it at the Nextcloud root as the web server user. The organizer UID must have an enabled account, a valid email and Calendar enabled; the `dav/calendarRetentionObligation` retention must not be `0` (the cleanup would be permanent, so it fails before creating any object).
 
 ```sh
-sudo -u www-data php occ mcp:calendar-selftest UID_ORGANIZADOR
+sudo -u www-data php occ mcp:calendar-selftest ORGANIZER_UID
 ```
 
-Cada execução cria dois calendários com URIs `mcp-selftest-...-a`/`-b`, toca somente eventos criados nela e move esses calendários para a lixeira ao terminar. Sem opções, as três provas opcionais mostram `NOT TESTED`. Para exercitar convites internos, transferência e ACL:
+Each run creates two calendars with URIs `mcp-selftest-...-a`/`-b`, touches only events created by it and moves those calendars to the trash bin at the end. Without options, the three optional proofs show `NOT TESTED`. To exercise internal invitations, transfer and ACL:
 
 ```sh
-sudo -u www-data php occ mcp:calendar-selftest UID_ORGANIZADOR \
-  --attendee-uid UID_PARTICIPANTE \
-  --shared-calendar '/remote.php/dav/calendars/UID_ORGANIZADOR/URI_COMPARTILHADO/' \
-  --acl-probe-user UID_SEM_ACESSO
+sudo -u www-data php occ mcp:calendar-selftest ORGANIZER_UID \
+  --attendee-uid ATTENDEE_UID \
+  --shared-calendar '/remote.php/dav/calendars/ORGANIZER_UID/SHARED_URI/' \
+  --acl-probe-user NO_ACCESS_UID
 ```
 
-Essa execução gera efeitos nos dois usuários (convite interno, CANCEL de limpeza, Activity na agenda compartilhada) e remove somente itens com o UID gerado pelo teste. Não é prova de SMTP.
+This run has effects on both users (internal invitation, cleanup CANCEL, Activity on the shared calendar) and removes only items with the UID generated by the test. It is not proof of SMTP.
 
-| Etapa do relatório | Resultado esperado |
+| Report step | Expected result |
 | --- | --- |
-| `preflight`, `calendars` | Conta/app/retenção válidos; dois MKCALENDAR HTTP 201 visíveis. |
-| `create` | HTTP 201, UID e ETag relidos, sync-token aumentou. |
-| `suppression-create`, `suppression-update` | PUT 201/204, ATTENDEE `@example.invalid` sem SCHEDULE-STATUS; SEQUENCE subiu. |
-| `stale-tool`, `stale-dav` | Conflito no handler e HTTP 412 no DAV; dados e ETag intactos. |
-| `move`, `overwrite` | MOVE 201 com UID só no destino; Overwrite F retorna 412 e preserva os dois objetos. |
-| `delete` | HTTP 204, UID fora da leitura e na lixeira. |
-| `invitations`, `transfer`, `acl` | `OK` se solicitadas e comprovadas; `NOT TESTED` sem as opções. |
-| `cleanup`, `result` | Limpeza HTTP 204 confirmada, sessão restaurada e resultado final do diagnóstico. |
+| `preflight`, `calendars` | Valid account/app/retention; two MKCALENDAR HTTP 201 visible. |
+| `create` | HTTP 201, UID and ETag re-read, sync-token increased. |
+| `suppression-create`, `suppression-update` | PUT 201/204, ATTENDEE `@example.invalid` without SCHEDULE-STATUS; SEQUENCE went up. |
+| `stale-tool`, `stale-dav` | Conflict in the handler and HTTP 412 in DAV; data and ETag intact. |
+| `move`, `overwrite` | MOVE 201 with the UID only at the destination; Overwrite F returns 412 and preserves both objects. |
+| `delete` | HTTP 204, UID out of the read and in the trash bin. |
+| `invitations`, `transfer`, `acl` | `OK` if requested and proven; `NOT TESTED` without the options. |
+| `cleanup`, `result` | Cleanup HTTP 204 confirmed, session restored and final result of the diagnostics. |
 
-Qualquer `FAIL` retorna código não zero. Se a limpeza falhar, `cleanup-resource` indica o path/UID a conferir no servidor. O resultado não altera quais tools existem.
+Any `FAIL` returns a non-zero code. If the cleanup fails, `cleanup-resource` indicates the path/UID to check on the server. The result does not change which tools exist.
 
-Tools de Notes exigem o app Notes habilitado para o usuário. Leitura começa permitida; criação, edição, movimentação e exclusão começam negadas até o administrador liberar. Não há timeout próprio: a leitura é local ao PHP e o limite de bytes protege contra arquivos grandes. Storage externo lento fica limitado ao `max_execution_time` do PHP.
+Notes tools require the Notes app enabled for the user. Reading starts allowed; creating, editing, moving and deleting start denied until the administrator grants them. There is no timeout of its own: reading is local to PHP and the byte limit protects against large files. Slow external storage is limited to PHP's `max_execution_time`.
 
-### Imagens (`files_image_view`, `files_images_view`, `files_image_search`)
+### Images (`files_image_view`, `files_images_view`, `files_image_search`)
 
-Ferramentas somente leitura (`files.read`) que respeitam a pasta do usuário e as permissões nativas do Nextcloud:
+Read-only tools (`files.read`) that honor the user's folder and the native Nextcloud permissions:
 
-- **`files_image_view`**: Gera uma pré-visualização reduzida da imagem via `OCP\IPreview` com dimensão máxima configurável (`max_size`, padrão 1568 px). Se o preview exceder o limite de bytes (configurável em `image_single_max_bytes`, padrão 1 MB), a resolução é reduzida progressivamente até caber. Se não houver preview disponível para o formato, recorre ao arquivo original para formatos comuns (JPEG, PNG, WebP, GIF) desde que esteja dentro do limite de bytes. Retorna bloco `image` (base64) e bloco `text` com metadados (`path`, `mime`, dimensões originais se disponíveis, `size`, `mtime`, `access`, `captured_at`).
-- **`files_images_view`**: Recebe uma lista de `paths` (até 6) ou uma pasta `folder` (com `limit`, padrão 6) e retorna múltiplos blocos de imagem sob um orçamento compartilhado (`image_batch_max_bytes`, padrão 4 MB). Arquivos que excedem o orçamento ou falham são listados no sumário `skipped`.
-- **`files_image_search`**: Busca arquivos com mimetype `image/%`, com filtros opcionais por texto (`query`), pasta (`folder`), intervalo de modificação ISO 8601 (`modified_after`/`modified_before`) e tag de sistema (`tag`, incluindo tags automáticas geradas pelo app Recognize). Retorna apenas metadados ordenados por `mtime` decrescente.
+- **`files_image_view`**: Generates a downscaled preview of the image through `OCP\IPreview` with a configurable maximum dimension (`max_size`, default 1568 px). If the preview exceeds the byte limit (configurable in `image_single_max_bytes`, default 1 MB), the resolution is progressively reduced until it fits. If no preview is available for the format, it falls back to the original file for common formats (JPEG, PNG, WebP, GIF) as long as it is within the byte limit. Returns an `image` block (base64) and a `text` block with metadata (`path`, `mime`, original dimensions if available, `size`, `mtime`, `access`, `captured_at`).
+- **`files_images_view`**: Takes a list of `paths` (up to 6) or a `folder` (with `limit`, default 6) and returns multiple image blocks under a shared budget (`image_batch_max_bytes`, default 4 MB). Files that exceed the budget or fail are listed in the `skipped` summary.
+- **`files_image_search`**: Searches files with mimetype `image/%`, with optional filters by text (`query`), folder (`folder`), ISO 8601 modification range (`modified_after`/`modified_before`) and system tag (`tag`, including the automatic tags generated by the Recognize app). Returns only metadata ordered by `mtime` descending.
 
-Argumentos inválidos, tool inexistente ou sem grant retornam o erro JSON-RPC `-32602`, sem distinguir o motivo. Falhas de execução retornam `isError: true` com uma mensagem genérica, sem caminho físico, conteúdo ou stack trace.
+Invalid arguments, a nonexistent tool or one without a grant return the JSON-RPC error `-32602`, without distinguishing the reason. Execution failures return `isError: true` with a generic message, without physical path, content or stack trace.
 
-## Recursos (MCP Resources)
+## Resources (MCP Resources)
 
-O servidor anuncia a capability `resources: {}` tanto no fluxo legado `initialize` quanto no fluxo moderno `server/discover`.
+The server announces the `resources: {}` capability in both the legacy `initialize` flow and the modern `server/discover` flow.
 
-- **`resources/list`**: expõe `mcp://guide` (Guia das ferramentas), retornando a documentação completa em Markdown renderizada dinamicamente com base nas permissões concedidas e apps ativos para o usuário.
-- **`resources/templates/list`**: expõe templates de URI parametrizados:
-  - `nc://files/{path}`: arquivo no armazenamento do usuário (requer grant `files.read`).
-  - `nc://notes/{id}`: nota identificada pelo id numérico (requer grant `notes.read` e app Notes habilitado).
-- **`resources/read`**: leitura de recursos:
-  - `mcp://guide`: entrega o guia formatado em `text/markdown`.
-  - `nc://files/{path}`: lê arquivos de texto (`text/*`, PDF, DOCX, ODT via extração de texto idêntica ao `files_read`, com limite de 100.000 caracteres) ou pequenos arquivos binários como `blob` (base64) até 512 KiB. Arquivos binários maiores são recusados com erro.
-  - `nc://notes/{id}`: entrega o conteúdo da nota em `text/markdown` (limite de 1 MiB).
-  - Recursos inexistentes, não permitidos ou ocultados por etiquetas (`VisibilityGuard`) retornam erro padrão (`-32602` na era moderna, `-32002` na era legada) e nunca um array de conteúdo vazio.
+- **`resources/list`**: exposes `mcp://guide` (Tool guide), returning the complete documentation in Markdown rendered dynamically based on the permissions granted and the apps active for the user.
+- **`resources/templates/list`**: exposes parameterized URI templates:
+  - `nc://files/{path}`: file in the user's storage (requires the `files.read` grant).
+  - `nc://notes/{id}`: note identified by its numeric id (requires the `notes.read` grant and the Notes app enabled).
+- **`resources/read`**: reading resources:
+  - `mcp://guide`: delivers the formatted guide as `text/markdown`.
+  - `nc://files/{path}`: reads text files (`text/*`, PDF, DOCX, ODT through text extraction identical to `files_read`, with a limit of 100,000 characters) or small binary files as a `blob` (base64) up to 512 KiB. Larger binary files are refused with an error.
+  - `nc://notes/{id}`: delivers the note content as `text/markdown` (limit of 1 MiB).
+  - Resources that do not exist, are not allowed or are hidden by tags (`VisibilityGuard`) return the standard error (`-32602` in the modern era, `-32002` in the legacy era) and never an empty content array.
 
-## Empacotar
+## Packaging
 
-No diretório `mcp/`:
+In the `mcp/` directory:
 
 ```sh
 ./scripts/package.sh
 ```
 
-Gera `build/mcp-<versão>.tar.gz` com raiz `mcp/` contendo `appinfo/`, `lib/`, `templates/`, as pastas de assets que existirem (`js/`, `css/`, `img/`, `l10n/`), este README e um `vendor/` só de produção, criado com `composer install --no-dev`. Testes e dependências de desenvolvimento ficam fora. O script falha, e não deixa pacote, quando um `Util::addScript('mcp', X)` ou `Util::addStyle('mcp', X)` em `templates/` ou `lib/` aponta para `js/X.js` ou `css/X.css` ausente do pacote. O script precisa de `composer` e `php` na máquina que empacota.
+Produces `build/mcp-<version>.tar.gz` with an `mcp/` root containing `appinfo/`, `lib/`, `templates/`, the asset folders that exist (`js/`, `css/`, `img/`, `l10n/`), both READMEs (`README.md` in English and `README.pt-BR.md` in Portuguese) and a production-only `vendor/`, created with `composer install --no-dev`. Tests and development dependencies stay out. The script fails, and leaves no package, when a `Util::addScript('mcp', X)` or `Util::addStyle('mcp', X)` in `templates/` or `lib/` points to a `js/X.js` or `css/X.css` missing from the package. The script needs `composer` and `php` on the packaging machine.
 
-### Regra do pacote: sem metadados do macOS
+### Package rule: no macOS metadata
 
-Um pacote com `._*` (AppleDouble), `.DS_Store` ou cabeçalhos PAX com xattrs `com.apple.*` é recusado pela App Store e pode quebrar a instalação. Por isso:
+A package with `._*` (AppleDouble), `.DS_Store` or PAX headers with `com.apple.*` xattrs is refused by the App Store and may break the installation. Therefore:
 
-- o tar roda como `COPYFILE_DISABLE=1 tar --no-xattrs --exclude='._*' --exclude='.DS_Store'`. O `--no-xattrs` foi acrescentado porque, sem ele, o bsdtar grava `com.apple.provenance` em cabeçalhos PAX de todas as entradas;
-- a conferência é feita por `scripts/check_package.php`, que lê o tar com um leitor próprio em PHP, porque o `tar -tzf` do macOS esconde as entradas `._*` e o `PharData` não expõe os cabeçalhos PAX;
-- o pacote é recusado, apagado, e o script termina com código 1, se tiver:
-  - entrada `._*` ou `.DS_Store`;
-  - entrada PaxHeader ou cabeçalho PAX estendido;
-  - entrada de topo diferente de `mcp/`;
-  - pacote em `vendor/` fora das dependências de runtime (`smalot/`, `symfony/polyfill-mbstring/`, `composer/`, `autoload.php`), como `sabre/*` ou `symfony/console`;
-  - script ou estilo referenciado por `Util::addScript('mcp', X)`/`Util::addStyle('mcp', X)` ausente do pacote.
+- tar runs as `COPYFILE_DISABLE=1 tar --no-xattrs --exclude='._*' --exclude='.DS_Store'`. `--no-xattrs` was added because, without it, bsdtar writes `com.apple.provenance` in the PAX headers of every entry;
+- the check is done by `scripts/check_package.php`, which reads the tar with its own PHP reader, because macOS's `tar -tzf` hides the `._*` entries and `PharData` does not expose the PAX headers;
+- the package is refused, deleted, and the script exits with code 1, if it has:
+  - a `._*` or `.DS_Store` entry;
+  - a PaxHeader entry or extended PAX header;
+  - a top-level entry other than `mcp/`;
+  - a package in `vendor/` outside the runtime dependencies (`smalot/`, `symfony/polyfill-mbstring/`, `composer/`, `autoload.php`), such as `sabre/*` or `symfony/console`;
+  - a script or style referenced by `Util::addScript('mcp', X)`/`Util::addStyle('mcp', X)` missing from the package.
 
-Para conferir um pacote avulso: `php scripts/check_package.php build/mcp-<versão>.tar.gz`.
+To check a standalone package: `php scripts/check_package.php build/mcp-<version>.tar.gz`.
 
-### Dependências de runtime
+### Runtime dependencies
 
-| Pacote | Uso | Licença |
+| Package | Use | License |
 | --- | --- | --- |
-| `smalot/pdfparser` | Extração de texto de PDF em `files_read` | LGPL-3.0 |
-| `symfony/polyfill-mbstring` | Dependência do pdfparser; inativo quando a extensão `mbstring` existe | MIT |
+| `smalot/pdfparser` | PDF text extraction in `files_read` | LGPL-3.0 |
+| `symfony/polyfill-mbstring` | Dependency of pdfparser; inactive when the `mbstring` extension exists | MIT |
 
-Os arquivos de licença acompanham cada pacote em `vendor/`. O `vendor/autoload.php` é carregado pelo `lib/AppInfo/Application.php`.
+The license files accompany each package in `vendor/`. `vendor/autoload.php` is loaded by `lib/AppInfo/Application.php`.
 
-## Instalar
+## Install
 
-A instalação normal é pela App Store do Nextcloud: *Apps* → buscar **MCP for Nextcloud** → **Baixar e ativar** (ou `occ app:install mcp`). O pacote da loja é assinado e atualiza pelo atualizador de apps. A instalação por SSH abaixo é a alternativa, para desenvolvimento ou testes de um build local.
+The normal installation is through the Nextcloud App Store: *Apps* → search for **MCP for Nextcloud** → **Download and enable** (or `occ app:install mcp`). The store package is signed and updates through the app updater. The SSH installation below is the alternative, for development or for testing a local build.
 
-### Instalar via SSH
+### Install via SSH
 
-Substitua `<servidor>`, `<nextcloud>` (raiz da instalação), `<apps>` (diretório de apps gravável, por exemplo `custom_apps` ou `apps`, conforme `apps_paths` em `config/config.php`) e `<www>` (usuário do servidor web, por exemplo `www-data`).
+Replace `<server>`, `<nextcloud>` (installation root), `<apps>` (writable apps directory, for example `custom_apps` or `apps`, according to `apps_paths` in `config/config.php`) and `<www>` (web server user, for example `www-data`).
 
 ```sh
-scp build/mcp-1.0.6.tar.gz <servidor>:/tmp/
-ssh <servidor>
+scp build/mcp-1.0.6.tar.gz <server>:/tmp/
+ssh <server>
 sudo tar -xzf /tmp/mcp-1.0.6.tar.gz -C <nextcloud>/<apps>/
 sudo chown -R <www>:<www> <nextcloud>/<apps>/mcp
 sudo -u <www> php <nextcloud>/occ app:enable mcp
 sudo -u <www> php <nextcloud>/occ app:list | grep -A1 mcp
 ```
 
-Em Docker, rode os comandos `occ` dentro do container como o usuário do servidor web. Se o PHP usa OPcache com `validate_timestamps=0`, reinicie o PHP-FPM após copiar os arquivos.
+In Docker, run the `occ` commands inside the container as the web server user. If PHP uses OPcache with `validate_timestamps=0`, restart PHP-FPM after copying the files.
 
-Para atualizar um build instalado por SSH: `occ app:disable mcp`, remover `<apps>/mcp`, extrair o novo pacote, `occ app:enable mcp` e `occ upgrade` se o Nextcloud pedir. A pasta precisa ser trocada inteira, para não sobrarem arquivos antigos em `vendor/`. Para remover: `occ app:remove mcp`.
+To update a build installed through SSH: `occ app:disable mcp`, remove `<apps>/mcp`, extract the new package, `occ app:enable mcp` and `occ upgrade` if Nextcloud asks for it. The folder must be replaced whole, so no old files are left in `vendor/`. To remove: `occ app:remove mcp`.
 
-## Log do servidor (1.0.2)
+## Server log (1.0.2)
 
-Módulo `logs`, só leitura e só para TI: `logs_list` lista as entradas do `nextcloud.log` da mais nova para a mais antiga e `logs_analyze` resume a mesma janela.
+`logs` module, read-only and for IT only: `logs_list` lists the `nextcloud.log` entries from newest to oldest and `logs_analyze` summarizes the same window.
 
-- **Fonte única:** `ILogFactory::get('file')` e, se o writer for `IFileBased`, `getEntries($limit, $offset)`, o mesmo caminho do leitor de log do core. O app não abre arquivo, não usa shell nem `occ`. O `getEntries` só devolve o que está no `loglevel` do servidor ou acima, e linha malformada vira `null` (contada em `scan.malformed`).
-- **Portão duplo:** `LogsAccess` (`RestrictedModule`, checado pelo `ToolRegistry` antes do grant, no `tools/list` e em cada `tools/call`) aceita admin do Nextcloud ou membro de um grupo no estado versionado `mcp_logs_groups`; depois o grant `logs.read`, que nasce desligado. Com `log_type` syslog/errorlog/systemd as tools somem e a coluna sai da matriz; o bloco do admin explica.
-- **Teto e orçamento:** a API do core reabre o arquivo e o percorre a partir do fim, caractere a caractere, passando também pelas linhas abaixo do `loglevel`, e não oferece orçamento físico. Por isso cada resposta faz **uma única** chamada `getEntries`, com janela = min(5.000, 20.000 − `offset`) (sem filtro, só a página): uma segunda chamada pagaria a caminhada de novo e, com o log crescendo no meio, devolveria a mesma entrada duas vezes. O `readBudget` (20.000) é a profundidade em **entradas elegíveis** (no `loglevel` ou acima) a partir do fim, não um teto físico de linhas. A resposta traz `scan.scanned`, `truncated`, `budgetReached`, `readBudget`, `oldestScanned` e `nextOffset` (para continuar mais para trás); o `.1` rotacionado não é lido. Tudo continua pelo OCP: o app nunca abre o arquivo.
-- **`since` não encerra a leitura:** o core carimba cada entrada com o `microtime` de quando a monta, e workers concorrentes gravam em qualquer ordem. Uma entrada anterior ao `since` é pulada e a janela segue até o fim; enquanto houver orçamento, `nextOffset` aponta para o fim da janela, e a resposta nunca afirma que não existe nada mais antigo.
-- **Datas:** `since`/`until` em ISO 8601; o `time` da entrada é lido no `logdateformat`/`logtimezone`; se não casar, a entrada fica de fora sob filtro de data e conta em `scan.unparsed`.
-- **Saída:** envelope `{"untrusted_log_data": true, "notice": …}` depois de um aviso fixo; controles, ANSI e marcas invisíveis removidos; IP mascarado (`a.b.x.x`, IPv6 /48) também dentro das mensagens; IPv6 com CIDR também é reduzido a /48; antes das regex, cada campo tem limite de 16 KiB e o token que cruza a fronteira é descartado inteiro, para não expor meio IP; depois da máscara, mensagem cortada em 2.000 caracteres; exceção com classe, mensagem, local e 10 frames `class->function` + `arquivo:linha`, sem `args`.
-- **Análise:** totais por nível/app/usuário, top 20 assinaturas (aspas, caminhos, UUIDs, hashes e números viram `#`), top 10 caminhos de URL (sem query; caminho WebDAV dobrado no endpoint + conta), top 10 user agents e histograma por hora.
-- **Auditoria:** o `ToolRegistry` entrega toda chamada a um `RestrictedModule` com o resultado (`denied` por papel ou grant, `invalid`, `read_error`, `success`), e o módulo dispara `CriticalActionPerformedEvent`, gravado pelo admin_audit quando ativo: `MCP logs read by %s: tool=%s filters=%s` só para leitura feita e `MCP logs request %s for %s: tool=%s filters=%s` para as demais, nunca uma negação como leitura. Dos argumentos ficam só os filtros conhecidos, escalares e cortados. No log do app, negação é `warning` e o resto `info`. Se a própria auditoria falhar (dispatcher ou logger), o registry grava "MCP audit failed" sem argumentos: negada, inválida ou com erro mantém a resposta original; uma leitura bem-sucedida **não** entrega os dados e responde um erro genérico. Se o logger de contingência também falhar, a exceção é ignorada e o mesmo comportamento é preservado.
-- **Privacidade (1.0.6):** com etiquetas de ocultação configuradas e a opção **Esconder o texto das mensagens do log** ligada (padrão), o texto das mensagens e das exceções, o user agent e o method fora dos verbos conhecidos ficam `[hidden]`, a URL fica só com o prefixo fixo de rota e o `contains` é recusado; ver [Etiquetas ocultas (1.0.6)](#etiquetas-ocultas-106).
-- **API do admin:** `GET`/`PUT /apps/mcp/api/logs-access` (`{groups, previous, version}`, listas de strings e versão inteira não negativa), admin-only com CSRF; GET retorna grupos e versão do mesmo snapshot. Grupo novo inexistente dá 400 sem gravar. Uma migration nativa empacotada cria a tabela própria `mcp_logs_groups`; a primeira leitura importa e canonicaliza o antigo `logs_groups` do appconfig e remove a chave antiga, sem sobrescrever um estado já migrado. Se a limpeza falhar, a leitura mantém o estado da tabela e tenta remover a chave de novo nas próximas leituras. O `QBMapper` lê diretamente a tabela e grava com CAS (`UPDATE … SET groups=?, version=version+1 WHERE id=1 AND version=?`): zero linhas alteradas ou lock ocupado dá 409 com o estado atual. O lock exclusivo do `ILockingProvider` é uma camada extra: com `filelocking.enabled=false`, o provider vira Noop, mas o CAS continua protegendo contra revogação desfeita por saves concorrentes ou snapshots antigos do appconfig. Ids são texto: `"1"` e `"01"` são dois grupos.
+- **Single source:** `ILogFactory::get('file')` and, if the writer is `IFileBased`, `getEntries($limit, $offset)`, the same path as the core's log reader. The app opens no file, uses no shell and no `occ`. `getEntries` only returns what is at the server's `loglevel` or above, and a malformed line becomes `null` (counted in `scan.malformed`).
+- **Double gate:** `LogsAccess` (`RestrictedModule`, checked by the `ToolRegistry` before the grant, in `tools/list` and in every `tools/call`) accepts a Nextcloud admin or a member of a group in the versioned state `mcp_logs_groups`; then the `logs.read` grant, which starts off. With `log_type` syslog/errorlog/systemd the tools disappear and the column leaves the matrix; the admin block explains it.
+- **Ceiling and budget:** the core API reopens the file and walks it from the end, character by character, also passing through the lines below the `loglevel`, and offers no physical budget. Therefore each response makes **a single** `getEntries` call, with window = min(5,000, 20,000 − `offset`) (without a filter, just the page): a second call would pay for the walk again and, with the log growing in the meantime, would return the same entry twice. The `readBudget` (20,000) is the depth in **eligible entries** (at the `loglevel` or above) from the end, not a physical line ceiling. The response carries `scan.scanned`, `truncated`, `budgetReached`, `readBudget`, `oldestScanned` and `nextOffset` (to continue further back); the rotated `.1` is not read. Everything still goes through OCP: the app never opens the file.
+- **`since` does not end the read:** the core stamps each entry with the `microtime` of when it builds it, and concurrent workers write in any order. An entry before `since` is skipped and the window goes on to the end; while there is budget, `nextOffset` points to the end of the window, and the response never claims that nothing older exists.
+- **Dates:** `since`/`until` in ISO 8601; the entry's `time` is read in the `logdateformat`/`logtimezone`; if it does not match, the entry is left out under a date filter and counts in `scan.unparsed`.
+- **Output:** envelope `{"untrusted_log_data": true, "notice": …}` after a fixed notice; controls, ANSI and invisible marks removed; IP masked (`a.b.x.x`, IPv6 /48) also inside messages; IPv6 with CIDR is also reduced to /48; before the regexes, each field has a 16 KiB limit and the token that crosses the boundary is discarded whole, so half an IP is not exposed; after the mask, the message is cut at 2,000 characters; an exception with class, message, location and 10 frames `class->function` + `file:line`, without `args`.
+- **Analysis:** totals by level/app/user, top 20 signatures (quotes, paths, UUIDs, hashes and numbers become `#`), top 10 URL paths (without query; the WebDAV path folded into endpoint + account), top 10 user agents and a histogram per hour.
+- **Audit:** the `ToolRegistry` hands every call to a `RestrictedModule` with the result (`denied` by role or grant, `invalid`, `read_error`, `success`), and the module fires `CriticalActionPerformedEvent`, recorded by admin_audit when active: `MCP logs read by %s: tool=%s filters=%s` only for a read actually done and `MCP logs request %s for %s: tool=%s filters=%s` for the others, never a denial as a read. Of the arguments only the known filters remain, scalar and truncated. In the app log, a denial is `warning` and the rest `info`. If the audit itself fails (dispatcher or logger), the registry writes "MCP audit failed" without arguments: a denied, invalid or errored call keeps the original response; a successful read does **not** deliver the data and answers a generic error. If the fallback logger also fails, the exception is ignored and the same behavior is preserved.
+- **Privacy (1.0.6):** with hidden tags configured and the option **Hide the text of log messages** on (default), the text of messages and exceptions, the user agent and the method outside the known verbs become `[hidden]`, the URL keeps only the fixed route prefix and `contains` is refused; see [Hidden tags (1.0.6)](#hidden-tags-106).
+- **Admin API:** `GET`/`PUT /apps/mcp/api/logs-access` (`{groups, previous, version}`, lists of strings and a non-negative integer version), admin-only with CSRF; GET returns groups and version from the same snapshot. A new nonexistent group gives 400 without writing. A packaged native migration creates the own table `mcp_logs_groups`; the first read imports and canonicalizes the old `logs_groups` of the appconfig and removes the old key, without overwriting an already migrated state. If the cleanup fails, the read keeps the table's state and tries to remove the key again on the next reads. The `QBMapper` reads the table directly and writes with CAS (`UPDATE … SET groups=?, version=version+1 WHERE id=1 AND version=?`): zero rows changed or a busy lock gives 409 with the current state. The exclusive lock of `ILockingProvider` is an extra layer: with `filelocking.enabled=false`, the provider becomes Noop, but the CAS still protects against a revocation undone by concurrent saves or old appconfig snapshots. Ids are text: `"1"` and `"01"` are two groups.
 
-## Arquivo travado (1.0.5)
+## Locked file (1.0.5)
 
-Escritas de Notes e Files diante do `files_lock` (app até o Nextcloud 34, embutido no 35). Serviço comum: `Tools/Common/LockAwareWrite` (`ILockManager::isLockProviderAvailable` + `getLocks`), sem importar classes do files_lock.
+Notes and Files writes in the face of `files_lock` (an app up to Nextcloud 34, built in on 35). Common service: `Tools/Common/LockAwareWrite` (`ILockManager::isLockProviderAvailable` + `getLocks`), without importing files_lock classes.
 
-- **Quem bloqueia:** trava manual de outra pessoa (`TYPE_USER`), trava de app (`TYPE_APP`, Text ou Office) e trava de cliente WebDAV (`TYPE_TOKEN`). APP e TOKEN recusam até para o próprio dono. A trava manual do próprio usuário deixa escrever e é mantida, como no app Files; na rota do checkout por link, que não tem sessão do usuário, ela também recusa, como o files_lock faz ali. Sem provider, nada muda.
-- **Onde:** antes da confirmação de compartilhamento e do backup, e de novo logo antes de cada escrita (`LockAwareWrite::run`): `putContent`, move, rename e delete de nota, cada item de lote e de undo, restauração de versão, upload do checkout, conteúdo de arquivo novo e cópia de backup. A recusa do storage (`ManuallyLockedException`) também é capturada e explicada (`capture`, usado na cópia, que só lê a origem).
-- **Na dúvida, recusa:** consulta de trava que falha recusa; pasta que se move é checada com tudo o que o usuário alcança dentro dela, até 5.000 itens (`LockAwareWrite::TREE_LIMIT`), e uma listagem maior que o orçamento restante recusa sem ler a trava dos itens. A listagem de cada pasta é lida inteira antes dessa comparação: o `getDirectoryListing()` não tem limite no 32–35 e o `Folder::search()`, que tem, consulta a cache de arquivos e não reproduz a listagem. Arquivo oculto pelo `VisibilityGuard` não é nomeado e o `lock` do plano traz só `blocking: true`.
-- **Plano (`confirm` ausente):** não recusa; acrescenta `lock` e um aviso `file_locked` em `warnings`. Em `files_move_batch` o item travado vai para `denied`, e o lote é recusado inteiro.
-- **Restauração de versão:** com provider, lê a versão por `IVersionManager::read()` e grava pelo arquivo, sem o `rollback()` do core, cujo `handleAppLocks` repete a escrita no escopo do Text/Office. A garantia sobre o conteúdo substituído é o backup em `/MCP backups`.
-- **Checkout:** trava → 423. Antes de gastar o link, o link continua valendo; depois, a resposta cita o backup e pede novo `files_checkout`.
-- **Mensagem:** app ou pessoa (nome de exibição; nunca UID, app id nem token), desde quando, até quando e o que fazer, em en/pt_BR/es. Recusa sem correlação segura pelo token fica com responsável não identificado. Log só em `debug`, sem caminho nem token.
-- **Limite:** TOKEN só é recusada pela checagem do MCP, que não é atômica com a escrita, e o `getLocks()` do files_lock responde do cache da requisição, inclusive negativo: uma trava TOKEN criada depois da primeira consulta do arquivo na mesma requisição não é vista. Travas USER e APP também são aplicadas pelo storage do files_lock, que lê a trava de novo na escrita, exceto na exclusão ou na renomeação de/para Markdown de um documento do Text: o listener do Text (`BeforeNodeDeletedListener`/`BeforeNodeRenamedListener`) roda antes do storage e faz `resetDocument(..., true)`, soltando a trava APP; uma trava APP do Text criada depois da consulta do MCP é solta assim e não impede a exclusão ou a renomeação. O MCP só recusa a trava que o provider observa. O files_lock não oferece aquisição atômica de trava (consulta e inserção separadas, `file_id` sem índice único), por isso o app não toma trava própria.
+- **Who blocks:** a manual lock of another person (`TYPE_USER`), an app lock (`TYPE_APP`, Text or Office) and a WebDAV client lock (`TYPE_TOKEN`). APP and TOKEN refuse even the owner. The user's own manual lock lets them write and is kept, as in the Files app; on the checkout-by-link route, which has no user session, it also refuses, as files_lock does there. Without a provider, nothing changes.
+- **Where:** before the share confirmation and the backup, and again right before each write (`LockAwareWrite::run`): `putContent`, move, rename and delete of a note, each item of a batch and of an undo, version restore, checkout upload, content of a new file and backup copy. The storage's refusal (`ManuallyLockedException`) is also captured and explained (`capture`, used in the copy, which only reads the source).
+- **In doubt, refuse:** a lock query that fails refuses; a folder being moved is checked with everything the user reaches inside it, up to 5,000 items (`LockAwareWrite::TREE_LIMIT`), and a listing larger than the remaining budget refuses without reading the lock of the items. The listing of each folder is read whole before this comparison: `getDirectoryListing()` has no limit on 32–35 and `Folder::search()`, which has one, queries the file cache and does not reproduce the listing. A file hidden by the `VisibilityGuard` is not named and the plan's `lock` carries only `blocking: true`.
+- **Plan (`confirm` absent):** it does not refuse; it adds `lock` and a `file_locked` notice in `warnings`. In `files_move_batch` the locked item goes to `denied`, and the whole batch is refused.
+- **Version restore:** with a provider, it reads the version through `IVersionManager::read()` and writes through the file, without the core's `rollback()`, whose `handleAppLocks` repeats the write in the Text/Office scope. The guarantee about the replaced content is the backup in `/MCP backups`.
+- **Checkout:** lock → 423. Before the link is spent, the link remains valid; afterwards, the response cites the backup and asks for a new `files_checkout`.
+- **Message:** app or person (display name; never UID, app id or token), since when, until when and what to do, in en/pt_BR/es. A refusal without a safe correlation by the token keeps the holder unidentified. Log only at `debug`, without path or token.
+- **Limit:** TOKEN is only refused by the MCP check, which is not atomic with the write, and the files_lock `getLocks()` answers from the request cache, including a negative one: a TOKEN lock created after the first query of the file in the same request is not seen. USER and APP locks are also enforced by the files_lock storage, which reads the lock again at the write, except on deleting or renaming to/from Markdown a Text document: the Text listener (`BeforeNodeDeletedListener`/`BeforeNodeRenamedListener`) runs before the storage and does `resetDocument(..., true)`, releasing the APP lock; a Text APP lock created after the MCP query is released that way and does not prevent the deletion or rename. The MCP only refuses the lock the provider observes. files_lock offers no atomic lock acquisition (separate query and insert, `file_id` without a unique index), so the app takes no lock of its own.
 
-## Etiquetas ocultas (1.0.6)
+## Hidden tags (1.0.6)
 
-O `VisibilityGuard` aplica a ocultação por system tags em todos os caminhos de acesso do conector: leitura, busca, listagem, árvore, imagens, versões, notas, Talk, recursos, checkout, escritas e desfazer.
+The `VisibilityGuard` applies system-tag hiding on every access path of the connector: reading, search, listing, tree, images, versions, notes, Talk, resources, checkout, writes and undo.
 
-- **Herança:** a etiqueta no arquivo ou pasta vale para todos os descendentes. Um item alcançado por compartilhamento local herda as etiquetas da cadeia da pasta de origem do dono (storage `OCP\Files\Storage\ISharedStorage` + id no filecache, resolvido uma vez por raiz compartilhada). Team folders, storage externo e shares federados seguem pelo caminho montado, sem consultar o dono; um federado é verificado só pelas etiquetas locais — as do servidor remoto não são legíveis daqui.
-- **Fail-closed:** uma configuração que não pode ser validada (o manager falhando enquanto a lista é salva, ou um valor gravado ilegível ou inválido) preserva a configuração anterior e recusa o acesso, em vez de desligar a proteção; a tela de admin avisa e oferece o botão de reparo, e salvar a lista vazia pede confirmação. As decisões de visibilidade são invalidadas depois de mover, criar ou copiar, para não responder com estado antigo.
-- **Logs:** com etiquetas configuradas e a opção **Esconder o texto das mensagens do log** ligada (padrão; chave `logs_hide_file_names`), as ferramentas de log escondem o texto das mensagens e das exceções, o user agent e o method fora dos verbos HTTP/WebDAV conhecidos, reduzem a URL aos prefixos fixos de rota e recusam o filtro `contains`, que bateria no texto escondido. Desligada, o log volta completo para diagnóstico — a opção existe porque equipes de TI leem exatamente esses detalhes para mapear problemas. O log de erros do próprio app grava só a classe e o código da exceção, nunca a mensagem, em qualquer instalação.
-- **Limites:** a proteção vale para este conector MCP, não para outras IAs ou conectores que leiam o mesmo Nextcloud; um nome solto que outro app grave em campo estruturado de uma entrada do log não é tratado; e o E2E com shares reais (locais, team folders, storage externo, federados) é feito numa instância real de teste do Nextcloud, além da suíte unitária.
+- **Inheritance:** a tag on a file or folder covers all descendants. An item reached through a local share inherits the tags of the owner's source folder chain (storage `OCP\Files\Storage\ISharedStorage` + id in the filecache, resolved once per shared root). Team folders, external storage and federated shares follow the mounted path, without querying the owner; a federated one is checked only by the local tags — those of the remote server are not readable from here.
+- **Fail-closed:** a configuration that cannot be validated (the manager failing while the list is saved, or a stored value that is unreadable or invalid) keeps the previous configuration and refuses access, instead of turning the protection off; the admin page warns and offers the repair button, and saving the empty list asks for confirmation. Visibility decisions are invalidated after moving, creating or copying, so no old state is answered.
+- **Logs:** with tags configured and the option **Hide the text of log messages** on (default; key `logs_hide_file_names`), the log tools hide the text of messages and exceptions, the user agent and the method outside the known HTTP/WebDAV verbs, reduce the URL to the fixed route prefixes and refuse the `contains` filter, which would match the hidden text. Turned off, the log comes back complete for diagnosis — the option exists because IT teams read exactly those details to map problems. The app's own error log records only the class and the code of the exception, never the message, on any installation.
+- **Limits:** the protection applies to this MCP connector, not to other AIs or connectors that read the same Nextcloud; a loose name that another app writes in a structured field of a log entry is not handled; and the E2E with real shares (local, team folders, external storage, federated) is done on a real Nextcloud test instance, in addition to the unit suite.
 
-## Configurar
+## Configure
 
-1. **Administração → MCP for Nextcloud** (entrada própria, com ícone, no menu de configurações): no bloco **Status**, marcar *Serviço MCP ativado*; no bloco **Permissões**, usar a matriz de usuários × permissões.
-   - O bloco **Status** mostra o endpoint (com copiar), o serviço, a versão do app, quantos usuários podem conectar e quantos estão conectados, as conexões OAuth ativas e o **limite de envio do checkout** (`files_checkout`), editável em MiB, com o limite efetivo e o teto `post_max_size` do PHP ao lado. Antes isso só mudava por `occ`.
-   - Os demais blocos, na ordem: **Clientes OAuth**, **Arquivos e etiquetas ocultas**, **OCR**, **Permissões**, **Log do servidor** e **Conexões ativas**.
-   - A busca procura por nome, ID ou e-mail, e há filtro por grupo e por "só quem pode conectar / só conectados" (feito no servidor, com total exato); a tabela mostra 50 usuários por página, com contador e paginação em cima e embaixo. Há linhas compactas opcionais (lembradas no navegador).
-   - Cada checkbox salva na hora: *Pode conectar* libera o usuário, e as demais colunas são as operações por módulo; o cabeçalho fica fixo ao rolar, os módulos se alternam em faixas e cada operação tem dica do que permite.
-   - O menu **Todos** no cabeçalho de cada módulo (e de *Pode conectar*) permite ou nega uma operação, ou todas do módulo, para os usuários ativos da página, com confirmação. Usuários conectados aparecem com a marca *conectado*.
-   - Usuários desativados aparecem marcados e não podem ser editados. Módulos cujo app não está disponível no servidor não aparecem na matriz; para um usuário sem acesso ao app, a célula fica desativada. As permissões salvas são preservadas.
-   - O e-mail só serve para a busca e nunca é exibido.
-2. **Arquivos e etiquetas ocultas**: selecione etiquetas de sistema para que arquivos e pastas etiquetados fiquem totalmente invisíveis às ferramentas do MCP (leitura, busca, listagem, imagens, notas, talk e checkout). Recomenda-se o uso de etiquetas restritas ou invisíveis. A etiqueta vale para todos os descendentes, um compartilhamento local herda a ocultação da pasta de origem do dono e, na dúvida (configuração inválida, falha de consulta), o app recusa; ver [Etiquetas ocultas (1.0.6)](#etiquetas-ocultas-106).
-   - Serviço, elegibilidade e conexão pessoal começam desligados para todos, inclusive administradores. Leitura começa permitida; escrita, exclusão, transferência e compartilhamento começam negadas. Em Arquivos, `files.share` (compartilhar com pessoa ou grupo) e `files.link` (link público) são duas operações separadas, para o admin liberar uma sem a outra; as duas vêm desligadas. Listar compartilhamentos continua sendo leitura.
-   - A página usa a API JSON admin-only `GET /apps/mcp/api/grants` (`search`, `group`, `filter` = `eligible`/`connected`, `page`), `PUT /apps/mcp/api/grants/{uid}`, `POST /apps/mcp/api/grants/bulk`, `PUT /apps/mcp/api/service`, `GET`/`PUT /apps/mcp/api/checkout-limit` (`{mib}` inteiro ≥ 1) e, para as conexões, `GET /apps/mcp/api/connections`, `DELETE /apps/mcp/api/connections/{id}` e `DELETE /apps/mcp/api/connections/users/{uid}`. Nenhuma resposta traz hash de token.
-2. **Clientes OAuth**: o bloco *OAuth clients* da seção **MCP for Nextcloud** edita os hosts de cliente permitidos e liga o cliente nativo para programas locais, sem passo de terminal. A API é `GET /apps/mcp/api/oauth-clients` e `PUT /apps/mcp/api/oauth-clients` (admin-only, com CSRF do Nextcloud), aceita `hosts` e/ou `nativeClientEnabled`, valida tudo antes de gravar e recusa uma lista de hosts inválida em vez de escrevê-la. Desligar o cliente nativo revoga na hora os tokens já emitidos para ele.
-3. **Configurações pessoais → MCP for Nextcloud**: o próprio usuário clica em *Connect*. A página mostra o estado (serviço, permissão do administrador, conexão) e a lista **Seus clientes conectados** (cliente, conectado em, expira em) com *Revogar*, pela API `GET /apps/mcp/api/my/connections` e `DELETE /apps/mcp/api/my/connections/{id}`, restrita às conexões do próprio usuário.
-4. Em **Configurações pessoais → Segurança**, o usuário cria uma senha de app. O cliente MCP usa autenticação HTTP Basic com o ID do usuário e essa senha de app. O app nunca pede nem guarda a senha principal.
+1. **Administration → MCP for Nextcloud** (its own entry, with an icon, in the settings menu): in the **Status** block, check *MCP service enabled*; in the **Permissions** block, use the users × permissions matrix.
+   - The **Status** block shows the endpoint (with copy), the service, the app version, how many users can connect and how many are connected, the active OAuth connections and the **checkout upload limit** (`files_checkout`), editable in MiB, with the effective limit and the PHP `post_max_size` ceiling next to it. Before, this only changed through `occ`.
+   - The other blocks, in order: **OAuth clients**, **Hidden files & tags**, **OCR**, **Permissions**, **Server log** and **Active connections**.
+   - The search looks by name, ID or email, and there is a filter by group and by "only who can connect / only connected" (done on the server, with an exact total); the table shows 50 users per page, with counter and pagination above and below. There are optional compact rows (remembered in the browser).
+   - Each checkbox saves immediately: *Can connect* enables the user, and the other columns are the operations per module; the header stays fixed when scrolling, modules alternate in bands and each operation has a hint of what it allows.
+   - The **All** menu in the header of each module (and of *Can connect*) allows or denies an operation, or all of the module, for the active users of the page, with confirmation. Connected users appear with the *connected* mark.
+   - Disabled users appear marked and cannot be edited. Modules whose app is not available on the server do not appear in the matrix; for a user without access to the app, the cell is disabled. The saved permissions are preserved.
+   - The email is only used for the search and is never displayed.
+2. **Hidden files & tags**: select system tags so that tagged files and folders become completely invisible to the MCP tools (reading, search, listing, images, notes, talk and checkout). Restricted or invisible tags are recommended. The tag covers all descendants, a local share inherits the hiding of the owner's source folder and, in doubt (invalid configuration, query failure), the app refuses; see [Hidden tags (1.0.6)](#hidden-tags-106).
+   - Service, eligibility and personal connection start off for everyone, including administrators. Reading starts allowed; writing, deleting, transferring and sharing start denied. In Files, `files.share` (share with a person or group) and `files.link` (public link) are two separate operations, so the admin can grant one without the other; both come off. Listing shares remains a read.
+   - The page uses the admin-only JSON API `GET /apps/mcp/api/grants` (`search`, `group`, `filter` = `eligible`/`connected`, `page`), `PUT /apps/mcp/api/grants/{uid}`, `POST /apps/mcp/api/grants/bulk`, `PUT /apps/mcp/api/service`, `GET`/`PUT /apps/mcp/api/checkout-limit` (`{mib}` integer ≥ 1) and, for the connections, `GET /apps/mcp/api/connections`, `DELETE /apps/mcp/api/connections/{id}` and `DELETE /apps/mcp/api/connections/users/{uid}`. For the hidden tags and the log option, `GET`/`PUT /apps/mcp/api/admin/tags` and `GET`/`PUT /apps/mcp/api/logs-privacy` (`{hideFileNames}`). No response carries a token hash.
+3. **OAuth clients**: the *OAuth clients* block of the **MCP for Nextcloud** section edits the allowed client hosts and turns on the native client for local programs, with no terminal step. The API is `GET /apps/mcp/api/oauth-clients` and `PUT /apps/mcp/api/oauth-clients` (admin-only, with Nextcloud CSRF), accepts `hosts` and/or `nativeClientEnabled`, validates everything before writing and refuses an invalid host list instead of writing it. Turning the native client off immediately revokes the tokens already issued to it.
+4. **Personal settings → MCP for Nextcloud**: the user themselves clicks *Connect*. The page shows the state (service, administrator permission, connection) and the list **Your connected clients** (client, connected at, expires at) with *Revoke*, through the API `GET /apps/mcp/api/my/connections` and `DELETE /apps/mcp/api/my/connections/{id}`, restricted to the user's own connections.
+5. In **Personal settings → Security**, the user creates an app password. The MCP client uses HTTP Basic authentication with the user ID and that app password. The app never asks for or stores the main password.
 
-Risco residual nas escritas: colisões com destinos ocultos usam a mesma recusa genérica de destinos sem permissão, mas a diferença entre recusa e criação possível ainda permite inferir que um caminho está indisponível.
+Residual risk in writes: collisions with hidden destinations use the same generic refusal as destinations without permission, but the difference between a refusal and a possible creation still allows inferring that a path is unavailable.
 
-O login pelo navegador via OAuth está descrito em [Conectar pelo claude.ai (OAuth)](#conectar-pelo-claudeai-oauth) e, para ChatGPT e Gemini CLI, em [Conectar pelo ChatGPT e pelo Gemini CLI (OAuth)](#conectar-pelo-chatgpt-e-pelo-gemini-cli-oauth).
+Browser login through OAuth is described in [Connecting through claude.ai (OAuth)](#connecting-through-claudeai-oauth) and, for ChatGPT and Gemini CLI, in [Connecting through ChatGPT and Gemini CLI (OAuth)](#connecting-through-chatgpt-and-gemini-cli-oauth).
 
-### Chaves de configuração
+### Configuration keys
 
-| Escopo | Chave | Valores |
+| Scope | Key | Values |
 | --- | --- | --- |
-| app `mcp` | `service_enabled` | `1` ligado, `0` ou ausente desligado |
-| usuário, app `mcp` | `eligible` | `1` liberado pelo administrador |
-| usuário, app `mcp` | `connected` | `1` conexão pessoal ativa |
-| usuário, app `mcp` | `grant_<módulo>_<operação>` | `1`/`0`; ausente vale `1` para `read` (exceto `logs`, que vale `0`) e `0` para as demais |
-| tabela própria | `mcp_logs_groups` | uma linha de grupos (JSON canônico) e versão; lista vazia = só administradores; editável no bloco **Log do servidor**; importa o appconfig legado na primeira leitura |
-| app `mcp` | `oauth_client_hosts` | lista de hosts separados por vírgula; ausente ou vazia vale o padrão `claude.ai,chatgpt.com` |
-| app `mcp` | `oauth_native_client_enabled` | `1` habilita o cliente nativo local `nextcloud-mcp-native`, `0` ou ausente desabilitado |
-| app `mcp` | `checkout_max_bytes` | limite de envio do `files_checkout` em bytes; padrão 50 MiB; editável no bloco Status em MiB; nunca acima do `post_max_size` do PHP |
-| app `mcp` | `logs_hide_file_names` | `1` (padrão) esconde o texto das mensagens do log nas ferramentas de log enquanto houver etiquetas de ocultação configuradas; `0` mostra o log completo para diagnóstico |
+| app `mcp` | `service_enabled` | `1` on, `0` or absent off |
+| user, app `mcp` | `eligible` | `1` enabled by the administrator |
+| user, app `mcp` | `connected` | `1` personal connection active |
+| user, app `mcp` | `grant_<module>_<operation>` | `1`/`0`; absent means `1` for `read` (except `logs`, which means `0`) and `0` for the others |
+| own table | `mcp_logs_groups` | one row of groups (canonical JSON) and version; empty list = administrators only; editable in the **Server log** block; imports the legacy appconfig on the first read |
+| app `mcp` | `oauth_client_hosts` | comma-separated list of hosts; absent or empty means the default `claude.ai,chatgpt.com` |
+| app `mcp` | `oauth_native_client_enabled` | `1` enables the local native client `nextcloud-mcp-native`, `0` or absent disabled |
+| app `mcp` | `checkout_max_bytes` | upload limit of `files_checkout` in bytes; default 50 MiB; editable in the Status block in MiB; never above PHP's `post_max_size` |
+| app `mcp` | `hidden_system_tags` | JSON list of the hidden system tag IDs (`[]` = hiding off); editable in the **Hidden files & tags** block |
+| app `mcp` | `logs_hide_file_names` | `1` (default) hides the text of log messages in the log tools while hidden tags are configured; `0` shows the complete log for diagnosis |
 
-As duas chaves OAuth são editáveis pela seção **Clientes OAuth** da tela de admin e não precisam de `occ`; ver [Conectar pelo claude.ai (OAuth)](#conectar-pelo-claudeai-oauth).
+The two OAuth keys are editable in the **OAuth clients** section of the admin page and do not need `occ`; see [Connecting through claude.ai (OAuth)](#connecting-through-claudeai-oauth).
 
-A chave `enabled` do app `mcp` pertence ao Nextcloud, que a usa para marcar o app como habilitado (`yes`), e não é o liga/desliga do MCP. O app nunca lê nem grava `enabled`, `installed_version`, `types`, `levels` ou `ocsid`. Para diagnóstico: `occ config:app:get mcp service_enabled`.
+The `enabled` key of the `mcp` app belongs to Nextcloud, which uses it to mark the app as enabled (`yes`), and is not the MCP on/off switch. The app never reads or writes `enabled`, `installed_version`, `types`, `levels` or `ocsid`. For diagnostics: `occ config:app:get mcp service_enabled`.
 
-## Conectar pelo claude.ai (OAuth)
+## Connecting through claude.ai (OAuth)
 
-No claude.ai, em **Personalizar > Conectores > Adicionar conector personalizado**, cole a URL exibida na página pessoal (ex.: `https://<instância>/apps/mcp/`), com a barra final, e deixe o cliente OAuth em **identidade publicada do Claude (CIMD)**. O Claude abre o login do Nextcloud e a tela "Permitir"; permitir equivale a ativar a conexão pessoal. Tudo fica sob `/apps/mcp`, sem mudança de Apache/DNS:
+In claude.ai, under **Customize > Connectors > Add custom connector**, paste the URL shown on the personal page (e.g. `https://<instance>/apps/mcp/`), with the trailing slash, and leave the OAuth client on **published Claude identity (CIMD)**. Claude opens the Nextcloud login and the "Allow" screen; allowing is equivalent to turning on the personal connection. Everything lives under `/apps/mcp`, with no Apache/DNS change:
 
-- `401` com `WWW-Authenticate: Bearer resource_metadata=".../apps/mcp/.well-known/oauth-protected-resource"`;
-- metadata do servidor de autorização em `/apps/mcp/.well-known/openid-configuration` e `/apps/mcp/.well-known/oauth-authorization-server` (issuer `https://<instância>/apps/mcp`);
-- `oauth/authorize` (consentimento) e `oauth/token` (PKCE S256, refresh com rotação). Access token 1 h, refresh 30 dias; só hashes vão ao banco.
+- `401` with `WWW-Authenticate: Bearer resource_metadata=".../apps/mcp/.well-known/oauth-protected-resource"`;
+- authorization server metadata at `/apps/mcp/.well-known/openid-configuration` and `/apps/mcp/.well-known/oauth-authorization-server` (issuer `https://<instance>/apps/mcp`);
+- `oauth/authorize` (consent) and `oauth/token` (PKCE S256, refresh with rotation). Access token 1 h, refresh 30 days; only hashes go to the database.
 
-Só clientes CIMD com host na allowlist são aceitos. A allowlist padrão é `claude.ai,chatgpt.com` e é editada sem terminal em **Administração → MCP for Nextcloud → Clientes OAuth → Hosts de clientes permitidos** (host exato, sem `https://`, porta, caminho ou `*`, ao menos um; salvar substitui a lista inteira e remover um host recusa o cliente na hora, mesmo com o documento em cache). A chave `oauth_client_hosts` não precisa ser gravada à mão: um valor salvo antes da 0.8.0 é preservado e o padrão só vale quando a chave está ausente ou vazia. A mesma seção liga **Permitir programas locais (cliente nativo)**, que habilita o `client_id` público fixo `nextcloud-mcp-native` (desligado por padrão) para programas locais como o Gemini CLI, e mostra os redirect URIs loopback aceitos.
+Only CIMD clients with a host on the allowlist are accepted. The default allowlist is `claude.ai,chatgpt.com` and is edited without a terminal in **Administration → MCP for Nextcloud → OAuth clients → Allowed client hosts** (exact host, without `https://`, port, path or `*`, at least one; saving replaces the whole list and removing a host refuses the client immediately, even with the document cached). The `oauth_client_hosts` key does not need to be written by hand: a value saved before 0.8.0 is preserved and the default only applies when the key is absent or empty. The same section turns on **Allow local programs (native client)**, which enables the fixed public `client_id` `nextcloud-mcp-native` (off by default) for local programs such as Gemini CLI, and shows the accepted loopback redirect URIs.
 
-Todo redirecionamento de volta a um cliente carrega `iss` com o emissor (RFC 9207), inclusive na negação e em erros redirecionáveis; erros anteriores à validação do redirect continuam locais. Clientes sem documento de identidade próprio, como o Gemini CLI, são recusados com `invalid_client` enquanto o cliente nativo estiver desligado.
+Every redirect back to a client carries `iss` with the issuer (RFC 9207), including on denial and redirectable errors; errors before the redirect validation remain local. Clients without an identity document of their own, such as Gemini CLI, are refused with `invalid_client` while the native client is off.
 
-Disconnect pessoal, perda de elegibilidade (inclusive em lote por grupo), serviço desligado e conta desabilitada ou apagada excluem imediatamente os tokens access/refresh e códigos pendentes. Reativar o serviço ou a elegibilidade não restaura credenciais antigas; conecte novamente. O Claude sai de `160.79.104.0/21`; se a proteção brute force do Nextcloud atrasar o endpoint de token, libere essa faixa. Basic + app password continua valendo para outros clientes.
+A personal Disconnect, loss of eligibility (including in a batch by group), service turned off and a disabled or deleted account immediately delete the access/refresh tokens and pending codes. Re-enabling the service or the eligibility does not restore old credentials; connect again. Claude comes from `160.79.104.0/21`; if the Nextcloud brute-force protection slows down the token endpoint, allow that range. Basic + app password keeps working for other clients.
 
-## Conectar pelo ChatGPT e pelo Gemini CLI (OAuth)
+## Connecting through ChatGPT and Gemini CLI (OAuth)
 
-Passos para o usuário, com a mesma URL e a mesma tela "Permitir", estão no README da raiz, nas seções ChatGPT e Gemini CLI. Resumo do que o servidor exige de cada um:
+User steps, with the same URL and the same "Allow" screen, are in the root README, in the ChatGPT and Gemini CLI sections. A summary of what the server requires from each:
 
-- **ChatGPT**: CIMD em `chatgpt.com`, aceito pela allowlist padrão. O documento real traz `token_endpoint_auth_methods_supported: [none, private_key_jwt]` e o singular `private_key_jwt`; o plural vence, e `none` está na lista, então o cliente é aceito como público.
-- **Gemini CLI**: não publica documento de identidade, então usa o cliente nativo estático. O usuário cola o `client_id` exibido na seção do admin em `~/.gemini/settings.json` → `mcpServers.<nome>.oauth.clientId` e roda `/mcp auth`. O redirect `http://localhost:<porta>/oauth/callback` casa porque `RedirectUriMatcher` ignora a porta em loopback (RFC 8252 7.3).
+- **ChatGPT**: CIMD at `chatgpt.com`, accepted by the default allowlist. The real document carries `token_endpoint_auth_methods_supported: [none, private_key_jwt]` and the singular `private_key_jwt`; the plural wins, and `none` is in the list, so the client is accepted as public.
+- **Gemini CLI**: it does not publish an identity document, so it uses the static native client. The user pastes the `client_id` shown in the admin section into `~/.gemini/settings.json` → `mcpServers.<name>.oauth.clientId` and runs `/mcp auth`. The redirect `http://localhost:<port>/oauth/callback` matches because `RedirectUriMatcher` ignores the port on loopback (RFC 8252 7.3).
 
-`iss` é obrigatório porque o Gemini CLI rejeita retorno sem ele.
+`iss` is mandatory because Gemini CLI rejects a return without it.
 
-## Revogar
+## Revoking
 
-*Disconnect* na página pessoal bloqueia a próxima requisição MCP, inclusive com a mesma senha de app. A senha de app continua válida no Nextcloud e deve ser revogada em **Segurança**. Na mesma página, *Revogar* corta um cliente OAuth específico do próprio usuário. O administrador também pode remover a elegibilidade do usuário ou desativar o serviço; ambos valem na próxima requisição. No bloco **Conexões ativas**, o administrador revoga uma conexão OAuth específica, ou todas de um usuário, na hora; o usuário continua habilitado e pode entrar de novo.
+*Disconnect* on the personal page blocks the next MCP request, even with the same app password. The app password remains valid in Nextcloud and must be revoked under **Security**. On the same page, *Revoke* cuts a specific OAuth client of the user themselves. The administrator can also remove the user's eligibility or turn the service off; both apply on the next request. In the **Active connections** block, the administrator revokes a specific OAuth connection, or all of a user's, immediately; the user remains enabled and can sign in again.
 
-## Teste manual após a instalação
+## Manual test after installation
 
 ```sh
-URL=https://<instância>/apps/mcp/
-AUTH='<usuário>:<senha-de-app>'
+URL=https://<instance>/apps/mcp/
+AUTH='<user>:<app-password>'
 H='-H Content-Type:application/json -H Accept:application/json,text/event-stream'
 
 curl -s -u "$AUTH" $H -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}' "$URL"
@@ -339,27 +342,27 @@ curl -s -u "$AUTH" $H -H 'MCP-Protocol-Version: 2025-06-18' -d '{"jsonrpc":"2.0"
 curl -s -u "$AUTH" $H -H 'MCP-Protocol-Version: 2025-06-18' -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"mcp_status","arguments":{}}}' "$URL"
 ```
 
-Respostas esperadas:
+Expected responses:
 
-| Situação | HTTP |
+| Situation | HTTP |
 | --- | --- |
-| Sem credencial, credencial inválida ou usuário desativado | 401 com `WWW-Authenticate: Basic` |
-| Serviço desligado, usuário inelegível ou desconectado | 403 |
-| `Origin` de outro host | 403 |
-| Faltando `Accept: application/json, text/event-stream` ou `Content-Type: application/json` | 406 |
-| `MCP-Protocol-Version` desconhecida ou malformada: responde `UnsupportedProtocolVersionError` (`-32022`, `data.supported`). As versões legadas aceitas depois do `initialize` são 2025-03-26, 2025-06-18 e 2025-11-25; header ausente vale 2025-03-26, e no `initialize` o header é ignorado. Também dá 400 quando `MCP-Protocol-Version`, `Mcp-Method` ou `Mcp-Name` divergem do corpo (`-32020`). O motivo de cada 400 vai para o log em nível debug. | 400 |
-| JSON inválido (`-32700`), lote ou envelope inválido (`-32600`) | 400 |
-| Método desconhecido (`-32601`) ou parâmetros inválidos (`-32602`) | 200 com erro JSON-RPC |
-| GET ou DELETE | 405 |
+| No credential, invalid credential or disabled user | 401 with `WWW-Authenticate: Basic` |
+| Service off, ineligible or disconnected user | 403 |
+| `Origin` of another host | 403 |
+| Missing `Accept: application/json, text/event-stream` or `Content-Type: application/json` | 406 |
+| Unknown or malformed `MCP-Protocol-Version`: answers `UnsupportedProtocolVersionError` (`-32022`, `data.supported`). The legacy versions accepted after `initialize` are 2025-03-26, 2025-06-18 and 2025-11-25; an absent header means 2025-03-26, and on `initialize` the header is ignored. Also 400 when `MCP-Protocol-Version`, `Mcp-Method` or `Mcp-Name` diverge from the body (`-32020`). The reason for each 400 goes to the log at debug level. | 400 |
+| Invalid JSON (`-32700`), batch or invalid envelope (`-32600`) | 400 |
+| Unknown method (`-32601`) or invalid parameters (`-32602`) | 200 with a JSON-RPC error |
+| GET or DELETE | 405 |
 
-## Desenvolvimento
+## Development
 
 ```sh
 composer install
 vendor/bin/phpunit
 ```
 
-Os testes são unitários, com mocks das interfaces OCP (`nextcloud/ocp` stable33) e uma árvore de arquivos em memória (`tests/Unit/Tools/FakeTree.php`). Eles não substituem a instalação num Nextcloud real, que é o único lugar onde se verificam ACL de compartilhamento, criação de versão, lixeira e storages externos.
+The tests are unit tests, with mocks of the OCP interfaces (`nextcloud/ocp` stable33) and an in-memory file tree (`tests/Unit/Tools/FakeTree.php`). They do not replace installation on a real Nextcloud, which is the only place where share ACL, version creation, trash bin and external storage are verified.
 
 ## License
 
