@@ -87,6 +87,51 @@ final class VisibilityGuardTest extends TestCase {
         return new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot(), null, null, $events);
     }
 
+    public function testPartialMutationFailureStillInvalidatesVisibility(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $hidden = $this->tree->addFolder('/alice/files/secret');
+        $this->tagAssignments[(string)$hidden] = ['42'];
+        $this->tree->addFile('/alice/files/file', 'x');
+        $guard = $this->guard();
+        $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/file')));
+        try {
+            \OCA\Mcp\Tools\Common\NodeAccess::mutate(function (): void {
+                $this->tree->node('/alice/files/file')->move('/alice/files/secret/file');
+                throw new \RuntimeException('Mutation already happened');
+            }, $guard);
+            $this->fail('The storage exception must propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Mutation already happened', $e->getMessage());
+        }
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/secret/file')));
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function mutationEvents(): iterable {
+        foreach (['NodeRenamedEvent', 'NodeCopiedEvent', 'NodeCreatedEvent', 'NodeDeletedEvent', 'NodeWrittenEvent'] as $name) {
+            yield $name => ['OCP\\Files\\Events\\Node\\' . $name, in_array($name, ['NodeRenamedEvent', 'NodeCopiedEvent'], true)];
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('mutationEvents')]
+    public function testEveryMutationEventInvalidatesVisibility(string $class, bool $twoNodes): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $id = $this->tree->addFile('/alice/files/file', 'x');
+        $file = $this->tree->node('/alice/files/file');
+        $listeners = [];
+        $events = $this->createMock(\OCP\EventDispatcher\IEventDispatcher::class);
+        $events->method('addListener')->willReturnCallback(function (string $name, callable $listener, int $priority) use (&$listeners): void {
+            $this->assertSame(PHP_INT_MIN, $priority);
+            $listeners[$name] = $listener;
+        });
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot(), null, null, $events);
+        $this->assertTrue($guard->isVisible($file));
+        $this->tagAssignments[(string)$id] = ['42'];
+        $event = $twoNodes ? new $class($file, $file) : new $class($file);
+        $listeners[$class]($event);
+        $this->assertFalse($guard->isVisible($file));
+    }
+
     private function guard(): VisibilityGuard {
         return new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot());
     }

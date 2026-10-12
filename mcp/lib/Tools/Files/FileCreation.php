@@ -245,10 +245,11 @@ final class FileCreation {
             throw new FileExists(FilesMessages::fileExists());
         }
         try {
-            $file = NodeAccess::requireFile($folder->newFile($name));
+            $file = NodeAccess::requireFile(NodeAccess::mutate(fn () => $folder->newFile($name), $this->visibilityGuard));
         } catch (InvalidPathException) {
             throw self::invalidName();
         }
+        $this->visibilityGuard->assertVisible($file);
         if ((int)$file->getSize() > 0) {
             throw new FileExists(FilesMessages::fileExists());
         }
@@ -262,7 +263,7 @@ final class FileCreation {
         }
         try {
             $put = static fn () => $current->putContent($content);
-            $userId === null ? $put() : $this->locks->run($put, $current, $userId, null, $asUser);
+            NodeAccess::mutate(fn () => $userId === null ? $put() : $this->locks->run($put, $current, $userId, null, $asUser), $this->visibilityGuard);
         } catch (ToolFailure $e) {
             // Already a readable refusal: a lock found by the check, or one the storage raised, explained.
             throw $e;
@@ -291,6 +292,7 @@ final class FileCreation {
         } catch (NotFoundException) {
             // The node just written is the best answer left when the folder cannot be read back.
         }
+        $this->visibilityGuard->assertVisible($file);
         return [
             'path' => $target['path'],
             'size' => (int)$file->getSize(),

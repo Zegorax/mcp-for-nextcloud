@@ -146,7 +146,8 @@ final class Reorganization {
             throw new ToolFailure(CommonMessages::forbidden());
         }
         $created = $this->missingLevels($root, $path);
-        NodeAccess::ensureFolder($root, $path);
+        $folder = NodeAccess::ensureFolder($root, $path, $this->visibilityGuard);
+        $this->visibilityGuard?->assertVisible($folder);
         return ['path' => $path, 'created' => true, 'created_paths' => $created];
     }
 
@@ -241,7 +242,8 @@ final class Reorganization {
         $receipt = $root->getRelativePath($source->getPath()) ?? '';
         // Reading a locked file is allowed, so the source is not checked; files_lock may still refuse a copy between
         // storages, and that refusal is explained.
-        $copy = $this->locks === null ? $source->copy($this->absolute($root, $to)) : $this->locks->capture(fn (): Node => $source->copy($this->absolute($root, $to)), $source, $userId);
+        $copy = NodeAccess::mutate(fn () => $this->locks === null ? $source->copy($this->absolute($root, $to)) : $this->locks->capture(fn (): Node => $source->copy($this->absolute($root, $to)), $source, $userId), $this->visibilityGuard);
+        $this->visibilityGuard?->assertVisible($copy);
         return [
             'from' => $receipt,
             'to' => $to,
@@ -281,6 +283,7 @@ final class Reorganization {
         $versionsBefore = $this->versions($check->source, $userId);
         $sharesBefore = $this->report->shares($check->source, $userId);
         $moved = $this->locked(fn (): Node => $check->source->move($this->absolute($root, $check->to)), $check->source, $userId);
+        $this->visibilityGuard?->assertVisible($moved);
         $idAfter = (int)$moved->getId();
         return [
             'from' => $receipt,
@@ -318,7 +321,7 @@ final class Reorganization {
      * @return Node what the write returned
      */
     private function locked(callable $write, Node $node, string $userId): Node {
-        return $this->locks === null ? $write() : $this->locks->run($write, $node, $userId);
+        return NodeAccess::mutate(fn () => $this->locks === null ? $write() : $this->locks->run($write, $node, $userId), $this->visibilityGuard);
     }
 
     /**
@@ -402,9 +405,11 @@ final class Reorganization {
                 $check = $this->inspect($root, $item['from'], $item['to']);
                 $movedNode = NodeAccess::run(fn () => $this->locked(fn (): Node => $check->source->move($this->absolute($root, $check->to)), $check->source, $userId));
                 $moved[] = ['from' => $item['from'], 'to' => $check->to, 'toId' => (int)$movedNode->getId()];
+                $this->visibilityGuard?->assertVisible($movedNode);
             } catch (\Throwable $e) {
                 $failure = $e instanceof ToolFailure ? $e->getMessage() : FilesMessages::moveFailed();
                 $batchId = $store->insert(new Batch(null, $userId, $now, $moved, $created, null));
+                $this->assertUndoVisible($root, new Batch(null, $userId, $now, $result->planned, $created, null));
                 return [
                     'batch_id' => $batchId,
                     'moved' => $moved,
@@ -415,6 +420,7 @@ final class Reorganization {
             }
         }
         $batchId = $store->insert(new Batch(null, $userId, $now, $moved, $created, null));
+        $this->assertUndoVisible($root, new Batch(null, $userId, $now, $result->planned, $created, null));
         return [
             'batch_id' => $batchId,
             'moved' => $moved,
@@ -638,8 +644,11 @@ final class Reorganization {
         $undone = 0;
         foreach (array_reverse($batch->moves) as $move) {
             try {
+                $this->assertUndoVisible($root, $batch);
                 $node = NodeAccess::run(fn () => NodeAccess::get($root, $move['to']));
                 NodeAccess::run(fn () => $this->locked(fn (): Node => $node->move($this->absolute($root, $move['from'])), $node, $userId));
+                $undone++;
+                $this->assertUndoVisible($root, $batch);
             } catch (\Throwable $e) {
                 // Every condition was checked above, so this is a lock or a permission that changed in
                 // between. The row keeps only what did not go back: an item that already moved is no longer
@@ -648,11 +657,11 @@ final class Reorganization {
                 // counts, as in the run of the batch: one Nextcloud has no typed answer for leaves the same state,
                 // and what it says is not repeated to the caller.
                 $store->keepRemaining($batchId, $userId, array_slice($batch->moves, 0, count($batch->moves) - $undone));
+                $this->assertUndoVisible($root, $batch);
                 return ['batch_id' => $batchId, 'undone' => $undone, 'removed_dirs' => [], 'kept_dirs' => [],
                     'conflicts' => [['from' => $move['from'], 'to' => $move['to'],
                         'reason' => $e instanceof ToolFailure ? $e->getMessage() : FilesMessages::moveFailed()]]];
             }
-            $undone++;
         }
         $removed = [];
         $kept = [];
@@ -667,7 +676,8 @@ final class Reorganization {
                 $kept[] = $dir;
                 continue;
             }
-            NodeAccess::run(fn () => $folder->delete());
+            NodeAccess::run(fn () => NodeAccess::mutate(fn () => $folder->delete(), $this->visibilityGuard));
+            $this->assertUndoVisible($root, $batch);
             $removed[] = $dir;
         }
         $store->markUndone($batchId, $userId, $now);
@@ -978,7 +988,8 @@ final class Reorganization {
                     }
                     continue;
                 }
-                NodeAccess::run(fn () => $root->newFolder($below));
+                $folder = NodeAccess::run(fn () => NodeAccess::mutate(fn () => $root->newFolder($below), $this->visibilityGuard));
+                $this->visibilityGuard?->assertVisible($folder);
                 $created[] = '/' . $below;
             }
         }
