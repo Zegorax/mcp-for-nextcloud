@@ -91,7 +91,8 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
                 . 'the entries behind one signature. IP addresses are masked, stack traces keep ten frames without arguments '
                 . 'and every call is recorded in the audit log.',
             'When source.fileNamesHidden is true, the administrator hides file names and paths from these tools: they '
-                . 'appear as ' . LogRedactor::HIDDEN . ', contains does not match them, and they cannot be recovered here.',
+                . 'appear as ' . LogRedactor::HIDDEN . ' (in a message, from the first path to its end; in a URL, after the route), '
+                . 'contains does not match them, and they cannot be recovered here.',
         ];
     }
 

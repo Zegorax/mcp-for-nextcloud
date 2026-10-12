@@ -44,29 +44,37 @@ final class LogFileNamesTest extends TestCase {
         $this->assertStringContainsString('secret/salary.txt', $out['url']);
     }
 
-    /** Audit A4: the app's own log of an unexpected exception carries no file name, in any mode. */
-    public function testTheAppsOwnLogOfAnExceptionCarriesNoFileName(): void {
-        $this->assertSame('Cannot access [hidden]', ToolRegistry::loggable(new \RuntimeException('Cannot access salary-secret.txt')));
-        $this->assertStringNotContainsString('Relat', ToolRegistry::loggable(new \RuntimeException('Could not move "Relatório final.pdf"')));
-        $this->assertSame('Lock wait timeout', ToolRegistry::loggable(new \RuntimeException('Lock wait timeout')));
+    /** The app's own log of an unexpected exception keeps its class and code only, in any mode. */
+    public function testTheAppsOwnLogOfAnExceptionKeepsOnlyClassAndCode(): void {
+        $this->assertSame('RuntimeException (code 0)', ToolRegistry::loggable(new \RuntimeException('Cannot access salary-secret.txt')));
+        $this->assertSame('RuntimeException (code 7)', ToolRegistry::loggable(new \RuntimeException('File with name /Docs/Salary#Confidential could not be located', 7)));
+        $this->assertSame('RuntimeException (code 0)', ToolRegistry::loggable(new \RuntimeException('File "README" is locked')));
     }
 
     /**
      * @return iterable<string, array{string, string}>
      */
     public static function hidden(): iterable {
+        // Review of A4: parts of names that the first heuristic left behind.
+        yield 'name with # from the DAV message' => ['File with name /Docs/Salary#Confidential could not be located', 'File with name [hidden]'];
+        yield 'folder with a space' => ['Could not move /Secret Folder/Payroll 2026', 'Could not move [hidden]'];
+        yield 'not a route of an app' => ['Request to /apps/Secret failed', 'Request to [hidden]'];
+        yield 'quoted name without extension' => ['File "README" is locked', 'File "[hidden]" is locked'];
+        yield 'quoted name with unknown extension' => ['File "salary.secret" is locked', 'File "[hidden]" is locked'];
+        yield 'quoted url with a path' => ['Fetch of "https://cloud.example.com/remote.php/dav/files/a/x.pdf" failed', 'Fetch of "https://cloud.example.com/[hidden]" failed'];
+        // The first heuristic's cases.
         yield 'webdav path' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/alice/[hidden]'];
-        yield 'webdav path of a full url' => ['https://cloud.example.com/remote.php/webdav/Docs/a', 'https://cloud.example.com/remote.php/webdav/[hidden]'];
-        yield 'public share dav' => ['/public.php/dav/files/AbC123/Docs/a.pdf', '/public.php/dav/files/AbC123/[hidden]'];
-        yield 'storage path' => ['Path /alice/files/Docs is locked', 'Path [hidden] is locked'];
-        yield 'data directory' => ['Path /var/www/data/alice/files/Docs/x is locked', 'Path [hidden] is locked'];
-        yield 'user path without extension' => ['Cannot move /Projetos/Secreto', 'Cannot move [hidden]'];
-        yield 'relative path with extension' => ['Could not read secret/salary.txt here', 'Could not read [hidden] here'];
+        yield 'webdav path of a full url' => ['GET https://cloud.example.com/remote.php/webdav/Docs/a failed', 'GET https://cloud.example.com/remote.php/webdav/[hidden]'];
+        yield 'public share dav keeps no token' => ['/public.php/dav/files/AbC123/Docs/a.pdf', '/public.php/dav/files/[hidden]'];
+        yield 'public share link keeps no token' => ['/s/AbCdEf123/download', '/s/[hidden]'];
+        yield 'route with more after it' => ['/index.php/apps/files/ajax/list.php', '/index.php/apps/files/[hidden]'];
+        yield 'query of a route' => ['/index.php/apps/files/?dir=/secret&fileid=12', '/index.php/apps/files/[hidden]'];
+        yield 'storage path' => ['Path /alice/files/Docs is locked', 'Path [hidden]'];
+        yield 'data directory' => ['Path /var/www/data/alice/files/Docs/x is locked', 'Path [hidden]'];
+        yield 'relative path' => ['Could not read secret/salary.txt here', 'Could not read [hidden]'];
         yield 'bare name' => ['Cannot access salary-secret.txt', 'Cannot access [hidden]'];
         yield 'quoted name with spaces' => ['File name must not end with a space: "Orçamento Exemplo .xlsx"', 'File name must not end with a space: "[hidden]"'];
         yield 'single quoted path' => ["Move of 'Docs/old plan' failed", "Move of '[hidden]' failed"];
-        yield 'query parameter' => ['/index.php/apps/files/?dir=/secret&fileid=12', '/index.php/apps/files/?dir=[hidden]&fileid=12'];
-        yield 'encoded query parameter' => ['/index.php/apps/files/ajax/download.php?files=%2Fa.txt', '/index.php/apps/files/ajax/download.php?files=[hidden]'];
     }
 
     /** @dataProvider hidden */
@@ -78,11 +86,12 @@ final class LogFileNamesTest extends TestCase {
      * @return iterable<string, array{string}>
      */
     public static function kept(): iterable {
-        yield 'route' => ['/index.php/apps/files/ajax/list.php'];
-        yield 'ocs route' => ['/ocs/v2.php/apps/notifications/api/v2/notifications'];
-        yield 'public share link' => ['/s/AbCdEf123/download'];
+        yield 'quoted url without a path and quoted version' => ['Failed connecting to "https://cloud.example.com" version "31.0.9"'];
+        yield 'quoted class and method' => ['Error in "OC\\Files\\View::fopen" call'];
+        yield 'route alone' => ['Hit /index.php/apps/files/ ok'];
         yield 'host and version' => ['Error connecting to apps.nextcloud.com version 31.0.9'];
-        yield 'masked address' => ['Login failed from 203.0.x.x'];
+        yield 'masked addresses' => ['Login failed from 203.0.x.x and 2001:db8::/48'];
+        yield 'mime type' => ['Content type text/plain not allowed'];
         yield 'class and method' => ['OC\\Files\\View::file_put_contents failed'];
         yield 'plain text' => ['User alice not found'];
     }
@@ -92,14 +101,35 @@ final class LogFileNamesTest extends TestCase {
         $this->assertSame($text, LogRedactor::fileNames($text));
     }
 
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function urls(): iterable {
+        yield 'webdav' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/alice/[hidden]'];
+        yield 'query' => ['/index.php/apps/files/?dir=/secret', '/index.php/apps/files/?[hidden]'];
+        yield 'not a route' => ['https://cloud.example.com/apps/Secret', 'https://cloud.example.com/[hidden]'];
+        yield 'ocs with query' => ['/ocs/v2.php/apps/notifications/api/v2/notifications?format=json', '/ocs/v2.php/apps/notifications/[hidden]?[hidden]'];
+        yield 'public share' => ['/s/AbC/download', '/s/[hidden]'];
+        yield 'route alone' => ['/status.php', '/status.php'];
+    }
+
+    /** @dataProvider urls */
+    public function testAUrlKeepsHostAndRoutePrefixOnly(string $url, string $expected): void {
+        $this->assertSame($expected, LogRedactor::url($url));
+    }
+
     public function testTheSummaryHidesNamesInSignaturesExamplesAndUrls(): void {
         $entries = [(object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice',
-            'url' => '/remote.php/dav/files/alice/secret/salary.txt', 'message' => 'Cannot access salary-secret.txt', 'userAgent' => 'curl']];
+            'url' => '/remote.php/dav/files/alice/secret/salary.txt', 'message' => 'Cannot access salary-secret.txt', 'userAgent' => 'curl'],
+            (object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice',
+            'url' => '/apps/Secret', 'message' => 'File with name /Docs/Salary#Confidential could not be located', 'userAgent' => 'curl']];
 
         $hidden = json_encode((new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC'), true))->analyze($entries));
         $shown = json_encode((new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC')))->analyze($entries));
 
         $this->assertStringNotContainsString('salary', $hidden);
+        $this->assertStringNotContainsString('Confidential', $hidden);
+        $this->assertStringNotContainsString('Secret', $hidden);
         $this->assertStringContainsString('salary-secret.txt', $shown);
     }
 

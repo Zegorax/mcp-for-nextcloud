@@ -17,8 +17,8 @@ namespace OCA\Mcp\Tools\Logs;
  *   message is written by users, and those are the characters that hide or disguise text.
  * - A text is cut at a limit; an exception keeps class, message, code, place and ten frames of class->function and
  *   file:line, never the arguments.
- * - With file names hidden ({@see self::fileNames()}), the names and paths of files in messages and URLs become a
- *   fixed marker. The place and the frames of an exception are the server's own PHP code and stay.
+ * - With file names hidden ({@see self::fileNames()}, {@see self::url()}), the names and paths of files in messages and
+ *   URLs become a fixed marker. The place and the frames of an exception are the server's own PHP code and stay.
  */
 final class LogRedactor {
     /** Frames of a stack trace kept. */
@@ -69,9 +69,32 @@ final class LogRedactor {
         . '|mp3|m4a|wav|flac|ogg|oga|opus|aac|wma|mp4|m4v|mov|avi|mkv|webm|wmv|mpe?g|3gp'
         . '|zip|rar|7z|tar|gz|tgz|bz2|xz|zst|iso|dmg|img|apk|exe|msi|deb|rpm|jar|bak|tmp|part|ocTransferId\d+'
         . '|eml|msg|mbox|ics|vcf|pem|crt|cer|key|p12|pfx|kdbx|gpg|asc|epub|mobi|pages|numbers|keynote|one|vsdx?|mpp|xps';
-    /** Route prefixes of Nextcloud that are not files: an absolute path starting with one stays. */
-    private const ROUTES = 'index\.php|remote\.php|public\.php|ocs|ocs-provider|apps|core|settings|login|logout|status\.php'
-        . '|cron\.php|s|f|avatar|css|js|svg|dist|l10n|\.well-known';
+    /**
+     * Route prefixes of Nextcloud, longest first. Only the prefix stays when names are hidden: whatever follows it in
+     * a path is the user's and becomes {@see self::HIDDEN}. A WebDAV path keeps its account, as the summary does; a
+     * public share never keeps its token.
+     */
+    private const ROUTE_PREFIXES = [
+        '~^/(?:index\.php/)?apps/[\w-]+/~i',
+        '~^/ocs/v[12]\.php/(?:apps/[\w-]+/|cloud/)?~i',
+        '~^/remote\.php/dav/(?:files|uploads|trashbin|versions)/[^/?#\s]+/~i',
+        '~^/remote\.php/(?:webdav/|dav/[\w-]+/|dav/)?~i',
+        '~^/public\.php/(?:dav/files/|webdav/)?~i',
+        '~^/index\.php/(?:s/|f/)?~i',
+        '~^/(?:s|f|ocs)/~i',
+        '~^/(?:status|cron)\.php~i',
+    ];
+    /** A quoted text kept as it is: a version number. */
+    private const VERSION = '/^v?\d+(?:\.\d+)+$/i';
+    /** A quoted text kept as it is: a namespaced PHP class, optionally with a method ("OC\Files\View::fopen"). */
+    private const PHP_NAME = '/^\\\\?[A-Za-z_]\w*(?:(?:\\\\[A-Za-z_]\w*)+(?:::\w+(?:\(\))?)?|::\w+(?:\(\))?)$/';
+    /** A URL: scheme and host, then the rest. */
+    private const URL = '~^([a-z][a-z0-9+.-]*://[^/?#\s]+)(.*)$~i';
+    /**
+     * A token with a slash that is not a path: a masked IPv6 prefix or a CIDR, a MIME type. A trailing punctuation
+     * mark is allowed.
+     */
+    private const NOT_A_PATH = '~^(?:[0-9a-f:]+/\d{1,3}|[\dx.]+/\d{1,2}|(?:application|text|image|audio|video|multipart|font|model|message|httpd)/[\w.+-]+)[,.;:)\]]*$~i';
 
     /** Line breaks, tabs and the Unicode line and paragraph separators: each becomes a space. */
     private const BREAKS = ["\r\n", "\r", "\n", "\t", "\u{2028}", "\u{2029}"];
@@ -138,38 +161,107 @@ final class LogRedactor {
     }
 
     /**
-     * Replaces the names and paths of files in a text by {@see self::HIDDEN}. It is a heuristic over free text,
-     * applied to whole classes of text rather than to the names of hidden files, which free text cannot identify:
-     * - a quoted text with a slash or a known extension, whole ("Orçamento final .xlsx");
-     * - what follows the account in a WebDAV path (/remote.php/dav/files/<uid>/…, /remote.php/webdav/…,
-     *   /public.php/dav/files/<token>/…);
-     * - the value of a query parameter that carries a path (dir, path, file, files, filename, name, source, target,
-     *   destination, also URL-encoded);
-     * - any other absolute path that is not a route of Nextcloud (/alice/files/…, /var/www/data/…, /Docs/x);
-     * - a relative path whose last part has a known extension (Docs/report.pdf), whole;
-     * - a bare word with a known extension (salary.txt).
-     * It does not catch a name without an extension or with one outside the list when it is neither quoted nor in a
-     * path, a name with spaces outside quotes (only the part next to the extension goes), nor a name split by the app
-     * that wrote the log into pieces of its own format.
+     * Replaces the names and paths of files in a message by {@see self::HIDDEN}, conservatively: free text cannot tell
+     * where a name ends, since real names carry spaces, "#" and "?".
+     * - Every quoted text ("…", “…”, '…') goes, unless it is all a URL (scheme and host stay, the path goes), a version
+     *   number or a PHP class or method name.
+     * - A bare word with a known extension goes (salary.txt).
+     * - From the first token that looks like a path (it starts with "/", or has a "/" outside a URL) to the end of the
+     *   text, everything goes. A route of Nextcloud at its start keeps only its prefix (/apps/<app>/, /ocs/v2.php/,
+     *   /remote.php/dav/files/<account>/…); a URL keeps its scheme and host. A MIME type, a CIDR and a masked IPv6
+     *   prefix are not paths.
+     * What it cannot catch: a name standing alone, without quotes, without a slash and without a known extension, and a
+     * Windows path written with backslashes.
      *
      * @param string $text a text already passed through {@see self::text()}
      * @return string the text with the names and paths replaced
      */
     public static function fileNames(string $text): string {
-        $ext = '\.(?:' . self::EXTENSIONS . ')(?![\w-])';
-        $marker = self::HIDDEN;
-        // Characters that end a path or a name in free text.
-        $stop = '\s"\'<>?#';
-        $text = preg_replace(
-            ['/"[^"]*(?:\/|' . $ext . ')[^"]*"/iu', '/“[^”]*(?:\/|' . $ext . ')[^”]*”/iu', '/(?<!\w)\'[^\']*(?:\/|' . $ext . ')[^\']*\'/iu'],
-            ['"' . $marker . '"', '“' . $marker . '”', '\'' . $marker . '\''],
-            $text,
-        ) ?? '';
-        $text = preg_replace('~(/(?:remote|public)\.php/(?:webdav|dav/[\w-]+/[^/' . $stop . ']+))/[^' . $stop . ']+~iu', '$1/' . $marker, $text) ?? '';
-        $text = preg_replace('~([?&](?:dir|path|file|files|filename|name|source|target|destination)=)[^&' . $stop . ']*~iu', '$1' . $marker, $text) ?? '';
-        $text = preg_replace('~(?<![\w.:/%\]\[-])/(?!(?:' . self::ROUTES . ')(?:[/' . $stop . ']|$))(?!' . preg_quote($marker, '~') . ')[^' . $stop . ']+~iu', $marker, $text) ?? '';
-        $text = preg_replace('~(?<![\w.:/%\[-])[^/' . $stop . ']+(?:/[^/' . $stop . ']+)*/[^/' . $stop . ']*' . $ext . '~iu', $marker, $text) ?? '';
-        return preg_replace('~(?<![\w./\[-])[^/\\\\|:*' . $stop . ']+' . $ext . '~iu', $marker, $text) ?? '';
+        foreach (['/"([^"]*)"/u' => ['"', '"'], '/“([^”]*)”/u' => ['“', '”'], "/(?<!\\w)'([^']*)'(?!\\w)/u" => ["'", "'"]] as $pattern => [$open, $close]) {
+            $text = preg_replace_callback($pattern, static fn (array $m): string => $open . self::quoted($m[1]) . $close, $text) ?? '';
+        }
+        $text = preg_replace('~(?<![\w./\[-])[^\s"\'<>/\\\\|:*?]+\.(?:' . self::EXTENSIONS . ')(?![\w-])~iu', self::HIDDEN, $text) ?? '';
+        if (preg_match_all('/\S+/u', $text, $tokens, PREG_OFFSET_CAPTURE) === false) {
+            return self::HIDDEN;
+        }
+        foreach ($tokens[0] as [$token, $offset]) {
+            $kept = self::pathStart($token);
+            if ($kept !== null) {
+                return substr($text, 0, $offset) . $kept . self::HIDDEN;
+            }
+        }
+        return $text;
+    }
+
+    /**
+     * @param string $url the url field of an entry, already passed through {@see self::text()}
+     * @return string scheme, host and the route prefix of Nextcloud; the rest of the path and the whole query hidden
+     */
+    public static function url(string $url): string {
+        $head = '';
+        if (preg_match(self::URL, $url, $m) === 1) {
+            [$head, $url] = [$m[1], $m[2]];
+        }
+        $cut = strcspn($url, '?#');
+        $path = substr($url, 0, $cut);
+        $prefix = self::routePrefix($path);
+        if ($prefix === '' && str_starts_with($path, '/')) {
+            $prefix = '/';
+        }
+        return $head . $prefix . (substr($path, strlen($prefix)) !== '' ? self::HIDDEN : '') . ($cut < strlen($url) ? '?' . self::HIDDEN : '');
+    }
+
+    /**
+     * @param string $body a quoted text, without its quotes
+     * @return string the text when it is a URL without a path, a version or a PHP name; otherwise hidden
+     */
+    private static function quoted(string $body): string {
+        if ($body === '' || $body === self::HIDDEN || preg_match(self::VERSION, $body) === 1 || preg_match(self::PHP_NAME, $body) === 1) {
+            return $body;
+        }
+        if (preg_match(self::URL, $body, $m) === 1 && !preg_match('/\s/u', $body)) {
+            return $m[1] . (trim($m[2], '/') === '' ? $m[2] : '/' . self::HIDDEN);
+        }
+        return self::HIDDEN;
+    }
+
+    /**
+     * @param string $token one word of a text
+     * @return string|null what stays of a token where a path starts (the hiding then runs to the end), null when the
+     *     token is not a path
+     */
+    private static function pathStart(string $token): ?string {
+        $lead = '';
+        // A quoted text was settled above and has no spaces any more: it is kept or already hidden.
+        if (preg_match('/^[(\[<{=,;]*["“\'].*["”\'][,.;:)\]]*$/u', $token) === 1) {
+            return null;
+        }
+        if (preg_match('/^[(\[<{=,;]+/', $token, $m) === 1) {
+            $lead = $m[0];
+            $token = substr($token, strlen($lead));
+        }
+        if (preg_match(self::URL, $token, $m) === 1) {
+            return trim($m[2], '/') === '' ? null : $lead . $m[1] . self::routePrefix(substr($m[2], 0, strcspn($m[2], '?#')));
+        }
+        if (!str_contains($token, '/') || trim($token, '/') === '' || preg_match(self::NOT_A_PATH, $token) === 1) {
+            return null;
+        }
+        if (!str_starts_with($token, '/')) {
+            return $lead;
+        }
+        $prefix = self::routePrefix($token);
+        // A route with nothing after it names no file.
+        return rtrim(substr($token, strlen($prefix)), ',.;:)]') === '' ? null : $lead . $prefix;
+    }
+
+    /** @return string the route prefix of Nextcloud a path starts with, '' when none */
+    private static function routePrefix(string $path): string {
+        foreach (self::ROUTE_PREFIXES as $pattern) {
+            if (preg_match($pattern, $path, $m) === 1) {
+                return $m[0];
+            }
+        }
+        return '';
     }
 
     /** Only our exact canonical /48 output is already redacted; all other CIDRs still need masking. */
@@ -253,7 +345,7 @@ final class LogRedactor {
             'app' => $field('app', 100),
             'user' => $field('user', 100),
             'method' => $field('method', 16),
-            'url' => is_scalar($entry->url ?? null) ? self::shown((string)$entry->url, self::MESSAGE_LIMIT, $hideFileNames) : '',
+            'url' => is_scalar($entry->url ?? null) ? self::shownUrl((string)$entry->url, self::MESSAGE_LIMIT, $hideFileNames) : '',
             'message' => is_scalar($entry->message ?? null) ? self::shown((string)$entry->message, self::MESSAGE_LIMIT, $hideFileNames) : '',
             'reqId' => $field('reqId', 64),
             'userAgent' => $field('userAgent', 300, true),
@@ -279,6 +371,20 @@ final class LogRedactor {
             $text = self::fileNames($text);
         }
         return mb_strlen($text) > $limit ? mb_substr($text, 0, $limit) . '…' : $text;
+    }
+
+    /**
+     * @param string $url the url field of an entry
+     * @param int $limit longest result in characters
+     * @param bool $hideFileNames whether everything after the route prefix is hidden
+     * @return string the URL as the tools show it
+     */
+    public static function shownUrl(string $url, int $limit, bool $hideFileNames): string {
+        $url = self::text($url, PHP_INT_MAX);
+        if ($hideFileNames) {
+            $url = self::url($url);
+        }
+        return mb_strlen($url) > $limit ? mb_substr($url, 0, $limit) . '…' : $url;
     }
 
     /** @return string file:line, or '' without a file */

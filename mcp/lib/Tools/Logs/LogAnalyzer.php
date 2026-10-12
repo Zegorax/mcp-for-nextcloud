@@ -78,7 +78,7 @@ final class LogAnalyzer {
             $apps[$app] = ($apps[$app] ?? 0) + 1;
             $user = self::field($entry, 'user', 100);
             $users[$user] = ($users[$user] ?? 0) + 1;
-            $url = self::path(is_scalar($entry->url ?? null) ? LogRedactor::shown((string)$entry->url, 2000, $this->hideFileNames) : '');
+            $url = self::path(is_scalar($entry->url ?? null) ? LogRedactor::shownUrl((string)$entry->url, 2000, $this->hideFileNames) : '');
             $urls[$url] = ($urls[$url] ?? 0) + 1;
             $agent = self::field($entry, 'userAgent', 300);
             $agents[$agent] = ($agents[$agent] ?? 0) + 1;

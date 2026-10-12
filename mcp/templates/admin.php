@@ -180,7 +180,7 @@
             <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide file names and paths in the logs')); ?></label>
             <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
         </p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Takes effect while hidden tags are configured: the log tools then replace every file name and path in messages, URLs and summaries with [hidden], since free text cannot tell which files are hidden. Turned off, the log tools show full file names and paths for diagnosis and do not respect the hiding by tags. Some IT teams use the names to track problems and prefer it off.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Takes effect while hidden tags are configured: the log tools then replace file names and paths in messages, URLs and summaries with [hidden], from the first path to the end of the message, since free text cannot tell which files are hidden. A name standing alone, without quotes, without a slash and without a known extension, may still appear. Turned off, the log tools show full file names and paths for diagnosis and do not respect the hiding by tags. Some IT teams use the names to track problems and prefer it off.')); ?></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">

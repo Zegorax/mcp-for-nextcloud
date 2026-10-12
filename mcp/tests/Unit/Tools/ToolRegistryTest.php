@@ -428,28 +428,30 @@ final class ToolRegistryTest extends TestCase {
         $this->assertSame('Unexpected error while accessing Nextcloud.', $result['content'][0]['text']);
     }
 
-    public function testUnexpectedFailureLogsClassAndMessageButTheClientStaysGeneric(): void {
+    public function testUnexpectedFailureLogsClassAndCodeButNeverTheMessage(): void {
         $this->throw = new \Error('Call to undefined method OCA\DAV\CalDAV\CalDavBackend::missing()');
         $logged = [];
         $this->logger->expects($this->once())->method('error')->willReturnCallback(function (string $message, array $context) use (&$logged): void {
             $logged = $context;
         });
         $result = $this->registry()->call('a_read', [], 'alice');
-        $this->assertSame('Call to undefined method OCA\DAV\CalDAV\CalDavBackend::missing()', $logged['exception_message']);
+        $this->assertSame('Error (code 0)', $logged['exception_message']);
         $this->assertSame(\Error::class, $logged['exception_class']);
         $this->assertStringNotContainsString('missing', $result['content'][0]['text']);
     }
 
-    public function testLoggedMessageHidesFilePathsAndIsTruncated(): void {
-        $this->throw = new \RuntimeException('cannot open /var/www/data/alice/files/secret.txt: ' . str_repeat('x', 400));
+    /** A message may name the user's files in any form, so the log never carries it, whatever the log setting. */
+    public function testLoggedMessageNeverCarriesFileNames(): void {
+        $this->throw = new \RuntimeException('File with name /Docs/Salary#Confidential could not be located; "README" ' . str_repeat('x', 400), 5);
         $logged = [];
         $this->logger->expects($this->once())->method('error')->willReturnCallback(function (string $message, array $context) use (&$logged): void {
             $logged = $context;
         });
         $this->registry()->call('a_read', [], 'alice');
-        $this->assertStringStartsWith('cannot open [path]: xxx', $logged['exception_message']);
-        $this->assertSame(300, mb_strlen($logged['exception_message']));
-        $this->assertStringNotContainsString('alice', $logged['exception_message']);
+        $this->assertSame('RuntimeException (code 5)', $logged['exception_message']);
+        foreach (['Salary', 'Confidential', 'README', 'Docs'] as $part) {
+            $this->assertStringNotContainsString($part, json_encode($logged));
+        }
     }
 
     /** The refusal of a hidden tool, called with arguments: the same as for a tool that does not exist. */
