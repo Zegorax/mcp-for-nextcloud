@@ -58,7 +58,7 @@ final class LogFileNamesTest extends TestCase {
         // Review of A4: parts of names that the first heuristic left behind.
         yield 'name with # from the DAV message' => ['File with name /Docs/Salary#Confidential could not be located', 'File with name [hidden]'];
         yield 'folder with a space' => ['Could not move /Secret Folder/Payroll 2026', 'Could not move [hidden]'];
-        yield 'not a route of an app' => ['Request to /apps/Secret failed', 'Request to [hidden]'];
+        yield 'not a route of an app' => ['Request to /apps/Secret failed', 'Request to /apps/[hidden]'];
         yield 'quoted name without extension' => ['File "README" is locked', 'File "[hidden]" is locked'];
         yield 'quoted name with unknown extension' => ['File "salary.secret" is locked', 'File "[hidden]" is locked'];
         yield 'quoted url with a path' => ['Fetch of "https://cloud.example.com/remote.php/dav/files/a/x.pdf" failed', 'Fetch of "https://cloud.example.com/[hidden]" failed'];
@@ -67,8 +67,14 @@ final class LogFileNamesTest extends TestCase {
         yield 'webdav path of a full url' => ['GET https://cloud.example.com/remote.php/webdav/Docs/a failed', 'GET https://cloud.example.com/remote.php/webdav/[hidden]'];
         yield 'public share dav keeps no token' => ['/public.php/dav/files/AbC123/Docs/a.pdf', '/public.php/dav/files/[hidden]'];
         yield 'public share link keeps no token' => ['/s/AbCdEf123/download', '/s/[hidden]'];
-        yield 'route with more after it' => ['/index.php/apps/files/ajax/list.php', '/index.php/apps/files/[hidden]'];
-        yield 'query of a route' => ['/index.php/apps/files/?dir=/secret&fileid=12', '/index.php/apps/files/[hidden]'];
+        yield 'route with more after it' => ['/index.php/apps/files/ajax/list.php', '/index.php/apps/[hidden]'];
+        yield 'query of a route' => ['/index.php/apps/files/?dir=/secret&fileid=12', '/index.php/apps/[hidden]'];
+        // Review of the conservative policy: the segment after /apps/ is not a fixed route and goes too.
+        yield 'app segment in capitals' => ['File with name /apps/Secret/payroll could not be located', 'File with name /apps/[hidden]'];
+        yield 'app segment in lower case' => ['File with name /apps/secret/payroll could not be located', 'File with name /apps/[hidden]'];
+        yield 'real app id' => ['Request /apps/files/ajax/list.php failed', 'Request /apps/[hidden]'];
+        yield 'ocs app segment' => ['Call /ocs/v2.php/apps/secret/payroll failed', 'Call /ocs/v2.php/apps/[hidden]'];
+        yield 'ocs v1 app segment' => ['Call /ocs/v1.php/apps/Secret/x failed', 'Call /ocs/v1.php/apps/[hidden]'];
         yield 'storage path' => ['Path /alice/files/Docs is locked', 'Path [hidden]'];
         yield 'data directory' => ['Path /var/www/data/alice/files/Docs/x is locked', 'Path [hidden]'];
         yield 'relative path' => ['Could not read secret/salary.txt here', 'Could not read [hidden]'];
@@ -88,7 +94,7 @@ final class LogFileNamesTest extends TestCase {
     public static function kept(): iterable {
         yield 'quoted url without a path and quoted version' => ['Failed connecting to "https://cloud.example.com" version "31.0.9"'];
         yield 'quoted class and method' => ['Error in "OC\\Files\\View::fopen" call'];
-        yield 'route alone' => ['Hit /index.php/apps/files/ ok'];
+        yield 'route alone' => ['Hit /index.php/apps/ ok'];
         yield 'host and version' => ['Error connecting to apps.nextcloud.com version 31.0.9'];
         yield 'masked addresses' => ['Login failed from 203.0.x.x and 2001:db8::/48'];
         yield 'mime type' => ['Content type text/plain not allowed'];
@@ -106,9 +112,13 @@ final class LogFileNamesTest extends TestCase {
      */
     public static function urls(): iterable {
         yield 'webdav' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/alice/[hidden]'];
-        yield 'query' => ['/index.php/apps/files/?dir=/secret', '/index.php/apps/files/?[hidden]'];
-        yield 'not a route' => ['https://cloud.example.com/apps/Secret', 'https://cloud.example.com/[hidden]'];
-        yield 'ocs with query' => ['/ocs/v2.php/apps/notifications/api/v2/notifications?format=json', '/ocs/v2.php/apps/notifications/[hidden]?[hidden]'];
+        yield 'query' => ['/index.php/apps/files/?dir=/secret', '/index.php/apps/[hidden]?[hidden]'];
+        yield 'not a route' => ['https://cloud.example.com/apps/Secret', 'https://cloud.example.com/apps/[hidden]'];
+        yield 'ocs with query' => ['/ocs/v2.php/apps/notifications/api/v2/notifications?format=json', '/ocs/v2.php/apps/[hidden]?[hidden]'];
+        yield 'app segment in capitals' => ['/apps/Secret/payroll', '/apps/[hidden]'];
+        yield 'app segment in lower case' => ['https://cloud.example.com/index.php/apps/secret/payroll', 'https://cloud.example.com/index.php/apps/[hidden]'];
+        yield 'real app id' => ['/index.php/apps/files/?dir=/x', '/index.php/apps/[hidden]?[hidden]'];
+        yield 'ocs app segment' => ['/ocs/v2.php/apps/secret/payroll', '/ocs/v2.php/apps/[hidden]'];
         yield 'public share' => ['/s/AbC/download', '/s/[hidden]'];
         yield 'route alone' => ['/status.php', '/status.php'];
     }
@@ -122,7 +132,9 @@ final class LogFileNamesTest extends TestCase {
         $entries = [(object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice',
             'url' => '/remote.php/dav/files/alice/secret/salary.txt', 'message' => 'Cannot access salary-secret.txt', 'userAgent' => 'curl'],
             (object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice',
-            'url' => '/apps/Secret', 'message' => 'File with name /Docs/Salary#Confidential could not be located', 'userAgent' => 'curl']];
+            'url' => '/apps/Secret', 'message' => 'File with name /Docs/Salary#Confidential could not be located', 'userAgent' => 'curl'],
+            (object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'core', 'user' => 'alice',
+            'url' => '/ocs/v2.php/apps/secret/payroll', 'message' => 'File with name /apps/Secret/payroll could not be located', 'userAgent' => 'curl']];
 
         $hidden = json_encode((new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC'), true))->analyze($entries));
         $shown = json_encode((new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC')))->analyze($entries));
@@ -130,6 +142,8 @@ final class LogFileNamesTest extends TestCase {
         $this->assertStringNotContainsString('salary', $hidden);
         $this->assertStringNotContainsString('Confidential', $hidden);
         $this->assertStringNotContainsString('Secret', $hidden);
+        $this->assertStringNotContainsString('secret', $hidden);
+        $this->assertStringNotContainsString('payroll', $hidden);
         $this->assertStringContainsString('salary-secret.txt', $shown);
     }
 

@@ -297,6 +297,8 @@ final class LogsModuleTest extends TestCase {
             $entry('r1', '/remote.php/dav/files/alice/secret/salary.txt', 'Cannot open /alice/files/secret/salary.txt'),
             $entry('r2', '/index.php/apps/files/?dir=/secret', 'File "salary 2026.xlsx" is locked', 'File salary.txt not found'),
             $entry('r3', '/apps/Secret', 'File with name /Docs/Salary#Confidential could not be located'),
+            $entry('r5', '/apps/Secret/payroll', 'File with name /apps/Secret/payroll could not be located'),
+            $entry('r6', '/ocs/v2.php/apps/secret/payroll', 'Call /ocs/v2.php/apps/secret/payroll failed; File with name /index.php/apps/files/Folha could not be located'),
             $entry('r4', '/remote.php/webdav/x', 'Could not move /Secret Folder/Payroll 2026; File "README" is locked; File "salary.secret" is locked'),
         ];
     }
@@ -314,15 +316,19 @@ final class LogsModuleTest extends TestCase {
         [$analyzeText, $analyze] = $this->call('logs_analyze');
 
         foreach ([$listText, $analyzeText] as $text) {
-            foreach (['salary', 'Salary', 'secret', 'Secret', 'Confidential', 'Payroll', 'README'] as $part) {
+            foreach (['salary', 'Salary', 'secret', 'Secret', 'Confidential', 'Payroll', 'payroll', 'README', 'Folha'] as $part) {
                 $this->assertStringNotContainsString($part, $text);
             }
         }
         $this->assertTrue($list['source']['fileNamesHidden']);
         $byReq = array_column($list['entries'], null, 'reqId');
         $this->assertSame('/remote.php/dav/files/alice/[hidden]', $byReq['r1']['url']);
-        $this->assertSame('/index.php/apps/files/?[hidden]', $byReq['r2']['url']);
-        $this->assertSame('/[hidden]', $byReq['r3']['url']);
+        $this->assertSame('/index.php/apps/[hidden]?[hidden]', $byReq['r2']['url']);
+        $this->assertSame('/apps/[hidden]', $byReq['r5']['url']);
+        $this->assertSame('File with name /apps/[hidden]', $byReq['r5']['message']);
+        $this->assertSame('/ocs/v2.php/apps/[hidden]', $byReq['r6']['url']);
+        $this->assertSame('Call /ocs/v2.php/apps/[hidden]', $byReq['r6']['message']);
+        $this->assertSame('/apps/[hidden]', $byReq['r3']['url']);
         $this->assertSame('File with name [hidden]', $byReq['r3']['message']);
         $this->assertSame('File [hidden] not found', $byReq['r2']['exception']['message']);
         $this->assertSame('/var/www/nextcloud/lib/private/Files/View.php:10', $byReq['r2']['exception']['at'], 'código do servidor fica');
@@ -334,11 +340,11 @@ final class LogsModuleTest extends TestCase {
         $this->hideByTag();
         $this->log = new FakeFileLog(self::namedLog());
 
-        foreach (['salary', 'Confidential', 'Payroll', 'README', 'Secret'] as $part) {
+        foreach (['salary', 'Confidential', 'Payroll', 'payroll', 'README', 'Secret', 'secret', 'Folha'] as $part) {
             $this->assertSame(0, $this->call('logs_list', ['contains' => $part])[1]['count'], $part);
         }
         $this->assertSame(1, $this->call('logs_list', ['contains' => 'is locked'])[1]['count']);
-        $this->assertSame(1, $this->call('logs_list', ['contains' => 'File with name'])[1]['count']);
+        $this->assertSame(2, $this->call('logs_list', ['contains' => 'File with name'])[1]['count']);
     }
 
     public function testTurnedOffTheLogToolsShowFullFileNames(): void {
