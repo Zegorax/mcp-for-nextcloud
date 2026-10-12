@@ -481,4 +481,63 @@ final class FilesUndoBatchTest extends FilesToolsTestCase {
         $this->assertArrayHasKey('/alice/files/Documentos/ata.md', $this->tree->nodes);
         $this->assertArrayHasKey('/alice/files/secret', $this->tree->nodes);
     }
+
+    /**
+     * A segment named "0" is a real name: a path through it is checked like any other. Each case is refused in the
+     * plan and in the run, with the generic message, without moving or removing anything.
+     *
+     * @return iterable<string, array{0: list<string>, 1: string, 2: string, 3: list<string>}> hidden paths, from, to,
+     *     folders the batch created
+     */
+    public static function zeroNamed(): iterable {
+        yield 'hidden folder /0' => [['/0'], '/plain.txt', '/0/secret.txt', []];
+        yield 'hidden ancestor /safe/0' => [['/safe/0'], '/plain.txt', '/safe/0/secret.txt', []];
+        yield 'hidden file named 0' => [['/0'], '/plain.txt', '/0', []];
+        yield 'hidden empty folder /0 the batch created' => [['/0'], '', '', ['/0']];
+    }
+
+    /**
+     * @dataProvider zeroNamed
+     * @param list<string> $hidden user-relative paths that carry the hidden tag
+     * @param list<string> $dirs folders the batch created
+     */
+    public function testASegmentNamedZeroIsCheckedLikeAnyOther(array $hidden, string $from, string $to, array $dirs): void {
+        $this->withHiddenTags();
+        foreach ($dirs as $dir) {
+            $this->tree->addFolder('/alice/files' . $dir);
+        }
+        $moves = [];
+        if ($to !== '') {
+            $toId = $this->tree->addFile('/alice/files' . $to, 'classified');
+            $moves[] = ['from' => $from, 'to' => $to, 'toId' => $toId];
+        }
+        foreach ($hidden as $path) {
+            $this->hiddenIds[] = $this->tree->node('/alice/files' . $path)->getId();
+        }
+        $id = $this->batches->insert(new Batch(null, 'alice', 1790000000, $moves, $dirs, null));
+        $before = $this->tree->nodes;
+
+        $planned = $this->planFailure(['batch_id' => $id]);
+        $ran = $this->failure('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertSame([], $this->tree->ops, 'nada movido nem apagado');
+        $this->assertSame(array_keys($before), array_keys($this->tree->nodes));
+        $this->assertNull($this->batches->rows[$id]['undone_at']);
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $planned);
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $ran);
+    }
+
+    /** A visible folder named "0", created by the batch and gone, comes back and receives its item. */
+    public function testAVisibleFolderNamedZeroIsRecreatedAndReceivesItsItem(): void {
+        $this->withHiddenTags();
+        $moved = $this->tree->addFile('/alice/files/Arquivado/plano.md', 'plano', 'text/markdown');
+        $id = $this->batches->insert(new Batch(null, 'alice', 1790000000,
+            [['from' => '/0/plano.md', 'to' => '/Arquivado/plano.md', 'toId' => $moved]], ['/0'], null));
+
+        $this->assertTrue($this->plan('files_undo_batch', ['batch_id' => $id])['ok']);
+        $out = $this->json('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertSame(1, $out['undone']);
+        $this->assertArrayHasKey('/alice/files/0/plano.md', $this->tree->nodes);
+    }
 }

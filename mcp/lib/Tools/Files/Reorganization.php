@@ -702,15 +702,13 @@ final class Reorganization {
         }
         foreach ($paths as $path) {
             try {
-                $segments = array_values(array_filter(explode('/', PathGuard::normalize($path, 'moves'))));
-                // The node itself when it exists, otherwise the nearest folder above it that does.
+                $segments = self::segments(PathGuard::normalize($path, 'moves'));
+                // The node itself when it exists, otherwise the nearest folder above it that does, the user's
+                // folder itself at the top.
                 while ($segments !== [] && !$root->nodeExists(implode('/', $segments))) {
                     array_pop($segments);
                 }
-                if ($segments === []) {
-                    continue;
-                }
-                $visible = $this->visibilityGuard->isVisible($root->get(implode('/', $segments)));
+                $visible = $this->visibilityGuard->isVisible($segments === [] ? $root : $root->get(implode('/', $segments)));
             } catch (\Throwable) {
                 $visible = false;
             }
@@ -864,7 +862,7 @@ final class Reorganization {
     private function missingRecordedParents(Folder $root, Batch $batch): array {
         $missing = [];
         foreach ($batch->moves as $move) {
-            $segments = array_values(array_filter(explode('/', PathGuard::normalize($move['from'], 'moves'))));
+            $segments = self::segments(PathGuard::normalize($move['from'], 'moves'));
             array_pop($segments);
             while ($segments !== []) {
                 $candidate = '/' . implode('/', $segments);
@@ -878,6 +876,17 @@ final class Reorganization {
             }
         }
         return $missing;
+    }
+
+    /**
+     * The names of a path, every one that is not empty: "0" is a name like any other, so this never uses
+     * array_filter() without a predicate.
+     *
+     * @param string $path a path, with or without its leading slash
+     * @return list<string> its segments
+     */
+    private static function segments(string $path): array {
+        return array_values(array_filter(explode('/', $path), static fn (string $segment): bool => $segment !== ''));
     }
 
     /**
@@ -896,7 +905,7 @@ final class Reorganization {
      * @return bool whether a folder the batch created is the parent of, or an ancestor above, that path
      */
     private function isRecordedAncestor(Batch $batch, string $from): bool {
-        $segments = array_values(array_filter(explode('/', PathGuard::normalize($from))));
+        $segments = self::segments(PathGuard::normalize($from));
         array_pop($segments);
         while ($segments !== []) {
             if (in_array('/' . implode('/', $segments), $batch->dirs, true)) {
@@ -923,7 +932,7 @@ final class Reorganization {
         $relative = ltrim(self::notBackup(PathGuard::normalize($path)), '/');
         $parent = $root;
         $walk = [];
-        foreach (array_filter(explode('/', $relative)) as $segment) {
+        foreach (self::segments($relative) as $segment) {
             $walk[] = $segment;
             $below = implode('/', $walk);
             if (!$root->nodeExists($below)) {
@@ -970,7 +979,7 @@ final class Reorganization {
                 continue;
             }
             $walk = [];
-            foreach (array_filter(explode('/', $relative)) as $segment) {
+            foreach (self::segments($relative) as $segment) {
                 $walk[] = $segment;
                 $below = implode('/', $walk);
                 if ($root->nodeExists($below)) {
@@ -1114,7 +1123,7 @@ final class Reorganization {
      * @throws ToolFailure when it does not exist or cannot take new entries
      */
     private function destination(Folder $root, string $path, array $mkdirs = []): Folder {
-        $segments = array_values(array_filter(explode('/', $path)));
+        $segments = self::segments($path);
         array_pop($segments);
         $parentPath = '/' . implode('/', $segments);
         if ($parentPath !== '/' && !$root->nodeExists(ltrim($parentPath, '/'))) {
