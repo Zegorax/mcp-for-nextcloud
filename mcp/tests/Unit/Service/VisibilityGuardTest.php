@@ -366,8 +366,60 @@ final class VisibilityGuardTest extends TestCase {
         $this->assertFalse($this->guard()->isVisible($node));
     }
 
+    public function testGroupFolderWithoutOwnerStaysVisible(): void {
+        [$guard, $node] = $this->nonLocalShareFixture(null);
+        $this->assertTrue($guard->isVisible($node));
+    }
+
+    public function testGroupFolderWithMountOwnerStaysVisible(): void {
+        [$guard, $node] = $this->nonLocalShareFixture('alice');
+        $this->assertTrue($guard->isVisible($node));
+    }
+
+    public function testExternalStorageStaysVisibleWithoutOwnerLookup(): void {
+        [$guard, $node] = $this->nonLocalShareFixture('alice');
+        $this->assertTrue($guard->isVisible($node));
+    }
+
+    public function testFederatedShareStaysVisibleWithoutLocalOwnerFolder(): void {
+        // Core External\Storage implements the legacy OCA sharing interface,
+        // not OCP\Files\Storage\ISharedStorage, and its owner is a cloud id.
+        [$guard, $node] = $this->nonLocalShareFixture('owner@remote.example');
+        $this->assertTrue($guard->isVisible($node));
+    }
+
+    public function testFederatedShareStillHonorsLocalHiddenAncestor(): void {
+        [$guard, $node] = $this->nonLocalShareFixture('owner@remote.example');
+        $this->tagAssignments['20'] = ['42'];
+        $this->assertFalse($guard->isVisible($node));
+    }
+
+    public function testLocalShareOnMountedAncestorKeepsOwnerProtection(): void {
+        [$guard, $node] = $this->sharedFixture(false, 1, false, false);
+        $this->tagAssignments['10'] = ['42'];
+        $this->assertFalse($guard->isVisible($node));
+    }
+
+    /** @return array{VisibilityGuard, Node} */
+    private function nonLocalShareFixture(?string $uid): array {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $this->tagAssignments['10'] = ['42']; // an unrelated local folder
+        $owner = null;
+        if ($uid !== null) {
+            $owner = $this->createMock(\OCP\IUser::class);
+            $owner->method('getUID')->willReturn($uid);
+        }
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getId')->willReturn(-1);
+        $root->expects($this->never())->method('getParent');
+        $root->method('getUserFolder')->willThrowException(new \RuntimeException('No local user folder'));
+        $folder = $this->ancestryNode(20, $root, $owner);
+        $node = $this->ancestryNode(30, $folder, $owner);
+        return [new VisibilityGuard($this->config->mock($this), $this->tagMapper, $root), $node];
+    }
+
     /** @return array{VisibilityGuard, Node, Node} */
-    private function sharedFixture(bool $failure = false, int $lookups = 1, bool $multipleOrigins = false): array {
+    private function sharedFixture(bool $failure = false, int $lookups = 1, bool $multipleOrigins = false, bool $sharedLeaf = true): array {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $owner = $this->createMock(\OCP\IUser::class);
         $owner->method('getUID')->willReturn('alice');
@@ -379,8 +431,8 @@ final class VisibilityGuardTest extends TestCase {
         $canonicalSub = $this->ancestryNode(20, $secret, $owner);
         $canonicalFile = $this->ancestryNode(30, $canonicalSub, $owner);
         $recipient = $this->ancestryNode(90, $root, $owner);
-        $aliasSub = $this->ancestryNode(20, $recipient, $owner);
-        $alias = $this->ancestryNode(30, $aliasSub, $owner);
+        $aliasSub = $this->ancestryNode(20, $recipient, $owner, true);
+        $alias = $this->ancestryNode(30, $aliasSub, $owner, $sharedLeaf);
         $visibleOwnerAlias = $this->ancestryNode(30, $ownerFolder, $owner);
         $root->method('getUserFolder')->with('alice')->willReturn($ownerFolder);
         if ($failure) {
@@ -397,10 +449,15 @@ final class VisibilityGuardTest extends TestCase {
         return [new VisibilityGuard($this->config->mock($this), $this->tagMapper, $root), $alias, $aliasSub];
     }
 
-    private function ancestryNode(int $id, Node $parent, \OCP\IUser $owner): Folder {
+    private function ancestryNode(int $id, Node $parent, ?\OCP\IUser $owner, bool $shared = false): Folder {
         $node = $this->createMock(Folder::class);
         $node->method('getId')->willReturn($id);
         $node->method('getOwner')->willReturn($owner);
+        $storage = $this->createMock(\OCP\Files\Storage\IStorage::class);
+        $storage->method('instanceOfStorage')->willReturnCallback(
+            static fn (string $class): bool => $shared && $class === \OCP\Files\Storage\ISharedStorage::class
+        );
+        $node->method('getStorage')->willReturn($storage);
         $node->method('getParent')->willReturn($parent);
         return $node;
     }
