@@ -8,6 +8,34 @@ All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/a
 
 - files, notes: with any hidden system tag configured, every file and folder outside `/MCP backups` was reported as not found (since 0.8.0). The backup check of `VisibilityGuard` walked up the parents past the user folder to Nextcloud's root, whose `getParent()` throws by design, and the fail-closed handling read that as "hidden". The walk now stops at the root, so ordinary files are visible again, and a backup of a hidden original stays hidden. Thanks to @NightDragon1 (#5).
 
+### Security
+
+- visibility: after a report by @matt-ek (#4) that motivated the audit, the tag-based hiding was checked on every access path of this connector and the gaps were closed; each item below states the corrected behavior.
+- files: `files_undo_batch` refuses a batch whose undo would touch a hidden item — moving it back into view or removing a folder that became hidden — instead of executing it and publishing the paths.
+- talk: `talk_quote_file` refuses to quote an attachment whose shared node cannot be resolved and checked, instead of letting the quote through.
+- notes: creating or moving a note into a category whose path crosses a hidden folder is refused before any intermediate category folder is created.
+- resources: reading an `nc://files` URI of a hidden folder answers exactly like one that does not exist, without revealing that it exists or that it is a folder.
+- visibility: a hidden-tags configuration that cannot be validated — the tag manager failing while the list is saved, or a saved value that cannot be read or decoded — now keeps the protection and refuses access instead of silently turning it off; the admin page explains the state and offers the repair.
+- visibility: an item reached through a local share inherits the hiding of its owner's source folder chain; team folders, external storage and federated shares are checked along their mounted path.
+- visibility: a visibility decision is no longer reused after a move, creation or copy: the item is answered with its current state, not a cached one.
+- files, notes: a path segment named "0" is no longer discarded, so a file or folder with that name is resolved — and hidden — like any other.
+
+### Added
+
+- logs, admin: the new administration option "Hide the text of log messages" is on by default. While hidden tags are configured, the log tools hide the text of every message and exception, the user agent and any request method outside the known HTTP and WebDAV verbs, reduce each URL to its fixed route prefix and refuse the `contains` filter, which would match the hidden text. Turned off, the logs come back in full — the option exists because IT teams read exactly those details to diagnose problems.
+
+### Changed
+
+- logs: the app's own error log now records only the class and the code of an unexpected exception, never its message, on every installation: a message can carry the names and paths of the user's files in any form, so this privacy trade-off gives that detail up for good.
+- admin: saving an empty hidden-tags list — by the repair button or by unchecking the last tag — asks for confirmation before it turns the protection off.
+
+### Known limitations
+
+- The hiding protects this MCP connector; other connectors or AI tools that read the same Nextcloud are not covered by it.
+- A federated share is checked only against the tags of the local installation: the tags and the policy of the remote server cannot be read from here, so the remote side must keep what it may not expose from being shared.
+- The log option hides the text of messages; a bare name that another application writes into a structured field of a log entry is not treated.
+- The end-to-end verification of the hiding with real shares (local shares, team folders, external storage, federated) runs on a real Nextcloud test instance, beyond the unit suite.
+
 ## 1.0.5
 
 ### Added
