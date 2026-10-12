@@ -41,6 +41,69 @@ final class FilesUndoBatchTest extends FilesToolsTestCase {
         ])['batch_id'];
     }
 
+    /** @return iterable<string, array{int}> */
+    public static function undoSizes(): iterable {
+        foreach ([10, 50, 200] as $size) {
+            yield (string)$size => [$size];
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('undoSizes')]
+    public function testUndoVisibilityQueriesGrowLinearly(int $size): void {
+        $queries = 0;
+        $measuring = false;
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$queries, &$measuring, $size): array {
+            if ($measuring && ++$queries > 12 * $size) {
+                // Bound the old implementation's memory consumption: exceeding
+                // this budget already disproves the linear bound under test.
+                throw new \RuntimeException('Query budget exceeded');
+            }
+            return array_fill_keys($ids, []);
+        });
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $mapper, $this->visibilityRoot());
+        $this->setUp();
+        $moves = [];
+        for ($i = 0; $i < $size; $i++) {
+            $id = $this->tree->addFile('/alice/files/Arquivado/item' . $i, 'x');
+            $moves[] = ['from' => '/Documentos/item' . $i, 'to' => '/Arquivado/item' . $i, 'toId' => $id];
+        }
+        $id = $this->batches->insert(new Batch(null, 'alice', 1790000000, $moves, [], null));
+        $this->visibilityGuard->clearCache();
+        $measuring = true;
+        $out = null;
+        try {
+            $out = $this->json('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+        } catch (ToolFailure) {
+            // The old quadratic implementation can exhaust the bounded budget.
+        }
+        fwrite(STDERR, "undo N=$size tag queries=$queries (limit=" . (12 * $size) . ")\n");
+        $this->assertLessThanOrEqual(12 * $size, $queries);
+        $this->assertSame($size, $out['undone']);
+        $this->assertTrue($this->batches->find($id, 'alice')->isUndone());
+    }
+
+    public function testDirectoryPrivacyRefusalDoesNotLeaveCompletedMovesPending(): void {
+        $hidden = [];
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$hidden): array {
+            return array_combine($ids, array_map(static fn ($id): array => in_array((int)$id, $hidden, true) ? ['999'] : [], $ids));
+        });
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $mapper, $this->visibilityRoot());
+        $this->setUp();
+        $id = $this->runBatch(['/Arquivado/2026']);
+        $docId = $this->tree->nodes['/alice/files/Documentos']['id'];
+        $this->tree->afterDelete = static function () use (&$hidden, $docId): void { $hidden[] = $docId; };
+        $this->failure('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+        $this->assertSame([], $this->batches->find($id, 'alice')->moves, 'Every move already went back');
+        $hidden = [];
+        $this->visibilityGuard->clearCache();
+        $plan = $this->plan('files_undo_batch', ['batch_id' => $id]);
+        $this->assertSame([], $plan['conflicts'], 'A retry must not report absent destinations of completed moves');
+    }
+
     // ----------------------------------------------------------------- the tool
 
     public function testAnUndoIsDeclaredAsAMoveAndNotAsADelete(): void {

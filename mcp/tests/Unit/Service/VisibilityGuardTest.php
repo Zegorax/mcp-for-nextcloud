@@ -132,6 +132,28 @@ final class VisibilityGuardTest extends TestCase {
         $this->assertFalse($guard->isVisible($file));
     }
 
+    public function testMapperAssignmentsAndRemovalsInvalidateVisibility(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $id = $this->tree->addFile('/alice/files/file', 'x');
+        $listeners = [];
+        $events = $this->createMock(\OCP\EventDispatcher\IEventDispatcher::class);
+        $events->method('addListener')->willReturnCallback(static function (string $name, callable $listener) use (&$listeners): void {
+            $listeners[$name] = $listener;
+        });
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot(), null, null, $events);
+        $file = $this->tree->node('/alice/files/file');
+        $this->assertTrue($guard->isVisible($file));
+        $this->assertArrayHasKey(\OCP\SystemTag\MapperEvent::EVENT_ASSIGN, $listeners);
+        $this->assertArrayHasKey(\OCP\SystemTag\MapperEvent::EVENT_UNASSIGN, $listeners);
+        $this->assertSame($listeners[\OCP\SystemTag\MapperEvent::EVENT_ASSIGN], $listeners[\OCP\SystemTag\MapperEvent::EVENT_UNASSIGN]);
+        $this->tagAssignments[(string)$id] = ['42'];
+        $listeners[\OCP\SystemTag\MapperEvent::EVENT_ASSIGN](new \OCP\SystemTag\MapperEvent(\OCP\SystemTag\MapperEvent::EVENT_ASSIGN, 'files', (string)$id, [42]));
+        $this->assertFalse($guard->isVisible($file));
+        $this->tagAssignments[(string)$id] = [];
+        $listeners[\OCP\SystemTag\MapperEvent::EVENT_UNASSIGN](new \OCP\SystemTag\MapperEvent(\OCP\SystemTag\MapperEvent::EVENT_UNASSIGN, 'files', (string)$id, [42]));
+        $this->assertTrue($guard->isVisible($file));
+    }
+
     private function guard(): VisibilityGuard {
         return new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot());
     }
