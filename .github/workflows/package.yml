@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Sintax (Jhonatan Jaworski) <contato@sintax.tech>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Verification-only CI: builds the store package (rejected by scripts/check_package.php
+# on any problem) and checks the REUSE compliance of the repository.
+# It never publishes, releases or uploads anything.
+
+name: Package
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build and check the store package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, gd, zip, sqlite3
+          coverage: none
+      - name: Build the package (fails when check_package.php refuses it)
+        run: sh scripts/package.sh
+        working-directory: mcp
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Check the REUSE compliance
+        uses: fsfe/reuse-action@v5
