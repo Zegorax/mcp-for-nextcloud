@@ -69,6 +69,11 @@ final class FilesMessages {
         return Translator::t('This batch has already been undone.');
     }
 
+    /** @return string a batch whose undo would touch an item hidden from the MCP tools, without naming it */
+    public static function batchHasHiddenItem(): string {
+        return Translator::t('This batch can no longer be undone because one of its items is not available to the MCP tools. Nothing was undone.');
+    }
+
     /** @return string a node at the destination that is not the one the batch moved */
     public static function notTheBatchNode(): string {
         return Translator::t('The item is no longer what this batch moved; nothing was undone.');

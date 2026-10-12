@@ -464,6 +464,7 @@
     "There are already too many notes with this title." : "Já existem notas demais com este título.",
     "This app is unavailable for this user; the saved permission is kept." : "Este app não está disponível para este usuário; a permissão salva será mantida.",
     "This batch has already been undone." : "Este lote já foi desfeito.",
+    "This batch can no longer be undone because one of its items is not available to the MCP tools. Nothing was undone." : "Este lote não pode mais ser desfeito porque um dos seus itens não está disponível para as ferramentas MCP. Nada foi desfeito.",
     "This client returns to a program on your own computer. Only continue if you started this connection yourself." : "Este cliente retorna para um programa no seu próprio computador. Só continue se foi você quem iniciou esta conexão.",
     "This edit link has expired or has already been used. Please checkout again." : "Este link de edição expirou ou já foi usado. Faça o checkout de novo.",
     "This file has no text layer. Ask the administrator to install the Workflow OCR app, or view the page as an image with the image tools." : "Este arquivo não tem camada de texto. Peça ao administrador para instalar o app Workflow OCR, ou veja a página como imagem com as ferramentas de imagem.",

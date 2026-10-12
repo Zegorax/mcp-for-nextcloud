@@ -579,6 +579,7 @@ final class Reorganization {
         if ($batch->isUndone()) {
             throw new ToolFailure(FilesMessages::batchAlreadyUndone());
         }
+        $this->assertUndoVisible($root, $batch);
         $conflicts = $this->undoConflicts($root, $batch, $userId);
         [$removed, $kept] = $this->emptyDirs($root, $batch);
         return [
@@ -625,6 +626,8 @@ final class Reorganization {
         if ($batch->isUndone()) {
             throw new ToolFailure(FilesMessages::batchAlreadyUndone());
         }
+        // Before the conflicts: they carry paths and reasons, and none may be published for a hidden item.
+        $this->assertUndoVisible($root, $batch);
         $conflicts = $this->undoConflicts($root, $batch, $userId);
         if ($conflicts !== []) {
             return ['batch_id' => $batchId, 'undone' => 0, 'removed_dirs' => [], 'kept_dirs' => [], 'conflicts' => $conflicts];
@@ -678,6 +681,46 @@ final class Reorganization {
     }
 
     /**
+     * Refuses the whole undo when anything it would touch is hidden by a tag, directly or through a folder above it.
+     *
+     * What it touches: each item where the batch left it, the place it goes back to (the item already there, or the
+     * nearest folder that exists above it) and each folder the batch created. The tags may have been set after the
+     * batch ran, so the batch record proves nothing. The refusal names no path and no item.
+     *
+     * @param Folder $root the user's folder
+     * @param Batch $batch the batch to undo
+     * @throws ToolFailure when one of those nodes is hidden or cannot be checked
+     */
+    private function assertUndoVisible(Folder $root, Batch $batch): void {
+        if ($this->visibilityGuard === null) {
+            return;
+        }
+        $paths = $batch->dirs;
+        foreach ($batch->moves as $move) {
+            $paths[] = $move['to'];
+            $paths[] = $move['from'];
+        }
+        foreach ($paths as $path) {
+            try {
+                $segments = array_values(array_filter(explode('/', PathGuard::normalize($path, 'moves'))));
+                // The node itself when it exists, otherwise the nearest folder above it that does.
+                while ($segments !== [] && !$root->nodeExists(implode('/', $segments))) {
+                    array_pop($segments);
+                }
+                if ($segments === []) {
+                    continue;
+                }
+                $visible = $this->visibilityGuard->isVisible($root->get(implode('/', $segments)));
+            } catch (\Throwable) {
+                $visible = false;
+            }
+            if (!$visible) {
+                throw new ToolFailure(FilesMessages::batchHasHiddenItem());
+            }
+        }
+    }
+
+    /**
      * Checks every move of a batch before the undo touches anything, in reverse order.
      *
      * @param Folder $root the user's folder
@@ -720,8 +763,9 @@ final class Reorganization {
         try {
             $parent = $this->destination($root, $move['from']);
         } catch (ToolFailure $e) {
-            // The way back lands in a folder this batch created, so the undo puts the folder back first.
-            if (!$this->isRecordedAncestor($batch, $move['from'])) {
+            // The way back lands in a folder this batch created, so the undo puts the folder back first. Only a
+            // folder that is really missing counts: a refusal of one that exists (hidden, not writable) stands.
+            if (!$this->isRecordedAncestor($batch, $move['from']) || $this->parentExists($root, $move['from'])) {
                 throw $e;
             }
             return;
@@ -834,6 +878,16 @@ final class Reorganization {
             }
         }
         return $missing;
+    }
+
+    /**
+     * @param Folder $root the user's folder
+     * @param string $path user-relative path
+     * @return bool whether the folder that would hold the path exists
+     */
+    private function parentExists(Folder $root, string $path): bool {
+        $parent = trim(dirname(PathGuard::normalize($path, 'moves')), '/');
+        return $parent === '' || $root->nodeExists($parent);
     }
 
     /**

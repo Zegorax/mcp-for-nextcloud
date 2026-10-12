@@ -466,6 +466,7 @@ OC.L10N.register(
     "There are already too many notes with this title." : "Ya hay demasiadas notas con este título.",
     "This app is unavailable for this user; the saved permission is kept." : "Esta aplicación no está disponible para este usuario; se conserva el permiso guardado.",
     "This batch has already been undone." : "Este lote ya ha sido deshecho.",
+    "This batch can no longer be undone because one of its items is not available to the MCP tools. Nothing was undone." : "Este lote ya no se puede deshacer porque uno de sus elementos no está disponible para las herramientas MCP. No se deshizo nada.",
     "This client returns to a program on your own computer. Only continue if you started this connection yourself." : "Este cliente vuelve a un programa de su propio equipo. Continúe solo si usted mismo inició esta conexión.",
     "This edit link has expired or has already been used. Please checkout again." : "Este enlace de edición ha expirado o ya ha sido utilizado. Realice el checkout de nuevo.",
     "This file has no text layer. Ask the administrator to install the Workflow OCR app, or view the page as an image with the image tools." : "Este archivo no tiene capa de texto. Pida al administrador que instale la aplicación Workflow OCR, o vea la página como imagen con las herramientas de imagen.",

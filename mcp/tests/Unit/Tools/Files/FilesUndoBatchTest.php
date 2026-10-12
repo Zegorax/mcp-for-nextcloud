@@ -363,4 +363,122 @@ final class FilesUndoBatchTest extends FilesToolsTestCase {
         $this->assertArrayHasKey('/alice/files/2026/plano.md', $this->tree->nodes);
         $this->assertSame(['/2026'], $out['kept_dirs'], 'a pasta recriada tem o arquivo de volta dentro, então fica');
     }
+
+    // ------------------------------------------------------- hidden by tags
+
+    /** @var list<int> file ids that carry the hidden tag in {@see self::withHiddenTags()} */
+    private array $hiddenIds = [];
+
+    /** Rebuilds the module with a guard whose hidden tag sits on the ids of {@see self::$hiddenIds}. */
+    private function withHiddenTags(): void {
+        $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $tagMapper->method('getTagIdsForObjects')->willReturnCallback(fn (array $ids): array => array_combine(
+            $ids,
+            array_map(fn ($id): array => in_array((int)$id, $this->hiddenIds, true) ? ['999'] : [], $ids),
+        ));
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->setUp();
+    }
+
+    /** @return string the message of the ToolFailure the plan raised */
+    private function planFailure(array $arguments): string {
+        try {
+            $this->plan('files_undo_batch', $arguments);
+        } catch (ToolFailure $e) {
+            return $e->getMessage();
+        }
+        $this->fail('the plan of files_undo_batch did not fail');
+    }
+
+    /**
+     * The batch moved a file into a folder the admin tagged afterwards. The undo would carry it out of the
+     * protection, so the whole batch is refused, plan and run, without naming any path.
+     */
+    public function testAnUndoRefusesWhenAMovedItemIsNowInsideAHiddenFolder(): void {
+        $this->withHiddenTags();
+        $this->hiddenIds[] = $this->tree->addFolder('/alice/files/secret');
+        $fileId = $this->tree->addFile('/alice/files/secret/file', 'classified');
+        $id = $this->batches->insert(new Batch(null, 'alice', 1790000000,
+            [['from' => '/file', 'to' => '/secret/file', 'toId' => $fileId]], [], null));
+
+        $planned = $this->planFailure(['batch_id' => $id]);
+        $ran = $this->failure('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertSame([], $this->tree->ops, 'nada foi movido');
+        $this->assertArrayHasKey('/alice/files/secret/file', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/file', $this->tree->nodes);
+        $this->assertNull($this->batches->rows[$id]['undone_at'], 'o lote não é dado como desfeito');
+        foreach ([$planned, $ran] as $message) {
+            $this->assertSame(FilesMessages::batchHasHiddenItem(), $message);
+            $this->assertStringNotContainsString('secret', $message);
+            $this->assertStringNotContainsString('file', $message);
+        }
+    }
+
+    /** An empty folder the batch created and the admin tagged afterwards is never removed. */
+    public function testAnUndoNeverRemovesAHiddenEmptyFolder(): void {
+        $this->withHiddenTags();
+        $this->hiddenIds[] = $this->tree->addFolder('/alice/files/secret');
+        $id = $this->batches->insert(new Batch(null, 'alice', 1790000000, [], ['/secret'], null));
+
+        $planned = $this->planFailure(['batch_id' => $id]);
+        $ran = $this->failure('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertArrayHasKey('/alice/files/secret', $this->tree->nodes);
+        $this->assertSame([], $this->tree->ops, 'nenhuma pasta apagada');
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $planned);
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $ran);
+    }
+
+    /** The way back lands in a folder that is hidden now: moving the item there is refused as a whole. */
+    public function testAnUndoRefusesWhenTheWayBackIsInsideAHiddenFolder(): void {
+        $this->withHiddenTags();
+        $id = $this->runBatch();
+        $this->hiddenIds[] = $this->tree->node('/alice/files/Documentos')->getId();
+        // The tag comes in a later request, with a guard that has not seen the folder yet.
+        $this->visibilityGuard->clearCache();
+
+        $planned = $this->planFailure(['batch_id' => $id]);
+        $ran = $this->failure('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertArrayHasKey('/alice/files/Arquivado/ata.md', $this->tree->nodes);
+        $this->assertArrayHasKey('/alice/files/Arquivado/plano.md', $this->tree->nodes);
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $planned);
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $ran);
+    }
+
+    /**
+     * A folder the batch created is gone, but its parent is hidden: the refusal of the hidden parent is not read
+     * as "the batch created this, recreate it".
+     */
+    public function testAHiddenParentIsNotTakenForAFolderTheBatchRecreates(): void {
+        $this->withHiddenTags();
+        $this->hiddenIds[] = $this->tree->addFolder('/alice/files/Hidden');
+        $moved = $this->tree->addFile('/alice/files/Arquivado/plano.md', 'plano', 'text/markdown');
+        $id = $this->batches->insert(new Batch(null, 'alice', 1790000000,
+            [['from' => '/Hidden/New/plano.md', 'to' => '/Arquivado/plano.md', 'toId' => $moved]],
+            ['/Hidden/New'], null));
+
+        $ran = $this->failure('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertArrayNotHasKey('/alice/files/Hidden/New', $this->tree->nodes, 'a pasta não é recriada dentro da oculta');
+        $this->assertArrayHasKey('/alice/files/Arquivado/plano.md', $this->tree->nodes);
+        $this->assertSame(FilesMessages::batchHasHiddenItem(), $ran);
+    }
+
+    /** With hidden tags configured, an undo that touches nothing hidden runs as before. */
+    public function testAnUndoOfVisibleItemsStillRunsWithHiddenTagsConfigured(): void {
+        $this->withHiddenTags();
+        $this->hiddenIds[] = $this->tree->addFolder('/alice/files/secret');
+        $id = $this->runBatch(['/Arquivado/2026']);
+
+        $this->assertTrue($this->plan('files_undo_batch', ['batch_id' => $id])['ok']);
+        $out = $this->json('files_undo_batch', ['batch_id' => $id, 'confirm' => true]);
+
+        $this->assertSame(2, $out['undone']);
+        $this->assertSame(['/Arquivado/2026'], $out['removed_dirs']);
+        $this->assertArrayHasKey('/alice/files/Documentos/ata.md', $this->tree->nodes);
+        $this->assertArrayHasKey('/alice/files/secret', $this->tree->nodes);
+    }
 }
