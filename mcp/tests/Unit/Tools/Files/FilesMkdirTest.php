@@ -133,4 +133,37 @@ final class FilesMkdirTest extends FilesToolsTestCase {
         }
         $this->assertSame([], $this->tree->ops);
     }
+
+    /** "0" is a level like any other, in the folder made and in the report of what was made. */
+    public function testAFolderNamedZeroIsALevelLikeAnyOther(): void {
+        $this->tree->addFolder('/alice/files/Docs');
+
+        $out = $this->mkdir('/Docs/0/new');
+
+        $this->assertSame(['/Docs/0', '/Docs/0/new'], $out['created_paths']);
+        $this->assertSame(['mkdir /alice/files/Docs/0', 'mkdir /alice/files/Docs/0/new'], $this->tree->ops);
+        $this->assertArrayHasKey('/alice/files/Docs/0/new', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Docs/new', $this->tree->nodes);
+    }
+
+    public function testAFolderUnderAHiddenFolderNamedZeroIsRefused(): void {
+        $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->setUp();
+        $zeroId = $this->tree->addFolder('/alice/files/Docs/0');
+        $tagMapper->method('getTagIdsForObjects')->willReturnCallback(static fn (array $ids): array => array_combine(
+            $ids, array_map(static fn ($id): array => (int)$id === $zeroId ? ['999'] : [], $ids)));
+
+        try {
+            $this->plan('files_mkdir', ['path' => '/Docs/0/new']);
+            $this->fail('files_mkdir planned a folder under the hidden folder 0');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        $this->assertSame(CommonMessages::notFound(), $this->failure('files_mkdir', ['path' => '/Docs/0/new']));
+        $this->assertSame([], $this->tree->ops);
+        $this->assertArrayNotHasKey('/alice/files/Docs/0/new', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Docs/new', $this->tree->nodes);
+    }
 }

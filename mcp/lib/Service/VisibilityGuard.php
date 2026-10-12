@@ -228,7 +228,7 @@ class VisibilityGuard {
         }
 
         // Check existing ancestors
-        $segments = array_values(array_filter(explode('/', $relative)));
+        $segments = array_values(array_filter(explode('/', $relative), static fn (string $segment): bool => $segment !== ''));
         while ($segments !== []) {
             array_pop($segments);
             $walk = implode('/', $segments);

@@ -77,7 +77,7 @@ class NotesRepository {
         } catch (InvalidArgumentException) {
             throw new InvalidArgumentException('Invalid argument: category');
         }
-        foreach (array_filter(explode('/', $notes . '/' . $below)) as $segment) {
+        foreach (PathGuard::segments($notes . '/' . $below) as $segment) {
             if (!$folder->nodeExists($segment)) {
                 break;
             }
@@ -183,7 +183,7 @@ class NotesRepository {
         }
         $this->visibilityGuard->assertVisible($root);
         $folder = $root;
-        foreach (array_filter(explode('/', $relative)) as $segment) {
+        foreach (PathGuard::segments($relative) as $segment) {
             if (!$folder->nodeExists($segment)) {
                 return;
             }

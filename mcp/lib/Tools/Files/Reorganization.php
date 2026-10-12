@@ -180,7 +180,7 @@ final class Reorganization {
      * @return Folder the existing ancestor, the user's own root at worst
      */
     private function existingAncestor(Folder $root, string $path): Folder {
-        $segments = array_values(array_filter(explode('/', $path)));
+        $segments = PathGuard::segments($path);
         while ($segments !== []) {
             array_pop($segments);
             $walk = '/' . implode('/', $segments);
@@ -202,7 +202,7 @@ final class Reorganization {
     private function missingLevels(Folder $root, string $path): array {
         $missing = [];
         $walk = '';
-        foreach (array_filter(explode('/', $path)) as $segment) {
+        foreach (PathGuard::segments($path) as $segment) {
             $walk .= '/' . $segment;
             if (!$root->nodeExists(ltrim($walk, '/'))) {
                 $missing[] = $walk;
@@ -702,7 +702,7 @@ final class Reorganization {
         }
         foreach ($paths as $path) {
             try {
-                $segments = self::segments(PathGuard::normalize($path, 'moves'));
+                $segments = PathGuard::segments(PathGuard::normalize($path, 'moves'));
                 // The node itself when it exists, otherwise the nearest folder above it that does, the user's
                 // folder itself at the top.
                 while ($segments !== [] && !$root->nodeExists(implode('/', $segments))) {
@@ -862,7 +862,7 @@ final class Reorganization {
     private function missingRecordedParents(Folder $root, Batch $batch): array {
         $missing = [];
         foreach ($batch->moves as $move) {
-            $segments = self::segments(PathGuard::normalize($move['from'], 'moves'));
+            $segments = PathGuard::segments(PathGuard::normalize($move['from'], 'moves'));
             array_pop($segments);
             while ($segments !== []) {
                 $candidate = '/' . implode('/', $segments);
@@ -876,17 +876,6 @@ final class Reorganization {
             }
         }
         return $missing;
-    }
-
-    /**
-     * The names of a path, every one that is not empty: "0" is a name like any other, so this never uses
-     * array_filter() without a predicate.
-     *
-     * @param string $path a path, with or without its leading slash
-     * @return list<string> its segments
-     */
-    private static function segments(string $path): array {
-        return array_values(array_filter(explode('/', $path), static fn (string $segment): bool => $segment !== ''));
     }
 
     /**
@@ -905,7 +894,7 @@ final class Reorganization {
      * @return bool whether a folder the batch created is the parent of, or an ancestor above, that path
      */
     private function isRecordedAncestor(Batch $batch, string $from): bool {
-        $segments = self::segments(PathGuard::normalize($from));
+        $segments = PathGuard::segments(PathGuard::normalize($from));
         array_pop($segments);
         while ($segments !== []) {
             if (in_array('/' . implode('/', $segments), $batch->dirs, true)) {
@@ -932,7 +921,7 @@ final class Reorganization {
         $relative = ltrim(self::notBackup(PathGuard::normalize($path)), '/');
         $parent = $root;
         $walk = [];
-        foreach (self::segments($relative) as $segment) {
+        foreach (PathGuard::segments($relative) as $segment) {
             $walk[] = $segment;
             $below = implode('/', $walk);
             if (!$root->nodeExists($below)) {
@@ -979,7 +968,7 @@ final class Reorganization {
                 continue;
             }
             $walk = [];
-            foreach (self::segments($relative) as $segment) {
+            foreach (PathGuard::segments($relative) as $segment) {
                 $walk[] = $segment;
                 $below = implode('/', $walk);
                 if ($root->nodeExists($below)) {
@@ -1123,7 +1112,7 @@ final class Reorganization {
      * @throws ToolFailure when it does not exist or cannot take new entries
      */
     private function destination(Folder $root, string $path, array $mkdirs = []): Folder {
-        $segments = self::segments($path);
+        $segments = PathGuard::segments($path);
         array_pop($segments);
         $parentPath = '/' . implode('/', $segments);
         if ($parentPath !== '/' && !$root->nodeExists(ltrim($parentPath, '/'))) {

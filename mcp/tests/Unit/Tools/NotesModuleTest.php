@@ -594,4 +594,65 @@ final class NotesModuleTest extends TestCase {
         $result = $module->call($name, ArgumentValidator::validate($published['inputSchema'], $arguments), 'alice');
         return json_decode($result['content'][0]['text'], true, 512, JSON_THROW_ON_ERROR);
     }
+
+    // ------------------------------------------------------- a category named "0"
+
+    /** "0" is a name like any other: the note goes where the plan says, never one level up. */
+    public function testACategoryNamedZeroIsWrittenWhereThePlanSays(): void {
+        $module = $this->moduleHiding([]);
+
+        $plan = $module->preview('notes_create', ['title' => 'Roteiro', 'category' => '0/Nova'], 'alice');
+        $note = $this->callOn($module, 'notes_create', ['title' => 'Roteiro', 'category' => '0/Nova']);
+
+        $this->assertSame('0/Nova', $plan['note']['category']);
+        $this->assertSame('0/Nova', $note['category']);
+        $this->assertArrayHasKey('/alice/files/Notes/0/Nova/Roteiro.md', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Notes/Nova', $this->tree->nodes);
+    }
+
+    public function testACategoryUnderAHiddenFolderNamedZeroIsRefused(): void {
+        $zeroId = $this->tree->addFolder('/alice/files/Notes/0');
+        $module = $this->moduleHiding([$zeroId]);
+
+        try {
+            $module->preview('notes_create', ['title' => 'Roteiro', 'category' => '0/Nova'], 'alice');
+            $this->fail('notes_create planned a category under the hidden folder 0');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        try {
+            $this->callOn($module, 'notes_create', ['title' => 'Roteiro', 'category' => '0/Nova']);
+            $this->fail('notes_create wrote under the hidden folder 0');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        $this->assertArrayNotHasKey('/alice/files/Notes/0/Nova', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Notes/Nova', $this->tree->nodes);
+    }
+
+    public function testAMoveToCategoryZeroLandsInIt(): void {
+        $module = $this->moduleHiding([]);
+
+        $plan = $module->preview('notes_move', ['id' => $this->ata, 'category' => '0'], 'alice');
+        $note = $this->callOn($module, 'notes_move', ['id' => $this->ata, 'category' => '0']);
+
+        $this->assertSame('0', $plan['to']);
+        $this->assertTrue($plan['categoryCreated']);
+        $this->assertSame('0', $note['category']);
+        $this->assertArrayHasKey('/alice/files/Notes/0/Ata.md', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Notes/Ata.md', $this->tree->nodes);
+    }
+
+    public function testAMoveToAHiddenCategoryZeroIsRefused(): void {
+        $zeroId = $this->tree->addFolder('/alice/files/Notes/0');
+        $module = $this->moduleHiding([$zeroId]);
+
+        try {
+            $this->callOn($module, 'notes_move', ['id' => $this->ata, 'category' => '0']);
+            $this->fail('notes_move wrote into the hidden folder 0');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        $this->assertArrayHasKey('/alice/files/Notes/Reuniões/Ata.md', $this->tree->nodes);
+    }
 }

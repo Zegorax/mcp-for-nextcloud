@@ -435,4 +435,14 @@ final class VisibilityGuardTest extends TestCase {
         $this->assertFalse($guard->isConfigurationValid());
         $this->assertSame($raw, $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
     }
+
+    public function testAPathUnderAHiddenFolderNamedZeroIsNotAllowedForWrite(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = json_encode(['5']);
+        $guard = $this->guard();
+        $zero = $this->tree->addFolder('/alice/files/Docs/0');
+        $this->tagAssignments[(string)$zero] = ['5'];
+
+        $this->assertFalse($guard->isPathAllowedForWrite($this->tree->rootFolder(), 'Docs/0/new'));
+        $this->assertTrue($guard->isPathAllowedForWrite($this->tree->rootFolder(), 'Docs/1/new'));
+    }
 }

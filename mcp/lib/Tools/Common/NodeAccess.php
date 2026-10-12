@@ -106,7 +106,7 @@ final class NodeAccess {
         // for a path the caller was never allowed to reach.
         $guard?->assertVisible($root);
         $folder = $root;
-        foreach (array_filter(explode('/', PathGuard::normalize($relative))) as $segment) {
+        foreach (PathGuard::segments(PathGuard::normalize($relative)) as $segment) {
             if ($folder->nodeExists($segment)) {
                 $next = $folder->get($segment);
                 $guard?->assertVisible($next);

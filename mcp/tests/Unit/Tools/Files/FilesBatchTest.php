@@ -529,4 +529,15 @@ final class FilesBatchTest extends FilesToolsTestCase {
         }
         $this->assertNull($db->rows(\OCA\Mcp\Tools\Files\BatchStore::TABLE)[1]['undone_at'], 'o lote de bob segue intacto');
     }
+
+    /** A destination inside a folder named "0", created by the batch, is where the item lands. */
+    public function testABatchMovesIntoAFolderNamedZero(): void {
+        $args = ['moves' => [['from' => '/Documentos/plano.md', 'to' => '/Arquivado/0/plano.md']], 'mkdirs' => ['/Arquivado/0']];
+
+        $this->assertTrue($this->plan('files_move_batch', $args)['ok']);
+        $this->json('files_move_batch', $args + ['confirm' => true]);
+
+        $this->assertArrayHasKey('/alice/files/Arquivado/0/plano.md', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Arquivado/plano.md', $this->tree->nodes);
+    }
 }
