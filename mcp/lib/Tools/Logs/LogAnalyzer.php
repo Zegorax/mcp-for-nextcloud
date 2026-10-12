@@ -11,7 +11,8 @@ namespace OCA\Mcp\Tools\Logs;
  * The summary of logs_analyze over the entries of one window that passed the filters: totals by level, app and user,
  * the most frequent message signatures, the most requested URL paths and user agents, and a histogram by hour.
  *
- * Everything shown goes through {@see LogRedactor} first, so a summary carries no more than the entries would.
+ * Everything shown goes through {@see LogRedactor} first, so a summary carries no more than the entries would, file
+ * names and paths included when they are hidden.
  */
 final class LogAnalyzer {
     /** Signatures listed, the most frequent first. */
@@ -37,17 +38,22 @@ final class LogAnalyzer {
         '#^((?:/[^/]+)*?/s)/[^/]+(?:/.*)?$#',
     ];
 
-    public function __construct(private LogTime $time) {}
+    /**
+     * @param LogTime $time how the core writes the time of an entry
+     * @param bool $hideFileNames whether the names and paths of files in messages, examples and URLs are hidden
+     */
+    public function __construct(private LogTime $time, private bool $hideFileNames = false) {}
 
     /**
      * What varies between two occurrences of the same problem, folded into '#': quoted text, paths and URLs, UUIDs,
      * hashes and numbers.
      *
      * @param string $message the message of an entry
+     * @param bool $hideFileNames whether the names and paths of files are hidden before folding
      * @return string its signature, at most SIGNATURE_LIMIT characters
      */
-    public static function signature(string $message): string {
-        $text = LogRedactor::text($message, LogRedactor::MESSAGE_LIMIT);
+    public static function signature(string $message, bool $hideFileNames = false): string {
+        $text = LogRedactor::shown($message, LogRedactor::MESSAGE_LIMIT, $hideFileNames);
         $text = preg_replace(['/"[^"]*"/u', '/“[^”]*”/u', "/(?<!\\w)'[^']*'/u"], '#', $text) ?? '';
         $text = preg_replace('#\S*/\S*#u', '#', $text) ?? '';
         $text = preg_replace('/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', '#', $text) ?? '';
@@ -72,18 +78,18 @@ final class LogAnalyzer {
             $apps[$app] = ($apps[$app] ?? 0) + 1;
             $user = self::field($entry, 'user', 100);
             $users[$user] = ($users[$user] ?? 0) + 1;
-            $url = self::path(self::field($entry, 'url', 2000));
+            $url = self::path(is_scalar($entry->url ?? null) ? LogRedactor::shown((string)$entry->url, 2000, $this->hideFileNames) : '');
             $urls[$url] = ($urls[$url] ?? 0) + 1;
             $agent = self::field($entry, 'userAgent', 300);
             $agents[$agent] = ($agents[$agent] ?? 0) + 1;
 
             $time = is_string($entry->time ?? null) ? LogRedactor::text($entry->time, 64) : '';
             $message = is_string($entry->message ?? null) ? $entry->message : '';
-            $signature = self::signature($message);
+            $signature = self::signature($message, $this->hideFileNames);
             $key = $level . "\0" . $app . "\0" . $signature;
             // Newest first: the first occurrence read is the last one written, and each older one moves `first` back.
             $signatures[$key] ??= ['signature' => $signature, 'level' => $level, 'app' => $app, 'count' => 0, 'first' => $time, 'last' => $time,
-                'example' => LogRedactor::text($message, LogRedactor::MESSAGE_LIMIT)];
+                'example' => LogRedactor::shown($message, LogRedactor::MESSAGE_LIMIT, $this->hideFileNames)];
             $signatures[$key]['count']++;
             $signatures[$key]['first'] = $time;
 

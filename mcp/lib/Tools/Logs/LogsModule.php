@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\Mcp\Tools\Logs;
 
 use InvalidArgumentException;
+use OCA\Mcp\Service\LogFileNames;
 use OCA\Mcp\Service\LogsAccess;
 use OCA\Mcp\Tools\RestrictedModule;
 use OCA\Mcp\Tools\ToolGuideNotes;
@@ -23,7 +24,8 @@ use OCP\IConfig;
  *
  * The entries come from {@see LogReader} only, are redacted by {@see LogRedactor}, travel in the untrusted envelope of
  * {@see LogEnvelope}, and every call, refused ones included, is handed to audit() by the registry and recorded by
- * {@see LogAudit}.
+ * {@see LogAudit}. While {@see LogFileNames} is active, the names and paths of files are hidden in what is shown and
+ * in what `contains` matches.
  */
 class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
     /** Default and largest page of logs_list. */
@@ -39,6 +41,7 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
         private LogScanner $scanner,
         private LogAudit $audit,
         private IConfig $config,
+        private LogFileNames $fileNames,
     ) {}
 
     /** @param string $userId authenticated user @return bool whether the user passes the role gate and the log is a file */
@@ -62,7 +65,8 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
             if (is_int($value)) {
                 $filters[$key] = $value;
             } elseif (is_string($value)) {
-                $filters[$key] = LogRedactor::text($value, LogFilter::MAX_CONTAINS);
+                // What the reader searched for may be a file name: the audit log never carries one.
+                $filters[$key] = LogRedactor::fileNames(LogRedactor::text($value, LogFilter::MAX_CONTAINS));
             }
         }
         $this->audit->record($userId, LogRedactor::text($tool, 64), $outcome, $filters);
@@ -86,6 +90,8 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
             'Start with logs_analyze to see what dominates a period, then call logs_list with app, contains or req_id to read '
                 . 'the entries behind one signature. IP addresses are masked, stack traces keep ten frames without arguments '
                 . 'and every call is recorded in the audit log.',
+            'When source.fileNamesHidden is true, the administrator hides file names and paths from these tools: they '
+                . 'appear as ' . LogRedactor::HIDDEN . ', contains does not match them, and they cannot be recovered here.',
         ];
     }
 
@@ -129,7 +135,11 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
         if ($name !== 'logs_list' && $name !== 'logs_analyze') {
             throw new InvalidArgumentException('Unknown tool');
         }
+        $hide = $this->fileNames->active();
         $filter = LogFilter::fromArguments($arguments, $this->time());
+        if ($hide) {
+            $filter = $filter->hidingFileNames();
+        }
         $offset = (int)($arguments['offset'] ?? 0);
         $limit = $name === 'logs_list' ? (int)($arguments['limit'] ?? self::DEFAULT_LIMIT) : null;
         if ($limit !== null && ($limit < 1 || $limit > self::MAX_LIMIT)) {
@@ -156,13 +166,14 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
         ];
         if ($limit !== null) {
             $payload['count'] = count($window['entries']);
-            $payload['entries'] = array_map(LogRedactor::entry(...), $window['entries']);
+            $payload['entries'] = array_map(static fn (\stdClass $entry): array => LogRedactor::entry($entry, $hide), $window['entries']);
         } else {
-            $payload['summary'] = (new LogAnalyzer($this->time()))->analyze($window['entries']);
+            $payload['summary'] = (new LogAnalyzer($this->time(), $hide))->analyze($window['entries']);
         }
         return LogEnvelope::result($name, [
             'file' => LogEnvelope::SOURCE_FILE,
             'serverLogLevel' => $this->config->getSystemValueInt('loglevel', self::DEFAULT_LOG_LEVEL),
+            'fileNamesHidden' => $hide,
         ], $payload);
     }
 

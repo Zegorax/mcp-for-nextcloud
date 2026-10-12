@@ -42,7 +42,11 @@ final class LogsModuleTest extends TestCase {
     /** @var list<array{string, array<string, mixed>, string}> app log lines: message, context, level */
     private array $infos = [];
 
+    /** App config of the switch that hides file names; nothing stored means its default, on. */
+    private \OCA\Mcp\Tests\Unit\InMemoryAppConfig $appConfig;
+
     protected function setUp(): void {
+        $this->appConfig = new \OCA\Mcp\Tests\Unit\InMemoryAppConfig();
         $this->config = new InMemoryConfig();
         $this->config->system['logtimezone'] = 'America/Sao_Paulo';
         $this->config->system['loglevel'] = 2;
@@ -77,7 +81,9 @@ final class LogsModuleTest extends TestCase {
         $db = new \OCA\Mcp\Tests\Unit\SqliteDatabase($this, [new \OCA\Mcp\Migration\Version001002Date20261008000000()]);
         $mapper = new \OCA\Mcp\Db\LogsGroupsMapper($db->connection(), (new \OCA\Mcp\Tests\Unit\InMemoryAppConfig())->worker($this));
         $access = new LogsAccess($config, $groups, $mapper, new \OCA\Mcp\Tests\Unit\InMemoryLocks());
-        return new LogsModule($access, new LogScanner(new LogReader($factory)), new LogAudit($dispatcher, $logger), $config);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config, $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class));
+        $fileNames = new \OCA\Mcp\Service\LogFileNames($this->appConfig->worker($this), $guard);
+        return new LogsModule($access, new LogScanner(new LogReader($factory)), new LogAudit($dispatcher, $logger), $config, $fileNames);
     }
 
     /** @return array{0: string, 1: array<string, mixed>} the text and the structured content of a call */
@@ -276,5 +282,88 @@ final class LogsModuleTest extends TestCase {
         $failed = $this->registry($this->createMock(IWriter::class))->call('logs_analyze', [], 'root');
         $this->assertSame('This server does not write its log to a file, so there is nothing to read.', $failed['content'][0]['text']);
         $this->assertSame([], $this->events);
+    }
+
+    // ------------------------------------------------------------- hidden file names
+
+    /** @return list<string> a log with file names in the url, the message and an exception */
+    private static function namedLog(): array {
+        $entry = static fn (string $reqId, string $url, string $message, ?string $exception = null): string => json_encode([
+            'reqId' => $reqId, 'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'remoteAddr' => '203.0.113.17', 'user' => 'alice',
+            'app' => 'webdav', 'method' => 'GET', 'url' => $url, 'message' => $message, 'userAgent' => 'curl/8.0',
+        ] + ($exception === null ? [] : ['exception' => ['Exception' => 'OCP\\Files\\NotFoundException', 'Message' => $exception,
+            'Code' => 0, 'File' => '/var/www/nextcloud/lib/private/Files/View.php', 'Line' => 10, 'Trace' => []]]));
+        return [
+            $entry('r1', '/remote.php/dav/files/alice/secret/salary.txt', 'Cannot open /alice/files/secret/salary.txt'),
+            $entry('r2', '/index.php/apps/files/?dir=/secret', 'File "salary 2026.xlsx" is locked', 'File salary.txt not found'),
+        ];
+    }
+
+    /** Files are hidden by a tag: the hidden-tags setting holds one id. */
+    private function hideByTag(): void {
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["42"]';
+    }
+
+    public function testWithHiddenTagsTheLogToolsHideFileNamesByDefault(): void {
+        $this->hideByTag();
+        $this->log = new FakeFileLog(self::namedLog());
+
+        [$listText, $list] = $this->call('logs_list');
+        [$analyzeText, $analyze] = $this->call('logs_analyze');
+
+        foreach ([$listText, $analyzeText] as $text) {
+            $this->assertStringNotContainsString('salary', $text);
+            $this->assertStringNotContainsString('secret', $text);
+        }
+        $this->assertTrue($list['source']['fileNamesHidden']);
+        $this->assertSame('/remote.php/dav/files/alice/[hidden]', $list['entries'][1]['url']);
+        $this->assertSame('File [hidden] not found', $list['entries'][0]['exception']['message']);
+        $this->assertSame('/var/www/nextcloud/lib/private/Files/View.php:10', $list['entries'][0]['exception']['at'], 'código do servidor fica');
+        $this->assertTrue($analyze['source']['fileNamesHidden']);
+    }
+
+    /** A search for a hidden name finds nothing, instead of counting the entries that carry it. */
+    public function testContainsDoesNotFindAHiddenFileName(): void {
+        $this->hideByTag();
+        $this->log = new FakeFileLog(self::namedLog());
+
+        $this->assertSame(0, $this->call('logs_list', ['contains' => 'salary'])[1]['count']);
+        $this->assertSame(1, $this->call('logs_list', ['contains' => 'is locked'])[1]['count']);
+    }
+
+    public function testTurnedOffTheLogToolsShowFullFileNames(): void {
+        $this->hideByTag();
+        $this->appConfig->stored['mcp'][\OCA\Mcp\Service\LogFileNames::CONFIG_KEY] = '0';
+        $this->log = new FakeFileLog(self::namedLog());
+
+        [$text, $list] = $this->call('logs_list');
+
+        $this->assertFalse($list['source']['fileNamesHidden']);
+        $this->assertStringContainsString('secret/salary.txt', $text);
+        $this->assertSame(2, $this->call('logs_list', ['contains' => 'salary'])[1]['count']);
+    }
+
+    public function testWithoutHiddenTagsNothingChanges(): void {
+        $this->log = new FakeFileLog(self::namedLog());
+
+        [$text, $list] = $this->call('logs_list');
+
+        $this->assertFalse($list['source']['fileNamesHidden']);
+        $this->assertStringContainsString('/remote.php/dav/files/alice/secret/salary.txt', $text);
+    }
+
+    /** An unreadable hidden-tags setting hides everything in the guard, so the log tools hide names too. */
+    public function testAnInvalidHiddenTagsSettingHidesFileNames(): void {
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '{}';
+        $this->log = new FakeFileLog(self::namedLog());
+
+        $this->assertStringNotContainsString('salary', $this->call('logs_list')[0]);
+    }
+
+    /** The audit records what the reader searched for, but never a file name. */
+    public function testTheAuditNeverRecordsAFileName(): void {
+        $this->module()->audit('logs_list', 'root', RestrictedModule::SUCCESS, ['contains' => 'secret/salary.txt']);
+
+        $this->assertStringNotContainsString('salary', json_encode([$this->events, $this->infos]));
     }
 }

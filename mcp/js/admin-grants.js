@@ -741,6 +741,41 @@
 	}
 
 	/**
+	 * Server log section: the switch that hides file names and paths in the log tools, through GET and PUT
+	 * /apps/mcp/api/logs-privacy.
+	 */
+	async function initLogsPrivacy() {
+		const box = document.getElementById('mcp-logs-hide-file-names')
+		const status = document.getElementById('mcp-logs-hide-file-names-status')
+		if (!box) {
+			return
+		}
+		try {
+			box.checked = (await api('GET', '/api/logs-privacy')).hideFileNames
+		} catch (e) {
+			box.disabled = true
+			notifyError(t('mcp', 'Could not load the log privacy setting.'))
+			return
+		}
+		box.addEventListener('change', async () => {
+			const value = box.checked
+			box.disabled = true
+			try {
+				box.checked = (await api('PUT', '/api/logs-privacy', { hideFileNames: value })).hideFileNames
+				status.textContent = t('mcp', 'Saved')
+				flash(status, true)
+			} catch (e) {
+				box.checked = !value
+				status.textContent = t('mcp', 'Not saved')
+				flash(status, false)
+				notifyError(t('mcp', 'Could not change the log privacy setting.'))
+			} finally {
+				box.disabled = false
+			}
+		})
+	}
+
+	/**
 	 * Server log section: the groups whose members may read the log besides the administrators, through
 	 * GET and PUT /apps/mcp/api/logs-access. Saves run one at a time: every box is locked while one runs, and each
 	 * save carries the list it changed (`previous`), so the server answers 409 when another window or administrator
@@ -843,4 +878,5 @@
 	initOauthClients()
 	initCheckoutLimit()
 	initLogsAccess()
+	initLogsPrivacy()
 })()

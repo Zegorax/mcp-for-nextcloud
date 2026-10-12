@@ -175,6 +175,12 @@
             <span class="mcp-tags-loading"><?php p($l->t('Loading groups…')); ?></span>
         </div>
         <span class="mcp-status" id="mcp-logs-status" aria-live="polite"></span>
+        <p>
+            <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
+            <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide file names and paths in the logs')); ?></label>
+            <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
+        </p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Takes effect while hidden tags are configured: the log tools then replace every file name and path in messages, URLs and summaries with [hidden], since free text cannot tell which files are hidden. Turned off, the log tools show full file names and paths for diagnosis and do not respect the hiding by tags. Some IT teams use the names to track problems and prefer it off.')); ?></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">

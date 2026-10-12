@@ -42,7 +42,20 @@ final class LogFilter {
         private ?string $contains,
         private ?string $reqId,
         private array $described,
+        private bool $hideFileNames = false,
     ) {}
+
+    /**
+     * The same filter, with `contains` matched against the message as the tools show it when file names are hidden,
+     * so a search for a hidden name finds nothing instead of counting the entries that carry it.
+     *
+     * @return self a copy that hides file names
+     */
+    public function hidingFileNames(): self {
+        $copy = clone $this;
+        $copy->hideFileNames = true;
+        return $copy;
+    }
 
     /**
      * @param array<string, mixed> $arguments validated tool arguments
@@ -107,7 +120,8 @@ final class LogFilter {
             && ($this->app === null || ($entry->app ?? null) === $this->app)
             && ($this->user === null || ($entry->user ?? null) === $this->user)
             && ($this->reqId === null || ($entry->reqId ?? null) === $this->reqId)
-            && ($this->contains === null || (is_string($entry->message ?? null) && mb_stripos($entry->message, $this->contains) !== false));
+            && ($this->contains === null || (is_string($entry->message ?? null) && mb_stripos($this->hideFileNames
+                ? LogRedactor::shown($entry->message, PHP_INT_MAX, true) : $entry->message, $this->contains) !== false));
         return $passes ? self::MATCH : self::SKIP;
     }
 

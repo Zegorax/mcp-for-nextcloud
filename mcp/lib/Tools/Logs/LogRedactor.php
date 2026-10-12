@@ -17,6 +17,8 @@ namespace OCA\Mcp\Tools\Logs;
  *   message is written by users, and those are the characters that hide or disguise text.
  * - A text is cut at a limit; an exception keeps class, message, code, place and ten frames of class->function and
  *   file:line, never the arguments.
+ * - With file names hidden ({@see self::fileNames()}), the names and paths of files in messages and URLs become a
+ *   fixed marker. The place and the frames of an exception are the server's own PHP code and stay.
  */
 final class LogRedactor {
     /** Frames of a stack trace kept. */
@@ -55,6 +57,22 @@ final class LogRedactor {
      * overrides and isolates) and the zero-width characters, the Mongolian vowel separator and the BOM included.
      */
     private const INVISIBLE = '/[\x{00}-\x{08}\x{0B}\x{0C}\x{0E}-\x{1F}\x{7F}-\x{9F}\x{00AD}\x{061C}\x{180E}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{FEFF}]/u';
+    /** Shown in place of a file name or path. */
+    public const HIDDEN = '[hidden]';
+    /**
+     * Extensions that make a bare word a file name. A list, not "any dot": host names (apps.nextcloud.com), versions
+     * (31.0.9), masked addresses (203.0.x.x) and class names stay readable.
+     */
+    private const EXTENSIONS = 'txt|md|markdown|pdf|docx?|dotx?|docm|xlsx?|xlsm|xltx|pptx?|ppsx?|odt|ods|odp|odg|odf|ott|rtf|csv|tsv'
+        . '|json|xml|ya?ml|html?|css|js|ts|php|py|rb|java|c|h|cpp|cs|go|rs|sh|bat|ps1|sql|db|sqlite|mdb|accdb|log|ini|conf|cfg'
+        . '|jpe?g|png|gif|webp|heic|heif|bmp|tiff?|svg|ico|raw|cr2|nef|dng|psd|ai|eps|indd|xcf|dwg|dxf|skp|stl|obj|blend'
+        . '|mp3|m4a|wav|flac|ogg|oga|opus|aac|wma|mp4|m4v|mov|avi|mkv|webm|wmv|mpe?g|3gp'
+        . '|zip|rar|7z|tar|gz|tgz|bz2|xz|zst|iso|dmg|img|apk|exe|msi|deb|rpm|jar|bak|tmp|part|ocTransferId\d+'
+        . '|eml|msg|mbox|ics|vcf|pem|crt|cer|key|p12|pfx|kdbx|gpg|asc|epub|mobi|pages|numbers|keynote|one|vsdx?|mpp|xps';
+    /** Route prefixes of Nextcloud that are not files: an absolute path starting with one stays. */
+    private const ROUTES = 'index\.php|remote\.php|public\.php|ocs|ocs-provider|apps|core|settings|login|logout|status\.php'
+        . '|cron\.php|s|f|avatar|css|js|svg|dist|l10n|\.well-known';
+
     /** Line breaks, tabs and the Unicode line and paragraph separators: each becomes a space. */
     private const BREAKS = ["\r\n", "\r", "\n", "\t", "\u{2028}", "\u{2029}"];
 
@@ -119,6 +137,41 @@ final class LogRedactor {
         return mb_strlen($text) > $limit ? mb_substr($text, 0, $limit) . '…' : $text . ($processingCut ? '…' : '');
     }
 
+    /**
+     * Replaces the names and paths of files in a text by {@see self::HIDDEN}. It is a heuristic over free text,
+     * applied to whole classes of text rather than to the names of hidden files, which free text cannot identify:
+     * - a quoted text with a slash or a known extension, whole ("Orçamento final .xlsx");
+     * - what follows the account in a WebDAV path (/remote.php/dav/files/<uid>/…, /remote.php/webdav/…,
+     *   /public.php/dav/files/<token>/…);
+     * - the value of a query parameter that carries a path (dir, path, file, files, filename, name, source, target,
+     *   destination, also URL-encoded);
+     * - any other absolute path that is not a route of Nextcloud (/alice/files/…, /var/www/data/…, /Docs/x);
+     * - a relative path whose last part has a known extension (Docs/report.pdf), whole;
+     * - a bare word with a known extension (salary.txt).
+     * It does not catch a name without an extension or with one outside the list when it is neither quoted nor in a
+     * path, a name with spaces outside quotes (only the part next to the extension goes), nor a name split by the app
+     * that wrote the log into pieces of its own format.
+     *
+     * @param string $text a text already passed through {@see self::text()}
+     * @return string the text with the names and paths replaced
+     */
+    public static function fileNames(string $text): string {
+        $ext = '\.(?:' . self::EXTENSIONS . ')(?![\w-])';
+        $marker = self::HIDDEN;
+        // Characters that end a path or a name in free text.
+        $stop = '\s"\'<>?#';
+        $text = preg_replace(
+            ['/"[^"]*(?:\/|' . $ext . ')[^"]*"/iu', '/“[^”]*(?:\/|' . $ext . ')[^”]*”/iu', '/(?<!\w)\'[^\']*(?:\/|' . $ext . ')[^\']*\'/iu'],
+            ['"' . $marker . '"', '“' . $marker . '”', '\'' . $marker . '\''],
+            $text,
+        ) ?? '';
+        $text = preg_replace('~(/(?:remote|public)\.php/(?:webdav|dav/[\w-]+/[^/' . $stop . ']+))/[^' . $stop . ']+~iu', '$1/' . $marker, $text) ?? '';
+        $text = preg_replace('~([?&](?:dir|path|file|files|filename|name|source|target|destination)=)[^&' . $stop . ']*~iu', '$1' . $marker, $text) ?? '';
+        $text = preg_replace('~(?<![\w.:/%\]\[-])/(?!(?:' . self::ROUTES . ')(?:[/' . $stop . ']|$))(?!' . preg_quote($marker, '~') . ')[^' . $stop . ']+~iu', $marker, $text) ?? '';
+        $text = preg_replace('~(?<![\w.:/%\[-])[^/' . $stop . ']+(?:/[^/' . $stop . ']+)*/[^/' . $stop . ']*' . $ext . '~iu', $marker, $text) ?? '';
+        return preg_replace('~(?<![\w./\[-])[^/\\\\|:*' . $stop . ']+' . $ext . '~iu', $marker, $text) ?? '';
+    }
+
     /** Only our exact canonical /48 output is already redacted; all other CIDRs still need masking. */
     private static function maskedIpv6(string $candidate): ?string {
         $address = explode('/', $candidate, 2)[0];
@@ -144,29 +197,30 @@ final class LogRedactor {
      * @return array<string, mixed>|null class, message, code, place, the first frames and the previous exceptions; null
      *     when the value is not an exception
      */
-    public static function exception(mixed $exception): ?array {
-        return self::summary(is_object($exception) || is_array($exception) ? json_decode(json_encode($exception), true) : null, self::PREVIOUS_LEVELS);
+    public static function exception(mixed $exception, bool $hideFileNames = false): ?array {
+        return self::summary(is_object($exception) || is_array($exception) ? json_decode(json_encode($exception), true) : null, self::PREVIOUS_LEVELS, $hideFileNames);
     }
 
     /**
      * @param mixed $exception the exception as an array
      * @param int $levels previous exceptions still allowed below this one
+     * @param bool $hideFileNames whether the names and paths of files in the message are hidden
      * @return array<string, mixed>|null the summary
      */
-    private static function summary(mixed $exception, int $levels): ?array {
+    private static function summary(mixed $exception, int $levels, bool $hideFileNames): ?array {
         if (!is_array($exception) || !is_string($exception['Exception'] ?? null) || $exception['Exception'] === '') {
             return null;
         }
         $trace = is_array($exception['Trace'] ?? null) ? array_values(array_filter($exception['Trace'], 'is_array')) : [];
         $summary = [
             'class' => self::text($exception['Exception'], 200),
-            'message' => self::text(is_scalar($exception['Message'] ?? null) ? (string)$exception['Message'] : '', self::MESSAGE_LIMIT),
+            'message' => self::shown(is_scalar($exception['Message'] ?? null) ? (string)$exception['Message'] : '', self::MESSAGE_LIMIT, $hideFileNames),
             'code' => is_int($exception['Code'] ?? null) ? $exception['Code'] : 0,
             'at' => self::place($exception['File'] ?? null, $exception['Line'] ?? null),
             'trace' => array_map(self::frame(...), array_slice($trace, 0, self::TRACE_FRAMES)),
             'traceFrames' => count($trace),
         ];
-        $previous = $levels > 0 ? self::summary($exception['Previous'] ?? null, $levels - 1) : null;
+        $previous = $levels > 0 ? self::summary($exception['Previous'] ?? null, $levels - 1, $hideFileNames) : null;
         if ($previous !== null) {
             $summary['previous'] = $previous;
         }
@@ -187,10 +241,11 @@ final class LogRedactor {
      * The fields of an entry the logs tools show, redacted: the extra `data` of the core and the version stay behind.
      *
      * @param \stdClass $entry one well-formed entry of the log
+     * @param bool $hideFileNames whether the names and paths of files in url and messages are hidden
      * @return array<string, mixed> time, level by name, app, user, method, url, message, reqId, userAgent, masked
      *     remoteAddr and, when the entry has one, the exception summary
      */
-    public static function entry(\stdClass $entry): array {
+    public static function entry(\stdClass $entry, bool $hideFileNames = false): array {
         $field = static fn (string $name, int $limit, bool $userAgent = false): string => is_scalar($entry->{$name} ?? null) ? self::text((string)$entry->{$name}, $limit, $userAgent) : '';
         $row = [
             'time' => $field('time', 64),
@@ -198,17 +253,32 @@ final class LogRedactor {
             'app' => $field('app', 100),
             'user' => $field('user', 100),
             'method' => $field('method', 16),
-            'url' => $field('url', self::MESSAGE_LIMIT),
-            'message' => $field('message', self::MESSAGE_LIMIT),
+            'url' => is_scalar($entry->url ?? null) ? self::shown((string)$entry->url, self::MESSAGE_LIMIT, $hideFileNames) : '',
+            'message' => is_scalar($entry->message ?? null) ? self::shown((string)$entry->message, self::MESSAGE_LIMIT, $hideFileNames) : '',
             'reqId' => $field('reqId', 64),
             'userAgent' => $field('userAgent', 300, true),
             'remoteAddr' => is_string($entry->remoteAddr ?? null) ? self::ip($entry->remoteAddr) : '',
         ];
-        $exception = self::exception($entry->exception ?? null);
+        $exception = self::exception($entry->exception ?? null, $hideFileNames);
         if ($exception !== null) {
             $row['exception'] = $exception;
         }
         return $row;
+    }
+
+    /**
+     * @param string $text a message or a URL
+     * @param int $limit longest result in characters
+     * @param bool $hideFileNames whether the names and paths of files are hidden
+     * @return string the text as the tools show it
+     */
+    public static function shown(string $text, int $limit, bool $hideFileNames): string {
+        // Whole text first, cut after: a cut never leaves half a name the patterns no longer recognize.
+        $text = self::text($text, PHP_INT_MAX);
+        if ($hideFileNames) {
+            $text = self::fileNames($text);
+        }
+        return mb_strlen($text) > $limit ? mb_substr($text, 0, $limit) . '…' : $text;
     }
 
     /** @return string file:line, or '' without a file */

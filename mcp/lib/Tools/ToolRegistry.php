@@ -183,15 +183,16 @@ class ToolRegistry {
     }
 
     /**
-     * The message of an unexpected exception for the server log only: no arguments, no trace, file-system paths
-     * replaced and the text cut, so the log explains the failure without carrying user data. The client never
-     * sees it.
+     * The message of an unexpected exception for the server log only: no arguments, no trace, file-system paths and
+     * file names replaced and the text cut, so the log explains the failure without carrying user data. The client
+     * never sees it.
      *
      * @param \Throwable $e the unexpected exception
      * @return string at most {@see self::LOG_MESSAGE_LIMIT} characters
      */
     public static function loggable(\Throwable $e): string {
         $message = preg_replace('#(?:/[\w.@~+-]+){2,}/?#u', '[path]', $e->getMessage()) ?? '';
+        $message = \OCA\Mcp\Tools\Logs\LogRedactor::fileNames($message);
         return mb_substr($message, 0, self::LOG_MESSAGE_LIMIT);
     }
 

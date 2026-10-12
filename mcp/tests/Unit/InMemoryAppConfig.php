@@ -36,6 +36,17 @@ final class InMemoryAppConfig {
             }
             return true;
         });
+        $config->method('getValueBool')->willReturnCallback(function (string $app, string $key, bool $default = false) use (&$cache): bool {
+            $cache ??= $this->stored;
+            return isset($cache[$app][$key]) ? $cache[$app][$key] === '1' : $default;
+        });
+        $config->method('setValueBool')->willReturnCallback(function (string $app, string $key, bool $value) use (&$cache): bool {
+            $this->stored[$app][$key] = $value ? '1' : '0';
+            if ($cache !== null) {
+                $cache[$app][$key] = $value ? '1' : '0';
+            }
+            return true;
+        });
         $config->method('deleteKey')->willReturnCallback(function (string $app, string $key) use (&$cache): void {
             unset($this->stored[$app][$key]);
             if ($cache !== null) {

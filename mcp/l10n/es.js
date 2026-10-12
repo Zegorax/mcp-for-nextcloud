@@ -925,6 +925,10 @@ OC.L10N.register(
     "No groups found; only administrators can read the log." : "No se encontraron grupos; solo los administradores pueden leer el registro.",
     "Could not save the groups that may read the server log." : "No se pudieron guardar los grupos que pueden leer el registro del servidor.",
     "Could not load the groups." : "No se pudieron cargar los grupos.",
+    "Hide file names and paths in the logs" : "Ocultar nombres y rutas de archivos en los registros",
+    "Takes effect while hidden tags are configured: the log tools then replace every file name and path in messages, URLs and summaries with [hidden], since free text cannot tell which files are hidden. Turned off, the log tools show full file names and paths for diagnosis and do not respect the hiding by tags. Some IT teams use the names to track problems and prefer it off." : "Se aplica mientras haya etiquetas ocultas configuradas: las herramientas de registro reemplazan entonces todo nombre y ruta de archivo en los mensajes, URL y resúmenes por [hidden], porque el texto libre no permite saber qué archivos están ocultos. Desactivada, las herramientas de registro muestran nombres y rutas completos para el diagnóstico y no respetan la ocultación por etiquetas. Algunos equipos de TI usan los nombres para localizar problemas y prefieren desactivarla.",
+    "Could not load the log privacy setting." : "No se pudo cargar la configuración de privacidad del registro.",
+    "Could not change the log privacy setting." : "No se pudo cambiar la configuración de privacidad del registro.",
     "{group} (group removed)" : "{group} (grupo eliminado)",
     "The groups were changed in another window or by another administrator; the current list was loaded." : "Los grupos se cambiaron en otra ventana o por otro administrador; se cargó la lista actual."
 },
