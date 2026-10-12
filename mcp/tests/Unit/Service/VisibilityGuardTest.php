@@ -239,4 +239,44 @@ final class VisibilityGuardTest extends TestCase {
         $guard->setHiddenTagIds(['10', '99']);
         $this->assertSame(['10'], $guard->getHiddenTagIds());
     }
+
+    /**
+     * Regression (#5): walking up past the user folder reaches Nextcloud's Root, whose
+     * getParent() throws by design; that must not be read as a lookup failure.
+     */
+    public function testOrdinaryFileStaysVisibleWhenWalkReachesFilesystemRoot(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = json_encode(['7']);
+        $guard = $this->guard();
+
+        $this->tree->addFile('/alice/files/docs/report.txt', 'report');
+        $file = $this->tree->node('/alice/files/docs/report.txt');
+
+        $this->assertTrue($guard->isVisible($file));
+        $guard->assertVisible($file);
+        $this->assertSame([$file], $guard->filter([$file]));
+    }
+
+    public function testBackupOfHiddenOriginalStaysHiddenWithFilesystemRoot(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = json_encode(['7']);
+        $guard = $this->guard();
+
+        $origId = $this->tree->addFile('/alice/files/docs/secret.txt', 'secret');
+        $this->tagAssignments[(string)$origId] = ['7'];
+        $backupPath = '/alice/files/' . FileBackup::FOLDER . '/docs/secret.txt.20261001-120000.bak';
+        $this->tree->addFile($backupPath, 'secret');
+
+        $this->assertFalse($guard->isVisible($this->tree->node($backupPath)));
+    }
+
+    public function testBackupOfVisibleOriginalIsVisibleWithFilesystemRoot(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = json_encode(['7']);
+        $guard = $this->guard();
+
+        $this->tree->addFile('/alice/files/docs/report.txt', 'report');
+        $backupPath = '/alice/files/' . FileBackup::FOLDER . '/docs/report.txt.20261001-120000.bak';
+        $this->tree->addFile($backupPath, 'report');
+
+        $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/docs/report.txt')));
+        $this->assertTrue($guard->isVisible($this->tree->node($backupPath)));
+    }
 }
