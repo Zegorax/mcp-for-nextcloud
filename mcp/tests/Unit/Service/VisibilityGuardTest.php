@@ -65,7 +65,7 @@ final class VisibilityGuardTest extends TestCase {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $mapper = $this->createMock(ISystemTagObjectMapper::class);
         $calls = 0;
-        $mapper->expects($this->exactly(3))->method('getTagIdsForObjects')->willReturnCallback(
+        $mapper->expects($this->exactly(2))->method('getTagIdsForObjects')->willReturnCallback(
             function () use (&$calls): array {
                 if (++$calls === 1) {
                     throw new \RuntimeException('secret.txt');
@@ -87,6 +87,7 @@ final class VisibilityGuardTest extends TestCase {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $node = $this->createMock(Node::class);
         $node->method('getId')->willReturn(123);
+        $node->method('getStorage')->willReturn($this->storage(false));
         $node->expects($this->exactly(2))->method('getParent')->willThrowException(new \RuntimeException());
         $mapper = $this->createMock(ISystemTagObjectMapper::class);
         $mapper->expects($this->never())->method('getTagIdsForObjects');
@@ -343,7 +344,7 @@ final class VisibilityGuardTest extends TestCase {
 
     public function testMissingRootResolverRefusesAccess(): void {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
-        $this->tree->addFile('/alice/files/report.txt', 'report');
+        $this->tree->addFile('/alice/files/report.txt', 'report', 'text/plain', ['scope' => 'shared']);
         $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper);
         $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/report.txt')));
     }
@@ -352,6 +353,7 @@ final class VisibilityGuardTest extends TestCase {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $node = $this->createMock(Node::class);
         $node->method('getId')->willReturn(30);
+        $node->method('getStorage')->willReturn($this->storage(true));
         $node->method('getOwner')->willReturn(null);
         $this->assertFalse($this->guard()->isVisible($node));
     }
@@ -362,6 +364,7 @@ final class VisibilityGuardTest extends TestCase {
         $owner->method('getUID')->willReturn('alice');
         $node = $this->createMock(Node::class);
         $node->method('getId')->willReturn(30);
+        $node->method('getStorage')->willReturn($this->storage(true));
         $node->method('getOwner')->willReturn($owner);
         $this->assertFalse($this->guard()->isVisible($node));
     }
@@ -412,9 +415,11 @@ final class VisibilityGuardTest extends TestCase {
         $root = $this->createMock(\OCP\Files\IRootFolder::class);
         $root->method('getId')->willReturn(-1);
         $root->expects($this->never())->method('getParent');
-        $root->method('getUserFolder')->willThrowException(new \RuntimeException('No local user folder'));
+        $root->expects($this->never())->method('getUserFolder');
         $folder = $this->ancestryNode(20, $root, $owner);
+        $folder->expects($this->never())->method('getOwner');
         $node = $this->ancestryNode(30, $folder, $owner);
+        $node->expects($this->never())->method('getOwner');
         return [new VisibilityGuard($this->config->mock($this), $this->tagMapper, $root), $node];
     }
 
@@ -453,13 +458,17 @@ final class VisibilityGuardTest extends TestCase {
         $node = $this->createMock(Folder::class);
         $node->method('getId')->willReturn($id);
         $node->method('getOwner')->willReturn($owner);
+        $node->method('getStorage')->willReturn($this->storage($shared));
+        $node->method('getParent')->willReturn($parent);
+        return $node;
+    }
+
+    private function storage(bool $shared): \OCP\Files\Storage\IStorage {
         $storage = $this->createMock(\OCP\Files\Storage\IStorage::class);
         $storage->method('instanceOfStorage')->willReturnCallback(
             static fn (string $class): bool => $shared && $class === \OCP\Files\Storage\ISharedStorage::class
         );
-        $node->method('getStorage')->willReturn($storage);
-        $node->method('getParent')->willReturn($parent);
-        return $node;
+        return $storage;
     }
 
 }

@@ -14,6 +14,7 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\Node;
+use OCP\Files\Storage\ISharedStorage;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 use OCP\SystemTag\ISystemTag;
@@ -61,9 +62,9 @@ class VisibilityGuard {
             return true;
         }
 
-        // A shared/jail path can omit physical ancestors. Resolve the same id in
-        // the owner's tree before consulting decisions made on mounted paths.
-        if (!$this->isVisibleInOwnerTree($node, $hiddenTags)) {
+        // Only local share mounts need the owner's tree: ordinary mounts may
+        // have no local owner. Detect shares before using the mounted-path cache.
+        if (!$this->isVisibleThroughLocalShare($node, $hiddenTags)) {
             return false;
         }
 
@@ -156,6 +157,42 @@ class VisibilityGuard {
             $this->cache[$nodeId] = true;
         }
         return true;
+    }
+
+    /**
+     * Wrappers report local shares via the public ISharedStorage interface.
+     * Also inspect ancestors: a child can be on another storage under a share
+     * mount. Core federated storages implement only the legacy OCA interface;
+     * their locally configured tags are checked through the mounted chain.
+     *
+     * @param list<string> $hiddenTags
+     */
+    private function isVisibleThroughLocalShare(Node $node, array $hiddenTags): bool {
+        try {
+            $current = $node;
+            $seen = [];
+            while (!$current instanceof IRootFolder) {
+                $id = (int)$current->getId();
+                if ($id <= 0 || isset($seen[$id])) {
+                    break;
+                }
+                $seen[$id] = true;
+                if ($current->getStorage()->instanceOfStorage(ISharedStorage::class)) {
+                    // The first shared node's canonical ancestry covers the
+                    // omitted parents. Content access stays on the caller's node.
+                    return $this->isVisibleInOwnerTree($current, $hiddenTags);
+                }
+                $parent = $current->getParent();
+                if (!$parent instanceof Node || (int)$parent->getId() === $id) {
+                    break;
+                }
+                $current = $parent;
+            }
+            return true;
+        } catch (\Throwable) {
+            $this->warnVisibilityFailure();
+            return false;
+        }
     }
 
     /**
