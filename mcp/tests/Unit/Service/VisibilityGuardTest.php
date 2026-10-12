@@ -279,4 +279,78 @@ final class VisibilityGuardTest extends TestCase {
         $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/docs/report.txt')));
         $this->assertTrue($guard->isVisible($this->tree->node($backupPath)));
     }
+
+    /** Same file id, physical chain 30→20→10, recipient chain 30→20→90. */
+    public function testSharedFileKeepsHiddenOwnerAncestor(): void {
+        [$guard, $alias] = $this->sharedFixture();
+        $this->tagAssignments['10'] = ['42'];
+        $this->assertFalse($guard->isVisible($alias));
+        $this->expectException(ToolFailure::class);
+        $this->expectExceptionMessage(CommonMessages::notFound());
+        $guard->assertVisible($alias);
+    }
+
+    /** A subfolder mount exposes 20 and its child 30, but omits hidden grandparent 10. */
+    public function testSharedSubfolderChildKeepsHiddenOwnerGrandparent(): void {
+        [$guard, $alias, $subfolder] = $this->sharedFixture();
+        $this->tagAssignments['10'] = ['42'];
+        $this->assertFalse($guard->isVisible($subfolder));
+        $this->assertFalse($guard->isVisible($alias));
+    }
+
+    public function testSharedVisibleFileRemainsVisibleAndOwnerLookupIsCached(): void {
+        [$guard, $alias] = $this->sharedFixture();
+        $this->assertTrue($guard->isVisible($alias));
+        $this->assertTrue($guard->isVisible($alias));
+    }
+
+    public function testSharedFileOwnerResolutionFailureIsHiddenWithoutDetails(): void {
+        [$guard, $alias] = $this->sharedFixture(true);
+        $this->assertFalse($guard->isVisible($alias));
+        try {
+            $guard->assertVisible($alias);
+            $this->fail('Owner resolution must refuse access');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+    }
+
+    /** @return array{VisibilityGuard, Node, Node} */
+    private function sharedFixture(bool $failure = false): array {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getId')->willReturn(-1);
+        $root->expects($this->never())->method('getParent');
+        $ownerFolder = $this->ancestryNode(1, $root, $owner);
+        $secret = $this->ancestryNode(10, $ownerFolder, $owner);
+        $canonicalSub = $this->ancestryNode(20, $secret, $owner);
+        $canonicalFile = $this->ancestryNode(30, $canonicalSub, $owner);
+        $recipient = $this->ancestryNode(90, $root, $owner);
+        $aliasSub = $this->ancestryNode(20, $recipient, $owner);
+        $alias = $this->ancestryNode(30, $aliasSub, $owner);
+        $root->method('getUserFolder')->with('alice')->willReturn($ownerFolder);
+        if ($failure) {
+            $ownerFolder->method('getById')->willThrowException(new \RuntimeException('/secret/sub/file'));
+        } else {
+            $ownerFolder->expects($this->atMost(2))->method('getById')->willReturnCallback(
+                static fn (int $id): array => match ($id) {
+                    30 => [$canonicalFile],
+                    20 => [$canonicalSub],
+                    default => [],
+                }
+            );
+        }
+        return [new VisibilityGuard($this->config->mock($this), $this->tagMapper, $root), $alias, $aliasSub];
+    }
+
+    private function ancestryNode(int $id, Node $parent, \OCP\IUser $owner): Folder {
+        $node = $this->createMock(Folder::class);
+        $node->method('getId')->willReturn($id);
+        $node->method('getOwner')->willReturn($owner);
+        $node->method('getParent')->willReturn($parent);
+        return $node;
+    }
+
 }
