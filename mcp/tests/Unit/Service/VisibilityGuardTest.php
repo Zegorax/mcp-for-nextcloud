@@ -45,7 +45,7 @@ final class VisibilityGuardTest extends TestCase {
     }
 
     private function guard(): VisibilityGuard {
-        return new VisibilityGuard($this->config->mock($this), $this->tagMapper);
+        return new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot());
     }
 
     public function testZeroCostWhenNoTagsConfigured(): void {
@@ -65,7 +65,7 @@ final class VisibilityGuardTest extends TestCase {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $mapper = $this->createMock(ISystemTagObjectMapper::class);
         $calls = 0;
-        $mapper->expects($this->exactly(2))->method('getTagIdsForObjects')->willReturnCallback(
+        $mapper->expects($this->exactly(3))->method('getTagIdsForObjects')->willReturnCallback(
             function () use (&$calls): array {
                 if (++$calls === 1) {
                     throw new \RuntimeException('secret.txt');
@@ -77,10 +77,8 @@ final class VisibilityGuardTest extends TestCase {
         $logger->expects($this->once())->method('warning')->with(
             'MCP visibility check failed; access refused', ['app' => 'mcp']
         );
-        $node = $this->createMock(Node::class);
-        $node->method('getId')->willReturn(123);
-        $node->method('getParent')->willReturn($node);
-        $guard = new VisibilityGuard($this->config->mock($this), $mapper, null, null, $logger);
+        $node = $this->tree->rootFolder();
+        $guard = new VisibilityGuard($this->config->mock($this), $mapper, $this->tree->filesystemRoot(), null, $logger);
         $this->assertFalse($guard->isVisible($node));
         $this->assertTrue($guard->isVisible($node));
     }
@@ -92,7 +90,15 @@ final class VisibilityGuardTest extends TestCase {
         $node->expects($this->exactly(2))->method('getParent')->willThrowException(new \RuntimeException());
         $mapper = $this->createMock(ISystemTagObjectMapper::class);
         $mapper->expects($this->never())->method('getTagIdsForObjects');
-        $guard = new VisibilityGuard($this->config->mock($this), $mapper);
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $node->method('getOwner')->willReturn($owner);
+        $folder = $this->createMock(Folder::class);
+        $folder->method('getId')->willReturn(1);
+        $folder->method('getById')->willReturn([$node]);
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getUserFolder')->willReturn($folder);
+        $guard = new VisibilityGuard($this->config->mock($this), $mapper, $root);
         $this->assertFalse($guard->isVisible($node));
         $this->assertFalse($guard->isVisible($node));
     }
@@ -292,10 +298,10 @@ final class VisibilityGuardTest extends TestCase {
 
     /** A subfolder mount exposes 20 and its child 30, but omits hidden grandparent 10. */
     public function testSharedSubfolderChildKeepsHiddenOwnerGrandparent(): void {
-        [$guard, $alias, $subfolder] = $this->sharedFixture();
+        [$guard, $alias, $subfolder] = $this->sharedFixture(false, 2);
         $this->tagAssignments['10'] = ['42'];
-        $this->assertFalse($guard->isVisible($subfolder));
         $this->assertFalse($guard->isVisible($alias));
+        $this->assertFalse($guard->isVisible($subfolder));
     }
 
     public function testSharedVisibleFileRemainsVisibleAndOwnerLookupIsCached(): void {
@@ -315,8 +321,53 @@ final class VisibilityGuardTest extends TestCase {
         }
     }
 
+    public function testSharedFileChecksAllOwnerAliases(): void {
+        [$guard, $alias] = $this->sharedFixture(false, 1, true);
+        $this->tagAssignments['10'] = ['42'];
+        $this->assertFalse($guard->isVisible($alias));
+    }
+
+    public function testSharedFileStillChecksMountedAncestors(): void {
+        [$guard, $alias] = $this->sharedFixture();
+        $this->tagAssignments['90'] = ['42'];
+        $this->assertFalse($guard->isVisible($alias));
+    }
+
+    public function testSharedFileDirectAndImmediateParentTagsStillHideIt(): void {
+        foreach (['30', '20'] as $id) {
+            [$guard, $alias] = $this->sharedFixture();
+            $this->tagAssignments = [$id => ['42']];
+            $this->assertFalse($guard->isVisible($alias));
+        }
+    }
+
+    public function testMissingRootResolverRefusesAccess(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $this->tree->addFile('/alice/files/report.txt', 'report');
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper);
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/report.txt')));
+    }
+
+    public function testMissingOwnerRefusesAccess(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $node = $this->createMock(Node::class);
+        $node->method('getId')->willReturn(30);
+        $node->method('getOwner')->willReturn(null);
+        $this->assertFalse($this->guard()->isVisible($node));
+    }
+
+    public function testMissingOwnerNodeRefusesAccess(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $node = $this->createMock(Node::class);
+        $node->method('getId')->willReturn(30);
+        $node->method('getOwner')->willReturn($owner);
+        $this->assertFalse($this->guard()->isVisible($node));
+    }
+
     /** @return array{VisibilityGuard, Node, Node} */
-    private function sharedFixture(bool $failure = false): array {
+    private function sharedFixture(bool $failure = false, int $lookups = 1, bool $multipleOrigins = false): array {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $owner = $this->createMock(\OCP\IUser::class);
         $owner->method('getUID')->willReturn('alice');
@@ -330,13 +381,14 @@ final class VisibilityGuardTest extends TestCase {
         $recipient = $this->ancestryNode(90, $root, $owner);
         $aliasSub = $this->ancestryNode(20, $recipient, $owner);
         $alias = $this->ancestryNode(30, $aliasSub, $owner);
+        $visibleOwnerAlias = $this->ancestryNode(30, $ownerFolder, $owner);
         $root->method('getUserFolder')->with('alice')->willReturn($ownerFolder);
         if ($failure) {
             $ownerFolder->method('getById')->willThrowException(new \RuntimeException('/secret/sub/file'));
         } else {
-            $ownerFolder->expects($this->atMost(2))->method('getById')->willReturnCallback(
+            $ownerFolder->expects($this->exactly($lookups))->method('getById')->willReturnCallback(
                 static fn (int $id): array => match ($id) {
-                    30 => [$canonicalFile],
+                    30 => $multipleOrigins ? [$visibleOwnerAlias, $canonicalFile] : [$canonicalFile],
                     20 => [$canonicalSub],
                     default => [],
                 }

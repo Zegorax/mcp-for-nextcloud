@@ -310,7 +310,7 @@ final class CheckoutCreateTest extends TestCase {
         $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $mapper->method('getTagIdsForObjects')->willReturnCallback(fn (array $ids): array => [$folder => ['999']]
             + array_fill_keys($ids, []));
-        $this->guard = new VisibilityGuard($this->config->mock($this), $mapper);
+        $this->guard = new VisibilityGuard($this->config->mock($this), $mapper, $this->tree->filesystemRoot());
         $this->rebuild();
         $this->stage('PK docx bytes');
         $this->issue();

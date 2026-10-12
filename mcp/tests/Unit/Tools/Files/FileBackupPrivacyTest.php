@@ -68,7 +68,7 @@ final class FileBackupPrivacyTest extends FilesToolsTestCase {
                     throw new \RuntimeException('Unavailable');
                 }
             });
-        $guard = new VisibilityGuard($this->config->mock($this), $mapper);
+        $guard = new VisibilityGuard($this->config->mock($this), $mapper, $this->tree->filesystemRoot());
         return new FileBackup($this->apps, $this->users, $this->time, $this->config->mock($this), $guard);
     }
 }

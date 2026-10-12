@@ -271,7 +271,7 @@ final class FilesCopyMoveTest extends FilesToolsTestCase {
     public function testAMoveToExistingHiddenTargetIsRefusedWithForbiddenRatherThanDestinationExists(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
 
         $id = $this->tree->addFile('/alice/files/Arquivado/secret.md', 'secret');
@@ -284,7 +284,7 @@ final class FilesCopyMoveTest extends FilesToolsTestCase {
     public function testACopyToExistingHiddenTargetIsRefusedWithForbiddenRatherThanDestinationExists(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
 
         $id = $this->tree->addFile('/alice/files/Arquivado/secret.md', 'secret');
@@ -297,7 +297,7 @@ final class FilesCopyMoveTest extends FilesToolsTestCase {
     public function testHiddenSourceFileIsRefusedAsNotFound(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
 
         $sourceId = $this->tree->nodes[self::SOURCE]['id'];
@@ -317,7 +317,7 @@ final class FilesCopyMoveTest extends FilesToolsTestCase {
     public function testCopyOfAFolderWithAHiddenFileInsideIsRefusedBeforeAnythingIsCopied(): void {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
-        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper);
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $tagMapper, $this->visibilityRoot());
         $this->setUp();
         $this->tree->addFile('/alice/files/Pasta/visivel.md', 'visível', 'text/markdown');
         $secret = $this->tree->addFile('/alice/files/Pasta/Sub/segredo.md', 'SEGREDO', 'text/markdown');

@@ -492,7 +492,7 @@ final class ResourceRegistryTest extends TestCase {
         $tag->method('getId')->willReturn('999');
         $manager = $this->createMock(\OCP\SystemTag\ISystemTagManager::class);
         $manager->method('getTagsByIds')->willReturn(['999' => $tag]);
-        return new VisibilityGuard($config->mock($this), $mapper, null, $manager);
+        return new VisibilityGuard($config->mock($this), $mapper, $this->rootFolder, $manager);
     }
 
     private function registryWith(VisibilityGuard $guard): ResourceRegistry {

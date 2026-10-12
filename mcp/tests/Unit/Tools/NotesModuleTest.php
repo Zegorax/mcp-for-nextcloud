@@ -472,7 +472,7 @@ final class NotesModuleTest extends TestCase {
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
         $tagMapper->method('getTagIdsForObjects')->willReturn([(string)$this->ata => ['999']]);
-        $guard = new VisibilityGuard($this->config->mock($this), $tagMapper);
+        $guard = new VisibilityGuard($this->config->mock($this), $tagMapper, $this->tree->filesystemRoot());
 
         $root = $this->createMock(IRootFolder::class);
         $root->method('getUserFolder')->willReturnCallback(fn () => $this->tree->rootFolder());

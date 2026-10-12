@@ -163,6 +163,15 @@ class AttachmentAccessTest extends TestCase {
     public function testHiddenAttachmentIsRefusedAsNotFound(): void {
         $node = $this->createMock(File::class);
         $node->method('getId')->willReturn(777);
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $node->method('getOwner')->willReturn($owner);
+        $folder = $this->createMock(\OCP\Files\Folder::class);
+        $folder->method('getId')->willReturn(1);
+        $folder->method('getById')->with(777)->willReturn([$node]);
+        $node->method('getParent')->willReturn($folder);
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getUserFolder')->with('alice')->willReturn($folder);
         $share = $this->givenShare(IShare::TYPE_ROOM, 'abcd');
         $share->method('getNode')->willReturn($node);
 
@@ -170,7 +179,7 @@ class AttachmentAccessTest extends TestCase {
         $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $tagMapper->method('getTagIdsForObjects')->willReturn(['777' => ['999']]);
-        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper, $root);
 
         $access = new AttachmentAccess($this->shareManager, $guard);
 
@@ -182,6 +191,15 @@ class AttachmentAccessTest extends TestCase {
     public function testDescribeOmitsInfoWhenNodeIsHidden(): void {
         $node = $this->createMock(File::class);
         $node->method('getId')->willReturn(777);
+        $owner = $this->createMock(\OCP\IUser::class);
+        $owner->method('getUID')->willReturn('alice');
+        $node->method('getOwner')->willReturn($owner);
+        $folder = $this->createMock(\OCP\Files\Folder::class);
+        $folder->method('getId')->willReturn(1);
+        $folder->method('getById')->with(777)->willReturn([$node]);
+        $node->method('getParent')->willReturn($folder);
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getUserFolder')->with('alice')->willReturn($folder);
         $node->method('getName')->willReturn('secret.pdf');
         $node->method('getSize')->willReturn(2048);
         $node->method('getMimeType')->willReturn('application/pdf');
@@ -192,7 +210,7 @@ class AttachmentAccessTest extends TestCase {
         $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
         $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
         $tagMapper->method('getTagIdsForObjects')->willReturn(['777' => ['999']]);
-        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper);
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $tagMapper, $root);
 
         $access = new AttachmentAccess($this->shareManager, $guard);
         $desc = $access->describe($share);

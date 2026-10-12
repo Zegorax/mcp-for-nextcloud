@@ -38,6 +38,9 @@ class VisibilityGuard {
     /** @var array<int, bool> per-request node visibility cache: [nodeId => isVisible] */
     private array $cache = [];
 
+    /** @var array<int, bool> per-request visibility in the owner's tree, independent of mounted paths */
+    private array $ownerCache = [];
+
     public function __construct(
         private IConfig $config,
         private ISystemTagObjectMapper $tagMapper,
@@ -56,6 +59,12 @@ class VisibilityGuard {
         $hiddenTags = $this->getHiddenTagIds();
         if ($hiddenTags === []) {
             return true;
+        }
+
+        // A shared/jail path can omit physical ancestors. Resolve the same id in
+        // the owner's tree before consulting decisions made on mounted paths.
+        if (!$this->isVisibleInOwnerTree($node, $hiddenTags)) {
+            return false;
         }
 
         $nodeId = (int)$node->getId();
@@ -147,6 +156,67 @@ class VisibilityGuard {
             $this->cache[$nodeId] = true;
         }
         return true;
+    }
+
+    /**
+     * Resolves metadata only; tools still access content through the caller's node
+     * and its native permissions. getById covers every owner alias, unlike the
+     * arbitrary single result of getFirstNodeById. No directory scan is needed.
+     *
+     * @param list<string> $hiddenTags
+     */
+    private function isVisibleInOwnerTree(Node $node, array $hiddenTags): bool {
+        try {
+            $id = (int)$node->getId();
+            if ($id <= 0 || $this->rootFolder === null) {
+                throw new \RuntimeException();
+            }
+            if (isset($this->ownerCache[$id])) {
+                return $this->ownerCache[$id];
+            }
+            $owner = $node->getOwner();
+            if ($owner === null || $owner->getUID() === '') {
+                throw new \RuntimeException();
+            }
+            $folder = $this->rootFolder->getUserFolder($owner->getUID());
+            $folderId = (int)$folder->getId();
+            $origins = $id === $folderId ? [$folder] : $folder->getById($id);
+            if ($origins === []) {
+                throw new \RuntimeException();
+            }
+            $ids = [];
+            foreach ($origins as $origin) {
+                if (!$origin instanceof Node || (int)$origin->getId() !== $id) {
+                    throw new \RuntimeException();
+                }
+                $current = $origin;
+                $seen = [];
+                while (true) {
+                    $cid = (int)$current->getId();
+                    if ($cid <= 0 || isset($seen[$cid])) {
+                        throw new \RuntimeException();
+                    }
+                    $seen[$cid] = true;
+                    $ids[$cid] = (string)$cid;
+                    if ($cid === $folderId) {
+                        break; // do not call Root::getParent()
+                    }
+                    $current = $current->getParent();
+                }
+            }
+            $tagsByObject = $this->tagMapper->getTagIdsForObjects(array_values($ids), 'files');
+            foreach ($ids as $cid) {
+                foreach ($tagsByObject[$cid] ?? [] as $tagId) {
+                    if (in_array((string)$tagId, $hiddenTags, true)) {
+                        return $this->ownerCache[$id] = false;
+                    }
+                }
+            }
+            return $this->ownerCache[$id] = true;
+        } catch (\Throwable) {
+            $this->warnVisibilityFailure();
+            return false; // resolution failures are retried, never cached as visible
+        }
     }
 
     /** Logs a privacy refusal without node names, paths or exception details. */
@@ -343,12 +413,14 @@ class VisibilityGuard {
         $this->config->setAppValue('mcp', self::CONFIG_KEY, json_encode($sanitized));
         $this->hiddenTagIds = $sanitized;
         $this->cache = [];
+        $this->ownerCache = [];
     }
 
     /** Clears the in-memory caches. */
     public function clearCache(): void {
         $this->hiddenTagIds = null;
         $this->cache = [];
+        $this->ownerCache = [];
     }
 
     /**
