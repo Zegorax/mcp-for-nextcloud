@@ -206,8 +206,9 @@ class ResourceRegistry {
 
         return NodeAccess::run(function () use ($uri, $path, $userId): array {
             $root = $this->rootFolder->getUserFolder($userId);
-            $node = NodeAccess::requireFile(NodeAccess::get($root, $path));
-            $this->visibilityGuard->assertVisible($node);
+            // The guard runs before requireFile, so a protected item answers like a missing one instead of
+            // revealing that it exists and is a folder.
+            $node = NodeAccess::requireFile(NodeAccess::get($root, $path, $this->visibilityGuard));
 
             $mime = (string)$node->getMimetype();
             $name = $node->getName();
