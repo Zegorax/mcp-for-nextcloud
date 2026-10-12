@@ -394,18 +394,10 @@ class NotesModule implements ToolModule, PreviewsWrites, ToolGuideNotes, Renders
         self::checkSize((string)($arguments['content'] ?? ''));
         $category = (string)($arguments['category'] ?? '');
         $shared = $this->shared($this->notes->existingAncestor($userId, $category), $userId);
-        if ($root !== null && trim($category, '/') !== '') {
-            try {
-                $relative = ltrim(PathGuard::normalize($category, 'category'), '/');
-                if ($root->nodeExists($relative)) {
-                    $node = $root->get($relative);
-                    if ($this->visibilityGuard !== null && !$this->visibilityGuard->isVisible($node)) {
-                        throw new ToolFailure(CommonMessages::notFound());
-                    }
-                }
-            } catch (InvalidArgumentException) {
-                throw new InvalidArgumentException('Invalid argument: category');
-            }
+        if ($root !== null) {
+            // A plan refuses what the write refuses: a new category below a hidden ancestor answers exactly
+            // like one that does not exist, before anything is created.
+            $this->notes->assertCategoryVisible($root, $category);
         }
         $folder = $this->existingCategory($root, $category);
         if ($root === null || $folder === null) {
@@ -497,18 +489,10 @@ class NotesModule implements ToolModule, PreviewsWrites, ToolGuideNotes, Renders
             throw new ToolFailure(CommonMessages::forbidden());
         }
         $category = (string)$arguments['category'];
-        if ($root !== null && trim($category, '/') !== '') {
-            try {
-                $relative = ltrim(PathGuard::normalize($category, 'category'), '/');
-                if ($root->nodeExists($relative)) {
-                    $node = $root->get($relative);
-                    if ($this->visibilityGuard !== null && !$this->visibilityGuard->isVisible($node)) {
-                        throw new ToolFailure(CommonMessages::notFound());
-                    }
-                }
-            } catch (InvalidArgumentException) {
-                throw new InvalidArgumentException('Invalid argument: category');
-            }
+        if ($root !== null) {
+            // The same refusal the write gives: a target below a hidden ancestor is a target that does not
+            // exist, so the user is never asked to approve a move the server would not perform.
+            $this->notes->assertCategoryVisible($root, $category);
         }
         $folder = $this->existingCategory($root, $category);
         return [
@@ -587,6 +571,10 @@ class NotesModule implements ToolModule, PreviewsWrites, ToolGuideNotes, Renders
      * @throws InvalidArgumentException on traversal or control characters
      */
     private function existingCategory(?Folder $root, string $category): ?Folder {
+        // Even the notes root goes through the guard: an empty category means writing at the root itself.
+        if ($root !== null && $this->visibilityGuard !== null && !$this->visibilityGuard->isVisible($root)) {
+            return null;
+        }
         if ($root === null || trim($category, '/') === '') {
             return $root;
         }
