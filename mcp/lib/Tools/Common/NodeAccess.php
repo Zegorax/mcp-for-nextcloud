@@ -23,6 +23,20 @@ use OCP\Lock\ManuallyLockedException;
 final class NodeAccess {
     /**
      * @template T
+     * @param callable():T $write mutation through the OCP node API
+     * @return T
+     */
+    public static function mutate(callable $write, ?\OCA\Mcp\Service\VisibilityGuard $guard = null): mixed {
+        try {
+            return $write();
+        } finally {
+            // A storage/hook can throw after it has already changed the tree.
+            $guard?->clearCache();
+        }
+    }
+
+    /**
+     * @template T
      * @param callable():T $action file operation to run
      * @return T
      * @throws ToolFailure mapped from NotFound, NotPermitted/Forbidden, Locked and NotEnoughSpace; a files_lock
@@ -115,7 +129,8 @@ final class NodeAccess {
                 }
                 $folder = $next;
             } else {
-                $folder = $folder->newFolder($segment);
+                $folder = self::mutate(fn () => $folder->newFolder($segment), $guard);
+                $guard?->assertVisible($folder);
             }
         }
         return $folder;

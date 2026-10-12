@@ -966,9 +966,10 @@ class FilesModule implements ToolModule, PreviewsWrites, RendersPlans, ToolGuide
      */
     private function commit(Folder $root, string $userId, File $file, string $path, string $content, ?string $etag, string $before): array {
         $copy = $this->backup->prepare($root, $file, $path, $userId, $etag);
+        $this->visibilityGuard?->assertVisible($file);
         try {
             // Checked again right before the write: the backup took time, and files_lock does not refuse every lock.
-            $this->locks === null ? $file->putContent($content) : $this->locks->run(fn () => $file->putContent($content), $file, $userId, $path);
+            NodeAccess::mutate(fn () => $this->locks === null ? $file->putContent($content) : $this->locks->run(fn () => $file->putContent($content), $file, $userId, $path), $this->visibilityGuard);
         } catch (LockWriteFailure $e) {
             throw $e->withNote(FilesMessages::originalKept($copy));
         } catch (LockedException $e) {
@@ -977,7 +978,7 @@ class FilesModule implements ToolModule, PreviewsWrites, RendersPlans, ToolGuide
         } catch (\Throwable) {
             throw new ToolFailure(FilesMessages::writeFailed($copy));
         }
-        $node = NodeAccess::requireFile(NodeAccess::get($root, $path));
+        $node = NodeAccess::requireFile(NodeAccess::get($root, $path, $this->visibilityGuard));
         return [
             'path' => $path,
             'size' => strlen($content),

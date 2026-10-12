@@ -150,6 +150,7 @@ class NotesRepository {
      * @return array{id:int, title:string, category:string, modified:int, etag:string}
      */
     public function info(File $note, Folder $root): array {
+        $this->visibilityGuard?->assertVisible($note);
         $relative = (string)$root->getRelativePath($note->getParent()->getPath());
         return [
             'id' => (int)$note->getId(),

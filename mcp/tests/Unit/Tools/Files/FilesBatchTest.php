@@ -28,6 +28,34 @@ final class FilesBatchTest extends FilesToolsTestCase {
         $this->tree->addFolder('/alice/files/Arquivado');
     }
 
+    public function testBatchMutationHidesSecondItemAndNeverPublishesItsPath(): void {
+        $hidden = [];
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$hidden): array {
+            return array_combine($ids, array_map(static fn ($id): array => in_array((int)$id, $hidden, true) ? ['999'] : [], $ids));
+        });
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $mapper, $this->visibilityRoot());
+        $this->setUp();
+        $this->tree->addFolder('/alice/files/Incoming');
+        $this->tree->addFile('/alice/files/Arquivado/item-secret.txt', 'x');
+        // Simulate a privacy hook setting a tag after the first move. The plan
+        // has already verified/cached the child, whose id survives the move.
+        $this->tree->afterMove = function (string $from, string $to) use (&$hidden): void {
+            if ($from === '/alice/files/Incoming') {
+                $hidden[] = (int)$this->tree->node(dirname($to))->getId();
+            }
+        };
+        $out = $this->failure('files_move_batch', ['moves' => [
+            ['from' => '/Incoming', 'to' => '/Arquivado/Incoming'],
+            ['from' => '/Arquivado/item-secret.txt', 'to' => '/item-secret.txt'],
+        ], 'confirm' => true]);
+        $this->assertStringNotContainsString('item-secret', $out);
+        $this->assertArrayHasKey('/alice/files/Arquivado/item-secret.txt', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/item-secret.txt', $this->tree->nodes);
+        $this->assertCount(1, $this->batches->rows, 'The performed move is still recorded for recovery');
+    }
+
     private const BATCH = ['moves' => [
         ['from' => '/Documentos/ata.md', 'to' => '/Arquivado/ata.md'],
         ['from' => '/Documentos/plano.md', 'to' => '/Arquivado/plano.md'],

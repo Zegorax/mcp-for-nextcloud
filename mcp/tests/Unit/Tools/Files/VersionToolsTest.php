@@ -168,6 +168,43 @@ final class VersionToolsTest extends TestCase {
         $this->assertContains('rollback', $this->manager->ops);
     }
 
+    /** @return iterable<string, array{bool}> */
+    public static function restoreModes(): iterable {
+        yield 'rollback' => [false];
+        yield 'locked write' => [true];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('restoreModes')]
+    public function testRestoreHookCannotPublishNewlyHiddenReceipt(bool $locked): void {
+        $hidden = false;
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$hidden): array {
+            return array_fill_keys($ids, $hidden ? ['999'] : []);
+        });
+        $config = new \OCA\Mcp\Tests\Unit\InMemoryConfig();
+        $config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $guard = new \OCA\Mcp\Service\VisibilityGuard($config->mock($this), $mapper, $this->tree->filesystemRoot());
+        $this->assertTrue($guard->isVisible($this->file()));
+        $this->manager->onRollback = static function () use (&$hidden): void { $hidden = true; };
+        $this->tree->afterWrite = static function (string $path) use (&$hidden): void {
+            if ($path === self::FILE) { $hidden = true; }
+        };
+        $this->manager->versions[1]->withContent('old');
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->willReturn($this->manager);
+        $locks = $locked ? (new FakeLockManager())->service($this) : null;
+        $tools = new VersionTools($this->apps, $this->users, $this->createMock(TextExtractor::class), $this->backup,
+            new NodeAccessInfo(FakeUsers::manager($this, FakeUsers::DEFAULTS), $this->tree->shareManager()),
+            $container, new \OCA\Mcp\Tools\Files\OcrSupport($this->apps), $locks, $guard);
+        try {
+            $tools->restore($this->tree->rootFolder(), $this->file(), '/Documentos/ata.md', '1759100000', 'alice');
+            $this->fail('Restore published a hidden receipt');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        $this->assertFalse($guard->isVisible($this->file()));
+    }
+
     public function testRestoreReportsARollbackThatFailed(): void {
         $this->manager->rollbackResult = false;
         $this->expectException(ToolFailure::class);

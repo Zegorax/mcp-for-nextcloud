@@ -246,7 +246,7 @@ class NotesModule implements ToolModule, PreviewsWrites, ToolGuideNotes, Renders
         }
         $root = $this->notes->folder($userId, true);
         $folder = $this->notes->category($root, $category);
-        return $this->notes->info($folder->newFile($this->notes->freeName($folder, (string)$arguments['title']), $content), $root);
+        return $this->notes->info(NodeAccess::mutate(fn () => $folder->newFile($this->notes->freeName($folder, (string)$arguments['title']), $content), $this->visibilityGuard), $root);
     }
 
     /**
@@ -678,7 +678,7 @@ class NotesModule implements ToolModule, PreviewsWrites, ToolGuideNotes, Renders
      * @return T what the write returned
      */
     private function locked(callable $write, File $note, string $userId, bool $untouched = true): mixed {
-        return $this->locks === null ? $write() : $this->locks->run($write, $note, $userId, null, true, $untouched);
+        return NodeAccess::mutate(fn () => $this->locks === null ? $write() : $this->locks->run($write, $note, $userId, null, true, $untouched), $this->visibilityGuard);
     }
 
     /**

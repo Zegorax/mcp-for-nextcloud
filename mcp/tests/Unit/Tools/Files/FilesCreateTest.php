@@ -377,4 +377,21 @@ final class FilesCreateTest extends FilesToolsTestCase {
             ['app' => 'mcp', 'exception_class' => \RuntimeException::class]);
         $this->assertSame(FilesMessages::createFailed(), $this->failure('files_create', ['path' => '/falha.md', 'content' => 'x']));
     }
+    public function testCreateDoesNotPublishNewlyHiddenReceipt(): void {
+        $hidden = [];
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$hidden): array {
+            return array_combine($ids, array_map(static fn ($id): array => in_array((int)$id, $hidden, true) ? ['999'] : [], $ids));
+        });
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $mapper, $this->visibilityRoot());
+        $this->setUp();
+        $this->tree->afterCreate = function (string $path) use (&$hidden): void {
+            $hidden[] = (int)$this->tree->node($path)->getId();
+        };
+        $out = $this->failure('files_create', ['path' => '/new-secret.txt', 'content' => 'x', 'confirm' => true]);
+        $this->assertSame(\OCA\Mcp\Tools\Common\CommonMessages::notFound(), $out);
+        $this->assertStringNotContainsString('new-secret', $out);
+    }
+
 }

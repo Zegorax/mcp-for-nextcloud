@@ -321,10 +321,11 @@ class CheckoutController extends Controller {
             NodeAccess::checkEtag($file, $row->etag);
             $asUser = $this->actsAsUser($row->userId);
             $copy = $this->backup->prepare($root, $file, $row->path, $row->userId, $row->etag, $asUser);
+            $this->visibilityGuard?->assertVisible($file);
             $write = static fn () => $file->putContent((string)file_get_contents($body));
             // Checked again right before the write: the backup took time, and files_lock does not refuse every lock.
-            $this->locks === null ? $write() : $this->locks->run($write, $file, $row->userId, $row->path, $asUser);
-            $node = NodeAccess::requireFile(NodeAccess::get($root, $row->path));
+            NodeAccess::mutate(fn () => $this->locks === null ? $write() : $this->locks->run($write, $file, $row->userId, $row->path, $asUser), $this->visibilityGuard);
+            $node = NodeAccess::requireFile(NodeAccess::get($root, $row->path, $this->visibilityGuard));
         } catch (LockWriteFailure $e) {
             // The link is spent all the same; a backup taken before the refusal holds the untouched original.
             return $this->lockRefusal($e, $copy);

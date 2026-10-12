@@ -57,7 +57,23 @@ class VisibilityGuard {
         private ?IRootFolder $rootFolder = null,
         private ?ISystemTagManager $tagManager = null,
         private ?LoggerInterface $logger = null,
-    ) {}
+        ?\OCP\EventDispatcher\IEventDispatcher $events = null,
+    ) {
+        // Invalidate this very instance after OCP mutations outside the MCP tools,
+        // too. Run after ordinary privacy hooks; tools also clear in finally.
+        $invalidate = fn () => $this->clearCache();
+        foreach ([
+            \OCP\Files\Events\Node\NodeRenamedEvent::class,
+            \OCP\Files\Events\Node\NodeCreatedEvent::class,
+            \OCP\Files\Events\Node\NodeCopiedEvent::class,
+            \OCP\Files\Events\Node\NodeDeletedEvent::class,
+            \OCP\Files\Events\Node\NodeWrittenEvent::class,
+            \OCP\SystemTag\MapperEvent::EVENT_ASSIGN,
+            \OCP\SystemTag\MapperEvent::EVENT_UNASSIGN,
+        ] as $event) {
+            $events?->addListener($event, $invalidate, PHP_INT_MIN);
+        }
+    }
 
     /**
      * Checks whether a filesystem node is visible to the MCP caller.
@@ -435,7 +451,11 @@ class VisibilityGuard {
 
         if ($tagsToAssign !== []) {
             try {
-                $this->tagMapper->assignTags((string)$destination->getId(), 'files', array_map(strval(...), array_keys($tagsToAssign)));
+                try {
+                    $this->tagMapper->assignTags((string)$destination->getId(), 'files', array_map(strval(...), array_keys($tagsToAssign)));
+                } finally {
+                    $this->clearCache();
+                }
             } catch (\Throwable $e) {
                 $this->warnVisibilityFailure();
                 throw new ToolFailure(\OCA\Mcp\Tools\Files\FilesMessages::backupFailed(), 0, $e);
@@ -529,8 +549,6 @@ class VisibilityGuard {
         $this->hiddenTagIds = $sanitized;
         $this->configInvalid = false;
         $this->cache = [];
-        $this->ownerCache = [];
-        $this->shareRootCache = [];
         $this->ownerCache = [];
         $this->shareRootCache = [];
     }

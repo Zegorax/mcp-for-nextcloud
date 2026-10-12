@@ -80,6 +80,8 @@ final class FakeTree {
     public ?\Closure $afterCreate = null;
     /** @var (\Closure(string): void)|null runs after each successful putContent() with the path written */
     public ?\Closure $afterWrite = null;
+    /** @var (\Closure(string): void)|null hook after deleting an empty directory */
+    public ?\Closure $afterDelete = null;
     /** @var list<\OCP\Files\Search\ISearchQuery> queries received by Folder::search */
     public array $searches = [];
     private int $nextId = 100;
@@ -160,6 +162,9 @@ final class FakeTree {
         $mock->method('delete')->willReturnCallback(function () use ($path): void {
             $this->ops[] = "delete $path";
             unset($this->nodes[$path]);
+            if ($this->afterDelete !== null) {
+                ($this->afterDelete)($path);
+            }
         });
         $mock->method('move')->willReturnCallback(function (string $target) use ($path): Node {
             $this->ops[] = "move $path $target";
