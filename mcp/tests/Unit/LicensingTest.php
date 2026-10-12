@@ -19,7 +19,8 @@ final class LicensingTest extends TestCase {
                 continue;
             }
             $source = (string)file_get_contents($file->getPathname());
-            if (!preg_match('~\A<\?php\s*/\*\s*\* SPDX-FileCopyrightText: 2026 Sintax \(Jhonatan Jaworski\) <contato@sintax\.tech>\s*\* SPDX-License-Identifier: AGPL-3\.0-or-later\s*\*/~', $source)) {
+            // The tag names are split so the REUSE tool does not read this pattern as a header.
+            if (!preg_match('~\A<\?php\s*/\*\s*\* ' . 'SPDX-' . 'FileCopyrightText: 2026 Sintax \(Jhonatan Jaworski\) <contato@sintax\.tech>\s*\* ' . 'SPDX-' . 'License-Identifier: AGPL-3\.0-or-later\s*\*/~', $source)) {
                 $missing[] = $file->getPathname();
             }
         }
