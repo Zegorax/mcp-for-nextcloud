@@ -1055,7 +1055,14 @@ final class DeckServiceGatewayTest extends TestCase {
 	private function record(string ...$prefixes): array {
 		return array_values(array_filter(
 			$this->calls,
-			static fn (string $call) => array_any($prefixes, static fn (string $prefix) => str_starts_with($call, $prefix)),
+			static function (string $call) use ($prefixes): bool {
+				foreach ($prefixes as $prefix) {
+					if (str_starts_with($call, $prefix)) {
+						return true;
+					}
+				}
+				return false;
+			},
 		));
 	}
 
