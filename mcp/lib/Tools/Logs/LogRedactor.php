@@ -18,7 +18,8 @@ namespace OCA\Mcp\Tools\Logs;
  * - A text is cut at a limit; an exception keeps class, message, code, place and ten frames of class->function and
  *   file:line, never the arguments.
  * - With messages hidden, the message of an entry and of each of its exceptions, and the user agent, become
- *   {@see self::HIDDEN} whole: free text cannot tell where a file name starts or ends, so none of it is shown. The URL keeps only its fixed route
+ *   {@see self::HIDDEN} whole: free text cannot tell where a file name starts or ends, so none of it is shown. The
+ *   method stays only when it is a known HTTP or WebDAV verb. The URL keeps only its fixed route
  *   prefix ({@see self::url()}). The class, the place and the frames of an exception are the server's own PHP code and
  *   stay.
  */
@@ -77,6 +78,12 @@ final class LogRedactor {
         '~^/(?:s|f|ocs)/~i',
         '~^/(?:status|cron)\.php~i',
     ];
+    /**
+     * HTTP and WebDAV verbs kept while messages are hidden. The method of an entry is whatever the client sent, copied
+     * by the core without a check, so anything else is the client's text.
+     */
+    private const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT', 'PROPFIND', 'PROPPATCH',
+        'MKCOL', 'COPY', 'MOVE', 'LOCK', 'UNLOCK', 'REPORT', 'SEARCH', 'MKCALENDAR', 'ACL'];
     /** A URL: scheme and host, then the rest. */
     private const URL = '~^([a-z][a-z0-9+.-]*://[^/?#\s]+)(.*)$~i';
     /** Line breaks, tabs and the Unicode line and paragraph separators: each becomes a space. */
@@ -252,7 +259,7 @@ final class LogRedactor {
             'level' => LogAnalyzer::LEVELS[(int)$entry->level] ?? (string)$entry->level,
             'app' => $field('app', 100),
             'user' => $field('user', 100),
-            'method' => $field('method', 16),
+            'method' => $hideMessages ? self::method($entry->method ?? null) : $field('method', 16),
             'url' => is_scalar($entry->url ?? null) ? self::shownUrl((string)$entry->url, self::MESSAGE_LIMIT, $hideMessages) : '',
             'message' => $hideMessages ? self::HIDDEN : $field('message', self::MESSAGE_LIMIT),
             'reqId' => $field('reqId', 64),
@@ -279,6 +286,18 @@ final class LogRedactor {
             $url = self::url($url);
         }
         return mb_strlen($url) > $limit ? mb_substr($url, 0, $limit) . '…' : $url;
+    }
+
+    /**
+     * @param mixed $method the method field of an entry
+     * @return string a known HTTP or WebDAV verb in capitals; '' when there is none; {@see self::HIDDEN} for anything else
+     */
+    private static function method(mixed $method): string {
+        if (!is_string($method) || $method === '') {
+            return '';
+        }
+        $verb = strtoupper($method);
+        return in_array($verb, self::METHODS, true) ? $verb : self::HIDDEN;
     }
 
     /** @return string file:line, or '' without a file */

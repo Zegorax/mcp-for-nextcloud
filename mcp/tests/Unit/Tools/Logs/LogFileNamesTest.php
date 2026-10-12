@@ -144,4 +144,26 @@ final class LogFileNamesTest extends TestCase {
         $this->assertFalse($service()->enabled());
         $this->assertFalse($service()->active());
     }
+
+    /**
+     * @return iterable<string, array{string, string, string}> method in the log, shown hidden, shown otherwise
+     */
+    public static function methods(): iterable {
+        yield 'custom verb' => ['salary.pdf', '[hidden]', 'salary.pdf'];
+        yield 'webdav verb' => ['PROPFIND', 'PROPFIND', 'PROPFIND'];
+        yield 'http verb in lower case' => ['get', 'GET', 'get'];
+        yield 'calendar verb' => ['MkCalendar', 'MKCALENDAR', 'MkCalendar'];
+    }
+
+    /**
+     * The method is the client's text too: with messages hidden only a known HTTP or WebDAV verb stays, in capitals.
+     *
+     * @dataProvider methods
+     */
+    public function testOnlyAKnownMethodIsShownWithMessagesHidden(string $method, string $hidden, string $shown): void {
+        $entry = (object)['level' => 3, 'method' => $method, 'message' => 'x'];
+
+        $this->assertSame($hidden, LogRedactor::entry($entry, true)['method']);
+        $this->assertSame($shown, LogRedactor::entry($entry)['method']);
+    }
 }
