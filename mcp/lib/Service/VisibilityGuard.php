@@ -365,8 +365,8 @@ class VisibilityGuard {
         $current = $node;
 
         while ($current instanceof Node) {
-            if ($current instanceof IRootFolder) { 
-                break; // Root has no parent: Root::getParent() throws NotFoundException 
+            if ($current instanceof IRootFolder) {
+                break; // Root has no parent: Root::getParent() throws NotFoundException
             }
             if ($current->getName() === FileBackup::FOLDER) {
                 $backupAncestor = $current;
