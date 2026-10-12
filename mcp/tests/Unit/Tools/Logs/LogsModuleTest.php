@@ -349,7 +349,7 @@ final class LogsModuleTest extends TestCase {
         foreach ($list['entries'] as $entry) {
             $this->assertSame('[hidden]', $entry['message']);
             $this->assertSame('/remote.php/dav/files/[hidden]?[hidden]', $entry['url']);
-            $this->assertSame(['alice', 'webdav', 'GET', 'error', 'curl/8.0', '203.0.x.x'],
+            $this->assertSame(['alice', 'webdav', 'GET', 'error', '[hidden]', '203.0.x.x'],
                 [$entry['user'], $entry['app'], $entry['method'], $entry['level'], $entry['userAgent'], $entry['remoteAddr']]);
             $this->assertSame('OCP\\Files\\NotFoundException', $entry['exception']['class']);
             $this->assertSame('[hidden]', $entry['exception']['message']);
@@ -458,5 +458,39 @@ final class LogsModuleTest extends TestCase {
             $this->assertSame('[hidden]', $entry['message']);
         }
         $this->assertStringContainsString('/remote.php/dav/files/[hidden]', json_encode($analyze['summary']['topUrls'], JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @return list<string> a log whose user agent carries a file name */
+    private static function agentLog(): array {
+        return [json_encode(['reqId' => 'u1', 'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'remoteAddr' => '203.0.113.17',
+            'user' => 'alice', 'app' => 'webdav', 'method' => 'PUT', 'url' => '/remote.php/webdav/x', 'message' => 'Upload failed',
+            'userAgent' => 'BackupClient/1.0 source=secret/salary.pdf'])];
+    }
+
+    /** The user agent is free text of the client: it goes with the messages. */
+    public function testWithMessagesHiddenTheUserAgentIsHiddenToo(): void {
+        $this->hideByTag();
+        $this->log = new FakeFileLog(self::agentLog());
+
+        [$listText, $list] = $this->call('logs_list');
+        [$analyzeText, $analyze] = $this->call('logs_analyze');
+
+        $this->assertSame('[hidden]', $list['entries'][0]['userAgent']);
+        $this->assertArrayNotHasKey('topUserAgents', $analyze['summary']);
+        $this->assertStringContainsString('user agent', $list['source']['messages']);
+        foreach ([$listText, $analyzeText] as $text) {
+            $this->assertStringNotContainsString('salary', $text);
+            $this->assertStringNotContainsString('BackupClient', $text);
+        }
+    }
+
+    public function testTurnedOffTheUserAgentIsShown(): void {
+        $this->hideByTag();
+        $this->appConfig->stored['mcp'][\OCA\Mcp\Service\LogFileNames::CONFIG_KEY] = '0';
+        $this->log = new FakeFileLog(self::agentLog());
+
+        $this->assertSame('BackupClient/1.0 source=secret/salary.pdf', $this->call('logs_list')[1]['entries'][0]['userAgent']);
+        $this->assertSame([['userAgent' => 'BackupClient/1.0 source=secret/salary.pdf', 'count' => 1]],
+            $this->call('logs_analyze')[1]['summary']['topUserAgents']);
     }
 }

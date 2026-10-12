@@ -34,9 +34,9 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
     /** Arguments recorded by the audit, in this order. */
     private const AUDITED_ARGUMENTS = ['min_level', 'app', 'user', 'since', 'until', 'contains', 'req_id', 'offset', 'limit'];
     /** What source.messages says while messages are hidden. */
-    private const HIDDEN_NOTE = 'The administrator hides the text of log messages while files are hidden by tags: every message '
-        . 'and exception message is ' . LogRedactor::HIDDEN . ', URLs keep only their route prefix, signatures group entries by '
-        . 'level, app and exception class, and contains is not available.';
+    private const HIDDEN_NOTE = 'The administrator hides the text of log messages while files are hidden by tags: every message, '
+        . 'exception message and user agent is ' . LogRedactor::HIDDEN . ', URLs keep only their route prefix, signatures group '
+        . 'entries by level, app and exception class, topUserAgents is left out, and contains is not available.';
     /** Level the core writes from when loglevel is not set: warning. */
     private const DEFAULT_LOG_LEVEL = 2;
 
@@ -95,9 +95,10 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
                 . 'the entries behind one signature. IP addresses are masked, stack traces keep ten frames without arguments '
                 . 'and every call is recorded in the audit log.',
             'When source.messagesHidden is true, the administrator hides the text of log messages from these tools: every '
-                . 'message and exception message is ' . LogRedactor::HIDDEN . ' and cannot be recovered here, URLs keep only their '
-                . 'route prefix, signatures of logs_analyze group entries by level, app and exception class, and contains is '
-                . 'refused. Time, level, app, user, request id, exception class and stack frames stay.',
+                . 'message, exception message and user agent is ' . LogRedactor::HIDDEN . ' and cannot be recovered here, URLs keep '
+                . 'only their route prefix, signatures of logs_analyze group entries by level, app and exception class, '
+                . 'topUserAgents is left out, and contains is refused. Time, level, app, user, request id, exception class and '
+                . 'stack frames stay.',
         ];
     }
 

@@ -135,4 +135,17 @@ final class LogAnalyzerTest extends TestCase {
             $this->assertSame($expected, self::analyze([['url' => $url]])['topUrls'][0]['path'], $url);
         }
     }
+
+    /**
+     * Without hidden messages, signatures tied on count and text keep the order they were read in, as before the
+     * hiding of messages existed: no tie-break by app or exception class.
+     */
+    public function testTiedSignaturesKeepTheirReadOrderWhenMessagesAreShown(): void {
+        $entry = static fn (string $app): \stdClass => (object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => $app,
+            'user' => 'alice', 'url' => '/x', 'message' => 'Same failure', 'userAgent' => 'curl'];
+
+        $summary = (new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC')))->analyze([$entry('zeta'), $entry('alpha')]);
+
+        $this->assertSame(['zeta', 'alpha'], array_column($summary['signatures'], 'app'));
+    }
 }

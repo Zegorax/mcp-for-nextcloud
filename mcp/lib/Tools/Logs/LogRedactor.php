@@ -17,8 +17,8 @@ namespace OCA\Mcp\Tools\Logs;
  *   message is written by users, and those are the characters that hide or disguise text.
  * - A text is cut at a limit; an exception keeps class, message, code, place and ten frames of class->function and
  *   file:line, never the arguments.
- * - With messages hidden, the message of an entry and of each of its exceptions becomes {@see self::HIDDEN} whole: free
- *   text cannot tell where a file name starts or ends, so none of it is shown. The URL keeps only its fixed route
+ * - With messages hidden, the message of an entry and of each of its exceptions, and the user agent, become
+ *   {@see self::HIDDEN} whole: free text cannot tell where a file name starts or ends, so none of it is shown. The URL keeps only its fixed route
  *   prefix ({@see self::url()}). The class, the place and the frames of an exception are the server's own PHP code and
  *   stay.
  */
@@ -256,7 +256,8 @@ final class LogRedactor {
             'url' => is_scalar($entry->url ?? null) ? self::shownUrl((string)$entry->url, self::MESSAGE_LIMIT, $hideMessages) : '',
             'message' => $hideMessages ? self::HIDDEN : $field('message', self::MESSAGE_LIMIT),
             'reqId' => $field('reqId', 64),
-            'userAgent' => $field('userAgent', 300, true),
+            // The user agent is free text of the client ("BackupClient/1.0 source=…"), so it goes with the messages.
+            'userAgent' => $hideMessages ? self::HIDDEN : $field('userAgent', 300, true),
             'remoteAddr' => is_string($entry->remoteAddr ?? null) ? self::ip($entry->remoteAddr) : '',
         ];
         $exception = self::exception($entry->exception ?? null, $hideMessages);

@@ -180,7 +180,7 @@
             <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
             <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
         </p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while hidden tags are configured, the text of log messages is hidden; the date, level, app, user, error type and route stay. Off: the full messages are shown for diagnosis, and the hiding by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while hidden tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the hiding by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">
