@@ -70,16 +70,16 @@ final class LogRedactor {
         . '|zip|rar|7z|tar|gz|tgz|bz2|xz|zst|iso|dmg|img|apk|exe|msi|deb|rpm|jar|bak|tmp|part|ocTransferId\d+'
         . '|eml|msg|mbox|ics|vcf|pem|crt|cer|key|p12|pfx|kdbx|gpg|asc|epub|mobi|pages|numbers|keynote|one|vsdx?|mpp|xps';
     /**
-     * Route prefixes of Nextcloud, longest first, all of them fixed text: no segment the request chose (the app of
-     * /apps/<app>/, for one) is kept, since free text cannot tell an app id from a name. Only the prefix stays when
-     * names are hidden: whatever follows it in a path becomes {@see self::HIDDEN}. A WebDAV path keeps its account, as
-     * the summary does; a public share never keeps its token.
+     * Route prefixes of Nextcloud, longest first, all of them fixed text: no segment the request chose is kept (the
+     * app of /apps/<app>/, the account of /remote.php/dav/files/<account>/, the token of a public share), since free
+     * text cannot tell any of them from a folder named alike. Only the prefix stays when names are hidden: whatever
+     * follows it in a path becomes {@see self::HIDDEN}. The account of an entry stays in its user field.
      */
     private const ROUTE_PREFIXES = [
         '~^/(?:index\.php/)?apps/~i',
         '~^/ocs/v[12]\.php/(?:apps/|cloud/)?~i',
-        '~^/remote\.php/dav/(?:files|uploads|trashbin|versions)/[^/?#\s]+/~i',
-        '~^/remote\.php/(?:webdav/|dav/[\w-]+/|dav/)?~i',
+        '~^/remote\.php/dav/(?:files|uploads|trashbin|versions|calendars|addressbooks|principals|comments|systemtags|systemtags-relations)/~i',
+        '~^/remote\.php/(?:webdav/|dav/)?~i',
         '~^/public\.php/(?:dav/files/|webdav/)?~i',
         '~^/index\.php/(?:s/|f/)?~i',
         '~^/(?:s|f|ocs)/~i',
@@ -169,7 +169,7 @@ final class LogRedactor {
      * - A bare word with a known extension goes (salary.txt).
      * - From the first token that looks like a path (it starts with "/", or has a "/" outside a URL) to the end of the
      *   text, everything goes. A route of Nextcloud at its start keeps only its fixed prefix (/apps/, /ocs/v2.php/apps/,
-     *   /remote.php/dav/files/<account>/…); a URL keeps its scheme and host. A MIME type, a CIDR and a masked IPv6
+     *   /remote.php/dav/files/); a URL keeps its scheme and host. A MIME type, a CIDR and a masked IPv6
      *   prefix are not paths.
      * What it cannot catch: a name standing alone, without quotes, without a slash and without a known extension, and a
      * Windows path written with backslashes.

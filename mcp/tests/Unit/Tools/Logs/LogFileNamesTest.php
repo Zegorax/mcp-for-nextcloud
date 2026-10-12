@@ -31,7 +31,7 @@ final class LogFileNamesTest extends TestCase {
 
         $this->assertStringNotContainsString('salary', $out['message']);
         $this->assertStringNotContainsString('secret', $out['message']);
-        $this->assertSame('/remote.php/dav/files/alice/[hidden]', $out['url']);
+        $this->assertSame('/remote.php/dav/files/[hidden]', $out['url']);
     }
 
     public function testWithoutHidingAnEntryKeepsItsNames(): void {
@@ -63,7 +63,13 @@ final class LogFileNamesTest extends TestCase {
         yield 'quoted name with unknown extension' => ['File "salary.secret" is locked', 'File "[hidden]" is locked'];
         yield 'quoted url with a path' => ['Fetch of "https://cloud.example.com/remote.php/dav/files/a/x.pdf" failed', 'Fetch of "https://cloud.example.com/[hidden]" failed'];
         // The first heuristic's cases.
-        yield 'webdav path' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/alice/[hidden]'];
+        yield 'webdav path' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/[hidden]'];
+        // Review of 0d8cbed: the segment after a DAV collection may be a folder, not an account.
+        yield 'folder where the account goes, files' => ['File with name /remote.php/dav/files/Confidential/payroll could not be located', 'File with name /remote.php/dav/files/[hidden]'];
+        yield 'folder where the account goes, uploads' => ['Chunk /remote.php/dav/uploads/Confidential/payroll lost', 'Chunk /remote.php/dav/uploads/[hidden]'];
+        yield 'folder where the account goes, trashbin' => ['Restore /remote.php/dav/trashbin/Confidential/payroll failed', 'Restore /remote.php/dav/trashbin/[hidden]'];
+        yield 'folder where the account goes, versions' => ['Read /remote.php/dav/versions/Confidential/payroll failed', 'Read /remote.php/dav/versions/[hidden]'];
+        yield 'collection name that is not fixed' => ['Read /remote.php/dav/Confidential/payroll failed', 'Read /remote.php/dav/[hidden]'];
         yield 'webdav path of a full url' => ['GET https://cloud.example.com/remote.php/webdav/Docs/a failed', 'GET https://cloud.example.com/remote.php/webdav/[hidden]'];
         yield 'public share dav keeps no token' => ['/public.php/dav/files/AbC123/Docs/a.pdf', '/public.php/dav/files/[hidden]'];
         yield 'public share link keeps no token' => ['/s/AbCdEf123/download', '/s/[hidden]'];
@@ -111,7 +117,13 @@ final class LogFileNamesTest extends TestCase {
      * @return iterable<string, array{string, string}>
      */
     public static function urls(): iterable {
-        yield 'webdav' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/alice/[hidden]'];
+        yield 'webdav' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/[hidden]'];
+        yield 'files with a folder where the account goes' => ['/remote.php/dav/files/Confidential/payroll', '/remote.php/dav/files/[hidden]'];
+        yield 'uploads with a folder where the account goes' => ['/remote.php/dav/uploads/Confidential/payroll', '/remote.php/dav/uploads/[hidden]'];
+        yield 'trashbin with a folder where the account goes' => ['/remote.php/dav/trashbin/Confidential/payroll', '/remote.php/dav/trashbin/[hidden]'];
+        yield 'versions with a folder where the account goes' => ['/remote.php/dav/versions/Confidential/payroll', '/remote.php/dav/versions/[hidden]'];
+        yield 'legacy webdav' => ['/remote.php/webdav/Confidential/payroll', '/remote.php/webdav/[hidden]'];
+        yield 'public share dav' => ['/public.php/dav/files/Confidential/payroll', '/public.php/dav/files/[hidden]'];
         yield 'query' => ['/index.php/apps/files/?dir=/secret', '/index.php/apps/[hidden]?[hidden]'];
         yield 'not a route' => ['https://cloud.example.com/apps/Secret', 'https://cloud.example.com/apps/[hidden]'];
         yield 'ocs with query' => ['/ocs/v2.php/apps/notifications/api/v2/notifications?format=json', '/ocs/v2.php/apps/[hidden]?[hidden]'];

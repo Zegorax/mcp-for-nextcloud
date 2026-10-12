@@ -322,7 +322,7 @@ final class LogsModuleTest extends TestCase {
         }
         $this->assertTrue($list['source']['fileNamesHidden']);
         $byReq = array_column($list['entries'], null, 'reqId');
-        $this->assertSame('/remote.php/dav/files/alice/[hidden]', $byReq['r1']['url']);
+        $this->assertSame('/remote.php/dav/files/[hidden]', $byReq['r1']['url']);
         $this->assertSame('/index.php/apps/[hidden]?[hidden]', $byReq['r2']['url']);
         $this->assertSame('/apps/[hidden]', $byReq['r5']['url']);
         $this->assertSame('File with name /apps/[hidden]', $byReq['r5']['message']);
@@ -382,5 +382,37 @@ final class LogsModuleTest extends TestCase {
         $this->module()->audit('logs_list', 'root', RestrictedModule::SUCCESS, ['contains' => 'secret/salary.txt']);
 
         $this->assertStringNotContainsString('salary', json_encode([$this->events, $this->infos]));
+    }
+
+    /**
+     * A folder of alice named like a DAV route ("remote.php/dav/files/Confidential") puts a name where an account
+     * goes: nothing after a DAV collection is kept, in the listing, the example, the top URLs or what contains finds.
+     */
+    public function testNothingAfterADavCollectionIsKept(): void {
+        $this->hideByTag();
+        $lines = [];
+        foreach (['files', 'uploads', 'trashbin', 'versions'] as $i => $collection) {
+            $path = '/remote.php/dav/' . $collection . '/Confidential/payroll';
+            $lines[] = json_encode(['reqId' => 'd' . $i, 'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'remoteAddr' => '203.0.113.17',
+                'user' => 'alice', 'app' => 'webdav', 'method' => 'GET', 'url' => $path,
+                'message' => 'File with name ' . $path . ' could not be located', 'userAgent' => 'curl/8.0']);
+        }
+        $this->log = new FakeFileLog($lines);
+
+        [$listText, $list] = $this->call('logs_list');
+        [$analyzeText, $analyze] = $this->call('logs_analyze');
+
+        foreach ([$listText, $analyzeText] as $text) {
+            $this->assertStringNotContainsString('Confidential', $text);
+            $this->assertStringNotContainsString('payroll', $text);
+        }
+        foreach ($list['entries'] as $entry) {
+            $this->assertSame('alice', $entry['user'], 'a conta continua no campo user');
+            $this->assertMatchesRegularExpression('#^/remote\.php/dav/(files|uploads|trashbin|versions)/\[hidden\]$#', $entry['url']);
+        }
+        $this->assertSame('File with name /remote.php/dav/files/[hidden]', array_column($list['entries'], null, 'reqId')['d0']['message']);
+        $this->assertSame(0, $this->call('logs_list', ['contains' => 'Confidential'])[1]['count']);
+        $this->assertSame(4, $this->call('logs_list', ['contains' => 'File with name'])[1]['count']);
+        $this->assertStringContainsString('/remote.php/dav/files/[hidden]', json_encode($analyze['summary']['topUrls'], JSON_UNESCAPED_SLASHES));
     }
 }
