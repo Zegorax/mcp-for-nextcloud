@@ -38,6 +38,12 @@ class VisibilityGuard {
     /** @var array<int, bool> per-request node visibility cache: [nodeId => isVisible] */
     private array $cache = [];
 
+    /** whether the stored configuration could not be read as a list of tag IDs */
+    private bool $configInvalid = false;
+
+    /** whether the invalid configuration was already logged by this instance */
+    private bool $invalidLogged = false;
+
     public function __construct(
         private IConfig $config,
         private ISystemTagObjectMapper $tagMapper,
@@ -53,6 +59,10 @@ class VisibilityGuard {
      * @return bool false when the node or any ancestor has a hidden tag, or is a backup of a hidden file
      */
     public function isVisible(Node $node): bool {
+        if (!$this->isConfigurationValid()) {
+            $this->warnInvalidConfiguration();
+            return false;
+        }
         $hiddenTags = $this->getHiddenTagIds();
         if ($hiddenTags === []) {
             return true;
@@ -154,6 +164,15 @@ class VisibilityGuard {
         $this->logger?->warning('MCP visibility check failed; access refused', ['app' => 'mcp']);
     }
 
+    /** Logs, once per instance, that the stored hidden tags cannot be read, without the stored value. */
+    private function warnInvalidConfiguration(): void {
+        if ($this->invalidLogged) {
+            return;
+        }
+        $this->invalidLogged = true;
+        $this->logger?->warning('MCP hidden tags configuration is invalid; access refused', ['app' => 'mcp']);
+    }
+
     /**
      * Asserts that a node is visible, throwing ToolFailure with CommonMessages::notFound() if hidden.
      *
@@ -187,6 +206,10 @@ class VisibilityGuard {
      * Returns false if an existing target or any existing ancestor is hidden.
      */
     public function isPathAllowedForWrite(Folder $root, string $path): bool {
+        if (!$this->isConfigurationValid()) {
+            $this->warnInvalidConfiguration();
+            return false;
+        }
         $hiddenTags = $this->getHiddenTagIds();
         if ($hiddenTags === []) {
             return true;
@@ -234,6 +257,10 @@ class VisibilityGuard {
      * @throws ToolFailure when tags or ancestors cannot be resolved, or tags cannot be assigned
      */
     public function copyHiddenTags(Node $source, Node $destination): void {
+        if (!$this->isConfigurationValid()) {
+            $this->warnInvalidConfiguration();
+            throw new ToolFailure(\OCA\Mcp\Tools\Files\FilesMessages::backupFailed());
+        }
         $hiddenTags = $this->getHiddenTagIds();
         if ($hiddenTags === []) {
             return;
@@ -277,7 +304,8 @@ class VisibilityGuard {
     }
 
     /**
-     * @return list<string> configured hidden system tag IDs as strings
+     * @return list<string> configured hidden system tag IDs as strings; empty when none are configured
+     *                      or when the stored value is invalid (see isConfigurationValid())
      */
     public function getHiddenTagIds(): array {
         if ($this->hiddenTagIds !== null) {
@@ -285,23 +313,39 @@ class VisibilityGuard {
         }
         $raw = $this->config->getAppValue('mcp', self::CONFIG_KEY, '[]');
         $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) {
-            $this->hiddenTagIds = [];
-            return [];
+        $ids = [];
+        $valid = is_array($decoded) && array_is_list($decoded);
+        foreach ($valid ? $decoded : [] as $id) {
+            $str = is_int($id) || is_string($id) ? (string)$id : '';
+            if (!ctype_digit($str) || (int)$str <= 0) {
+                $valid = false;
+                break;
+            }
+            $ids[] = $str;
         }
-        $this->hiddenTagIds = array_values(array_unique(array_filter(
-            array_map(static fn (mixed $id): string => (string)$id, $decoded),
-            static fn (string $id): bool => $id !== '' && $id !== '0'
-        )));
+        // An unreadable value is not "no tags": the guard refuses every node until an admin saves again,
+        // and the stored value is left untouched.
+        $this->configInvalid = !$valid;
+        $this->hiddenTagIds = $valid ? array_values(array_unique($ids)) : [];
         return $this->hiddenTagIds;
+    }
+
+    /** Whether the stored hidden tags can be read; when not, every node is refused. */
+    public function isConfigurationValid(): bool {
+        $this->getHiddenTagIds();
+        return !$this->configInvalid;
     }
 
     /**
      * Saves the configured hidden system tag IDs.
      * Validates that each ID is a positive integer and corresponds to an existing system tag if tagManager is set.
      *
+     * Removing every tag needs no lookup. Otherwise, when the tag manager cannot answer, nothing is saved
+     * and the previous configuration still applies.
+     *
      * @param list<string|int> $tagIds
      * @throws \InvalidArgumentException when an ID is not a positive integer
+     * @throws HiddenTagsUnavailableException when the system tags cannot be checked
      */
     public function setHiddenTagIds(array $tagIds): void {
         $sanitized = [];
@@ -334,20 +378,22 @@ class VisibilityGuard {
                         }
                     }
                     $sanitized = array_values(array_filter($sanitized, static fn (string $id): bool => isset($valid[$id])));
-                } catch (\Throwable) {
-                    $sanitized = [];
+                } catch (\Throwable $e) {
+                    throw new HiddenTagsUnavailableException('System tags could not be checked', 0, $e);
                 }
             }
         }
 
         $this->config->setAppValue('mcp', self::CONFIG_KEY, json_encode($sanitized));
         $this->hiddenTagIds = $sanitized;
+        $this->configInvalid = false;
         $this->cache = [];
     }
 
     /** Clears the in-memory caches. */
     public function clearCache(): void {
         $this->hiddenTagIds = null;
+        $this->configInvalid = false;
         $this->cache = [];
     }
 

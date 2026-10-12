@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace OCA\Mcp\Tests\Unit\Service;
 
+use OCA\Mcp\Service\HiddenTagsUnavailableException;
 use OCA\Mcp\Service\VisibilityGuard;
 use OCA\Mcp\Tests\Unit\InMemoryConfig;
 use OCA\Mcp\Tests\Unit\Tools\FakeTree;
@@ -278,5 +279,116 @@ final class VisibilityGuardTest extends TestCase {
 
         $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/docs/report.txt')));
         $this->assertTrue($guard->isVisible($this->tree->node($backupPath)));
+    }
+
+    /** A3: a tag manager that cannot answer refuses the save and keeps the previous protection. */
+    public function testTagManagerFailureKeepsProtection(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, null, $this->failingTagManager());
+
+        $refused = false;
+        try {
+            $guard->setHiddenTagIds(['42', '7']);
+        } catch (HiddenTagsUnavailableException) {
+            $refused = true;
+        }
+
+        $this->assertTrue($refused, 'the save must be refused while the tags cannot be checked');
+
+        $this->assertSame('["42"]', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+        $this->assertSame(['42'], $guard->getHiddenTagIds());
+    }
+
+    public function testExplicitRemovalOfAllTagsNeedsNoTagManager(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, null, $this->failingTagManager());
+
+        $guard->setHiddenTagIds([]);
+
+        $this->assertSame('[]', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+        $this->assertSame([], $guard->getHiddenTagIds());
+    }
+
+    /** A9: a stored value that is not a list of tag ids refuses every node, and is left as it is. */
+    public function testMalformedConfigurationRefusesAccess(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"';
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            'MCP hidden tags configuration is invalid; access refused', ['app' => 'mcp']
+        );
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, null, null, $logger);
+
+        $secretId = $this->tree->addFile('/alice/files/secret.txt', 'secret');
+        $this->tagAssignments[(string)$secretId] = ['42'];
+        $this->tree->addFile('/alice/files/plain.txt', 'plain');
+
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/secret.txt')));
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/plain.txt')));
+        $this->assertSame([], $guard->filter([$this->tree->node('/alice/files/plain.txt')]));
+        $this->assertFalse($guard->isPathAllowedForWrite($this->tree->rootFolder(), '/new.txt'));
+        $this->assertFalse($guard->isConfigurationValid());
+        $this->assertSame('["42"', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function malformedConfigurations(): iterable {
+        yield 'truncated json' => ['["42"'];
+        yield 'not a list' => ['{"a":"42"}'];
+        yield 'scalar' => ['42'];
+        yield 'empty string' => [''];
+        yield 'non numeric id' => ['["secret"]'];
+        yield 'nested list' => ['[["42"]]'];
+        yield 'zero id' => ['["0"]'];
+    }
+
+    /** @dataProvider malformedConfigurations */
+    public function testEveryMalformedConfigurationIsInvalid(string $raw): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = $raw;
+        $guard = $this->guard();
+        $this->tree->addFile('/alice/files/plain.txt', 'plain');
+
+        $this->assertFalse($guard->isConfigurationValid());
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/plain.txt')));
+    }
+
+    public function testMalformedConfigurationRefusesBackupTagCopy(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"';
+        $guard = $this->guard();
+        $this->tree->addFile('/alice/files/a.txt', 'a');
+        $this->tree->addFile('/alice/files/b.txt', 'b');
+
+        $this->expectException(ToolFailure::class);
+        $guard->copyHiddenTags($this->tree->node('/alice/files/a.txt'), $this->tree->node('/alice/files/b.txt'));
+    }
+
+    public function testValidEmptyConfigurationMeansNoProtection(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '[]';
+        $guard = $this->guard();
+        $this->tree->addFile('/alice/files/plain.txt', 'plain');
+
+        $this->assertTrue($guard->isConfigurationValid());
+        $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/plain.txt')));
+    }
+
+    public function testSavingAgainRepairsMalformedConfiguration(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"';
+        $guard = $this->guard();
+        $this->tree->addFile('/alice/files/plain.txt', 'plain');
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/plain.txt')));
+
+        $guard->setHiddenTagIds(['42']);
+
+        $this->assertTrue($guard->isConfigurationValid());
+        $this->assertSame('["42"]', $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+        $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/plain.txt')));
+    }
+
+    private function failingTagManager(): \OCP\SystemTag\ISystemTagManager {
+        $manager = $this->createMock(\OCP\SystemTag\ISystemTagManager::class);
+        $manager->method('getTagsByIds')->willThrowException(new \RuntimeException('down'));
+        $manager->method('getAllTags')->willThrowException(new \RuntimeException('down'));
+        return $manager;
     }
 }

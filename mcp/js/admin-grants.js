@@ -483,8 +483,30 @@
 		const container = document.getElementById('mcp-tags-list')
 		const warning = document.getElementById('mcp-tags-warning')
 		const status = document.getElementById('mcp-tags-status')
+		const invalid = document.getElementById('mcp-tags-invalid')
+		const repair = document.getElementById('mcp-tags-repair')
 		if (!container) {
 			return
+		}
+
+		/**
+		 * Saves the selection; on success the stored setting is readable again.
+		 *
+		 * @param {Set<string>} selectedSet tag ids to hide
+		 */
+		async function saveTags(selectedSet) {
+			try {
+				await api('PUT', '/api/admin/tags', { tagIds: Array.from(selectedSet) })
+			} catch (e) {
+				// 503: the system tags could not be checked and the server kept the previous setting.
+				notifyError(e.message === '503'
+					? t('mcp', 'Could not check the system tags, so the hidden tags were not changed. Try again later.')
+					: t('mcp', 'Could not update hidden tags.'))
+				throw e
+			}
+			if (invalid) {
+				invalid.style.display = 'none'
+			}
 		}
 
 		try {
@@ -492,12 +514,28 @@
 			container.innerHTML = ''
 			container.setAttribute('aria-busy', 'false')
 
+			const selectedSet = new Set((res.selected || []).map(String))
+
+			if (invalid && res.invalid) {
+				invalid.style.display = 'block'
+				if (repair) {
+					repair.addEventListener('click', async () => {
+						repair.disabled = true
+						try {
+							await saveTags(selectedSet)
+						} catch {
+							// saveTags already told the admin
+						} finally {
+							repair.disabled = false
+						}
+					})
+				}
+			}
+
 			if (!res.tags || res.tags.length === 0) {
 				container.appendChild(el('p', { className: 'mcp-empty' }, [t('mcp', 'No system tags found. Create tags in Files settings.')]))
 				return
 			}
-
-			const selectedSet = new Set((res.selected || []).map(String))
 
 			function updateWarning() {
 				if (!warning) {
@@ -552,13 +590,15 @@
 					}
 
 					try {
-						await api('PUT', '/api/admin/tags', { tagIds: Array.from(selectedSet) })
+						await saveTags(selectedSet)
 						if (status) {
 							status.textContent = t('mcp', 'Saved')
 							setTimeout(() => { if (status.textContent === t('mcp', 'Saved')) status.textContent = '' }, 2000)
 						}
 					} catch {
-						notifyError(t('mcp', 'Could not update hidden tags.'))
+						if (status) {
+							status.textContent = ''
+						}
 						if (checkbox.checked) {
 							selectedSet.delete(tagId)
 						} else {
