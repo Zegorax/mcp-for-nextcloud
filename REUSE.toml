@@ -13,6 +13,7 @@ path = [
   "mcp/LICENSE",
   "mcp/NOTICE",
   "mcp/README.md",
+  "mcp/README.pt-BR.md",
   "mcp/THIRD-PARTY-NOTICES.md",
   "mcp/appinfo/info.xml",
   "mcp/composer.json",
