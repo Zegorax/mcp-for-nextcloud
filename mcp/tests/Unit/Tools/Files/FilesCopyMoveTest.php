@@ -339,4 +339,21 @@ final class FilesCopyMoveTest extends FilesToolsTestCase {
         $out = $this->json('files_copy', ['from' => '/Documentos/2026', 'to' => '/Copia/2026', 'confirm' => true]);
         $this->assertSame(2, $out['nodes'], 'uma pasta sem oculto continua sendo copiada');
     }
+    public function testMoveMutationCannotReturnReceiptForNewlyHiddenItem(): void {
+        $hidden = [];
+        $mapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $mapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use (&$hidden): array {
+            return array_combine($ids, array_map(static fn ($id): array => in_array((int)$id, $hidden, true) ? ['999'] : [], $ids));
+        });
+        $this->config->app['mcp'][\OCA\Mcp\Service\VisibilityGuard::CONFIG_KEY] = '["999"]';
+        $this->visibilityGuard = new \OCA\Mcp\Service\VisibilityGuard($this->config->mock($this), $mapper, $this->visibilityRoot());
+        $this->setUp();
+        $this->tree->afterMove = function (string $from, string $to) use (&$hidden): void {
+            $hidden[] = (int)$this->tree->node($to)->getId();
+        };
+        $out = $this->failure('files_move', ['from' => '/Documentos/ata.md', 'to' => '/receipt-secret.md', 'confirm' => true]);
+        $this->assertSame(CommonMessages::notFound(), $out);
+        $this->assertStringNotContainsString('receipt-secret', $out);
+    }
+
 }

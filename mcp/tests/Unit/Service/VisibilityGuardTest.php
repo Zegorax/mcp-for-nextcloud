@@ -45,6 +45,48 @@ final class VisibilityGuardTest extends TestCase {
         });
     }
 
+    public function testMovingIntoHiddenFolderStaleUntilClear(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $hidden = $this->tree->addFolder('/alice/files/secret');
+        $this->tagAssignments[(string)$hidden] = ['42'];
+        $this->tree->addFile('/alice/files/file', 'x');
+        $file = $this->tree->node('/alice/files/file');
+        $guard = $this->guardWithMutationEvents($file);
+        $this->assertTrue($guard->isVisible($file));
+        $file->move('/alice/files/secret/file');
+        $this->assertFalse($guard->isVisible($this->tree->node('/alice/files/secret/file')));
+    }
+
+    public function testExternalMoveOutOfHiddenFolderRefreshesVisibility(): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
+        $hidden = $this->tree->addFolder('/alice/files/secret');
+        $this->tagAssignments[(string)$hidden] = ['42'];
+        $this->tree->addFile('/alice/files/secret/file', 'x');
+        $file = $this->tree->node('/alice/files/secret/file');
+        $guard = $this->guardWithMutationEvents($file);
+        $this->assertFalse($guard->isVisible($file));
+        $file->move('/alice/files/file');
+        $this->assertTrue($guard->isVisible($this->tree->node('/alice/files/file')));
+    }
+
+    /** FakeTree emits the same post-rename event as Nextcloud's HookConnector. */
+    private function guardWithMutationEvents(Node $source): VisibilityGuard {
+        $listeners = [];
+        $events = $this->createMock(\OCP\EventDispatcher\IEventDispatcher::class);
+        $events->method('addListener')->willReturnCallback(function (string $name, callable $listener) use (&$listeners): void {
+            $listeners[$name][] = $listener;
+        });
+        $events->method('dispatchTyped')->willReturnCallback(function (\OCP\EventDispatcher\Event $event) use (&$listeners): void {
+            foreach ($listeners[$event::class] ?? [] as $listener) {
+                $listener($event);
+            }
+        });
+        $this->tree->afterMove = function (string $from, string $to) use ($events, $source): void {
+            $events->dispatchTyped(new \OCP\Files\Events\Node\NodeRenamedEvent($source, $this->tree->node($to)));
+        };
+        return new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot(), null, null, $events);
+    }
+
     private function guard(): VisibilityGuard {
         return new VisibilityGuard($this->config->mock($this), $this->tagMapper, $this->tree->filesystemRoot());
     }
