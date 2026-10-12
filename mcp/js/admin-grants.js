@@ -741,7 +741,7 @@
 	}
 
 	/**
-	 * Server log section: the switch that hides file names and paths in the log tools, through GET and PUT
+	 * Server log section: the switch that hides the text of log messages in the log tools, through GET and PUT
 	 * /apps/mcp/api/logs-privacy.
 	 */
 	async function initLogsPrivacy() {

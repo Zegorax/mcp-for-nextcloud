@@ -22,26 +22,42 @@ use PHPUnit\Framework\TestCase;
  * File names and paths in what the log tools show and in what the app itself writes to the log.
  */
 final class LogFileNamesTest extends TestCase {
-    /** Audit A4: a hidden path in the message and the URL of an entry. */
-    public function testAnEntryHidesThePathInItsMessageAndUrl(): void {
-        $entry = (object)['level' => 3, 'message' => 'Cannot open /alice/files/secret/salary.txt',
-            'url' => '/remote.php/dav/files/alice/secret/salary.txt'];
-
-        $out = LogRedactor::entry($entry, true);
-
-        $this->assertStringNotContainsString('salary', $out['message']);
-        $this->assertStringNotContainsString('secret', $out['message']);
-        $this->assertSame('/remote.php/dav/files/[hidden]', $out['url']);
+    /** @return \stdClass an entry whose message, URL and exceptions all carry a name */
+    private static function namedEntry(): \stdClass {
+        return json_decode(json_encode([
+            'level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice', 'method' => 'GET',
+            'url' => '/remote.php/dav/files/alice/secret/salary.txt', 'message' => 'Cannot open /alice/files/secret/salary.txt',
+            'reqId' => 'r1', 'userAgent' => 'curl/8.0', 'remoteAddr' => '203.0.113.9',
+            'exception' => ['Exception' => 'OCP\\Files\\NotFoundException', 'Message' => 'File salary.txt not found', 'Code' => 0,
+                'File' => '/var/www/nextcloud/lib/private/Files/View.php', 'Line' => 10, 'Trace' => [],
+                'Previous' => ['Exception' => 'RuntimeException', 'Message' => '"Secret Payroll.pdf" locked', 'Code' => 0, 'Trace' => [],
+                    'Previous' => ['Exception' => 'LogicException', 'Message' => 'report.txt.secret', 'Code' => 0, 'Trace' => []]]],
+        ]));
     }
 
-    public function testWithoutHidingAnEntryKeepsItsNames(): void {
-        $entry = (object)['level' => 3, 'message' => 'Cannot open /alice/files/secret/salary.txt',
-            'url' => '/remote.php/dav/files/alice/secret/salary.txt'];
+    /** With messages hidden, the message and every exception message are the marker, and nothing of their text stays. */
+    public function testAnEntryHidesEveryMessageWhole(): void {
+        $out = LogRedactor::entry(self::namedEntry(), true);
 
-        $out = LogRedactor::entry($entry);
+        $this->assertSame('[hidden]', $out['message']);
+        $this->assertSame('/remote.php/dav/files/[hidden]', $out['url']);
+        $this->assertSame(['[hidden]', '[hidden]', '[hidden]'],
+            [$out['exception']['message'], $out['exception']['previous']['message'], $out['exception']['previous']['previous']['message']]);
+        $this->assertSame(['OCP\\Files\\NotFoundException', 'RuntimeException', 'LogicException'],
+            [$out['exception']['class'], $out['exception']['previous']['class'], $out['exception']['previous']['previous']['class']]);
+        $this->assertSame('/var/www/nextcloud/lib/private/Files/View.php:10', $out['exception']['at']);
+        $this->assertSame(['alice', 'webdav', 'r1', '203.0.x.x'], [$out['user'], $out['app'], $out['reqId'], $out['remoteAddr']]);
+        foreach (['salary', 'Secret', 'Payroll', 'report', 'secret'] as $part) {
+            $this->assertStringNotContainsString($part, json_encode($out));
+        }
+    }
 
-        $this->assertStringContainsString('secret/salary.txt', $out['message']);
-        $this->assertStringContainsString('secret/salary.txt', $out['url']);
+    public function testWithoutHidingAnEntryKeepsItsText(): void {
+        $out = LogRedactor::entry(self::namedEntry());
+
+        $this->assertSame('Cannot open /alice/files/secret/salary.txt', $out['message']);
+        $this->assertSame('/remote.php/dav/files/alice/secret/salary.txt', $out['url']);
+        $this->assertSame('"Secret Payroll.pdf" locked', $out['exception']['previous']['message']);
     }
 
     /** The app's own log of an unexpected exception keeps its class and code only, in any mode. */
@@ -49,68 +65,6 @@ final class LogFileNamesTest extends TestCase {
         $this->assertSame('RuntimeException (code 0)', ToolRegistry::loggable(new \RuntimeException('Cannot access salary-secret.txt')));
         $this->assertSame('RuntimeException (code 7)', ToolRegistry::loggable(new \RuntimeException('File with name /Docs/Salary#Confidential could not be located', 7)));
         $this->assertSame('RuntimeException (code 0)', ToolRegistry::loggable(new \RuntimeException('File "README" is locked')));
-    }
-
-    /**
-     * @return iterable<string, array{string, string}>
-     */
-    public static function hidden(): iterable {
-        // Review of A4: parts of names that the first heuristic left behind.
-        yield 'name with # from the DAV message' => ['File with name /Docs/Salary#Confidential could not be located', 'File with name [hidden]'];
-        yield 'folder with a space' => ['Could not move /Secret Folder/Payroll 2026', 'Could not move [hidden]'];
-        yield 'not a route of an app' => ['Request to /apps/Secret failed', 'Request to /apps/[hidden]'];
-        yield 'quoted name without extension' => ['File "README" is locked', 'File "[hidden]" is locked'];
-        yield 'quoted name with unknown extension' => ['File "salary.secret" is locked', 'File "[hidden]" is locked'];
-        yield 'quoted url with a path' => ['Fetch of "https://cloud.example.com/remote.php/dav/files/a/x.pdf" failed', 'Fetch of "https://cloud.example.com/[hidden]" failed'];
-        // The first heuristic's cases.
-        yield 'webdav path' => ['/remote.php/dav/files/alice/Docs/a.pdf', '/remote.php/dav/files/[hidden]'];
-        // Review of 0d8cbed: the segment after a DAV collection may be a folder, not an account.
-        yield 'folder where the account goes, files' => ['File with name /remote.php/dav/files/Confidential/payroll could not be located', 'File with name /remote.php/dav/files/[hidden]'];
-        yield 'folder where the account goes, uploads' => ['Chunk /remote.php/dav/uploads/Confidential/payroll lost', 'Chunk /remote.php/dav/uploads/[hidden]'];
-        yield 'folder where the account goes, trashbin' => ['Restore /remote.php/dav/trashbin/Confidential/payroll failed', 'Restore /remote.php/dav/trashbin/[hidden]'];
-        yield 'folder where the account goes, versions' => ['Read /remote.php/dav/versions/Confidential/payroll failed', 'Read /remote.php/dav/versions/[hidden]'];
-        yield 'collection name that is not fixed' => ['Read /remote.php/dav/Confidential/payroll failed', 'Read /remote.php/dav/[hidden]'];
-        yield 'webdav path of a full url' => ['GET https://cloud.example.com/remote.php/webdav/Docs/a failed', 'GET https://cloud.example.com/remote.php/webdav/[hidden]'];
-        yield 'public share dav keeps no token' => ['/public.php/dav/files/AbC123/Docs/a.pdf', '/public.php/dav/files/[hidden]'];
-        yield 'public share link keeps no token' => ['/s/AbCdEf123/download', '/s/[hidden]'];
-        yield 'route with more after it' => ['/index.php/apps/files/ajax/list.php', '/index.php/apps/[hidden]'];
-        yield 'query of a route' => ['/index.php/apps/files/?dir=/secret&fileid=12', '/index.php/apps/[hidden]'];
-        // Review of the conservative policy: the segment after /apps/ is not a fixed route and goes too.
-        yield 'app segment in capitals' => ['File with name /apps/Secret/payroll could not be located', 'File with name /apps/[hidden]'];
-        yield 'app segment in lower case' => ['File with name /apps/secret/payroll could not be located', 'File with name /apps/[hidden]'];
-        yield 'real app id' => ['Request /apps/files/ajax/list.php failed', 'Request /apps/[hidden]'];
-        yield 'ocs app segment' => ['Call /ocs/v2.php/apps/secret/payroll failed', 'Call /ocs/v2.php/apps/[hidden]'];
-        yield 'ocs v1 app segment' => ['Call /ocs/v1.php/apps/Secret/x failed', 'Call /ocs/v1.php/apps/[hidden]'];
-        yield 'storage path' => ['Path /alice/files/Docs is locked', 'Path [hidden]'];
-        yield 'data directory' => ['Path /var/www/data/alice/files/Docs/x is locked', 'Path [hidden]'];
-        yield 'relative path' => ['Could not read secret/salary.txt here', 'Could not read [hidden]'];
-        yield 'bare name' => ['Cannot access salary-secret.txt', 'Cannot access [hidden]'];
-        yield 'quoted name with spaces' => ['File name must not end with a space: "Orçamento Exemplo .xlsx"', 'File name must not end with a space: "[hidden]"'];
-        yield 'single quoted path' => ["Move of 'Docs/old plan' failed", "Move of '[hidden]' failed"];
-    }
-
-    /** @dataProvider hidden */
-    public function testFileNamesAndPathsAreHidden(string $text, string $expected): void {
-        $this->assertSame($expected, LogRedactor::fileNames($text));
-    }
-
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function kept(): iterable {
-        yield 'quoted url without a path and quoted version' => ['Failed connecting to "https://cloud.example.com" version "31.0.9"'];
-        yield 'quoted class and method' => ['Error in "OC\\Files\\View::fopen" call'];
-        yield 'route alone' => ['Hit /index.php/apps/ ok'];
-        yield 'host and version' => ['Error connecting to apps.nextcloud.com version 31.0.9'];
-        yield 'masked addresses' => ['Login failed from 203.0.x.x and 2001:db8::/48'];
-        yield 'mime type' => ['Content type text/plain not allowed'];
-        yield 'class and method' => ['OC\\Files\\View::file_put_contents failed'];
-        yield 'plain text' => ['User alice not found'];
-    }
-
-    /** @dataProvider kept */
-    public function testWhatIsNotAFileStays(string $text): void {
-        $this->assertSame($text, LogRedactor::fileNames($text));
     }
 
     /**
@@ -140,22 +94,33 @@ final class LogFileNamesTest extends TestCase {
         $this->assertSame($expected, LogRedactor::url($url));
     }
 
-    public function testTheSummaryHidesNamesInSignaturesExamplesAndUrls(): void {
-        $entries = [(object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice',
-            'url' => '/remote.php/dav/files/alice/secret/salary.txt', 'message' => 'Cannot access salary-secret.txt', 'userAgent' => 'curl'],
-            (object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'webdav', 'user' => 'alice',
-            'url' => '/apps/Secret', 'message' => 'File with name /Docs/Salary#Confidential could not be located', 'userAgent' => 'curl'],
-            (object)['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => 'core', 'user' => 'alice',
-            'url' => '/ocs/v2.php/apps/secret/payroll', 'message' => 'File with name /apps/Secret/payroll could not be located', 'userAgent' => 'curl']];
+    /** With messages hidden, a signature groups by level, app and exception class, and carries no text at all. */
+    public function testTheSummaryGroupsByLevelAppAndExceptionClassWithoutText(): void {
+        $entry = static fn (string $message, ?string $class, string $app = 'webdav'): \stdClass => json_decode(json_encode(
+            ['level' => 3, 'time' => '2026-10-07T08:12:03-03:00', 'app' => $app, 'user' => 'alice', 'url' => '/apps/Secret/x',
+                'message' => $message, 'userAgent' => 'curl']
+            + ($class === null ? [] : ['exception' => ['Exception' => $class, 'Message' => $message, 'Code' => 0, 'Trace' => []]])));
+        $entries = [
+            $entry('Cannot access salary-secret.txt', 'OCP\\Files\\NotFoundException'),
+            $entry('File with name /Docs/Salary#Confidential could not be located', 'OCP\\Files\\NotFoundException'),
+            $entry('Upload of image/salary.pdf failed', null),
+            $entry('Report 2026/10 not found', null, 'core'),
+        ];
+        $time = new LogTime(\DateTimeInterface::ATOM, 'UTC');
 
-        $hidden = json_encode((new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC'), true))->analyze($entries));
-        $shown = json_encode((new LogAnalyzer(new LogTime(\DateTimeInterface::ATOM, 'UTC')))->analyze($entries));
+        $hidden = (new LogAnalyzer($time, true))->analyze($entries);
+        $shown = json_encode((new LogAnalyzer($time))->analyze($entries));
 
-        $this->assertStringNotContainsString('salary', $hidden);
-        $this->assertStringNotContainsString('Confidential', $hidden);
-        $this->assertStringNotContainsString('Secret', $hidden);
-        $this->assertStringNotContainsString('secret', $hidden);
-        $this->assertStringNotContainsString('payroll', $hidden);
+        $this->assertSame([
+            ['[hidden]', 'OCP\\Files\\NotFoundException', 'webdav', 2, '[hidden]'],
+            ['[hidden]', null, 'core', 1, '[hidden]'],
+            ['[hidden]', null, 'webdav', 1, '[hidden]'],
+        ], array_map(static fn (array $s): array => [$s['signature'], $s['exception'], $s['app'], $s['count'], $s['example']], $hidden['signatures']));
+        $this->assertSame(3, $hidden['distinctSignatures']);
+        $this->assertSame([['path' => '/apps/[hidden]', 'count' => 4]], $hidden['topUrls']);
+        foreach (['salary', 'Salary', 'Confidential', 'Secret', 'image/', '2026/10', 'Report'] as $part) {
+            $this->assertStringNotContainsString($part, json_encode($hidden));
+        }
         $this->assertStringContainsString('salary-secret.txt', $shown);
     }
 

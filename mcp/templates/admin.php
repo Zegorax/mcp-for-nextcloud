@@ -177,10 +177,10 @@
         <span class="mcp-status" id="mcp-logs-status" aria-live="polite"></span>
         <p>
             <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
-            <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide file names and paths in the logs')); ?></label>
+            <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
             <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
         </p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Takes effect while hidden tags are configured: the log tools then replace file names and paths in messages, URLs and summaries with [hidden], from the first path to the end of the message, since free text cannot tell which files are hidden. A name standing alone, without quotes, without a slash and without a known extension, may still appear. Turned off, the log tools show full file names and paths for diagnosis and do not respect the hiding by tags. Some IT teams use the names to track problems and prefer it off.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while hidden tags are configured, the text of log messages is hidden; the date, level, app, user, error type and route stay. Off: the full messages are shown for diagnosis, and the hiding by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">

@@ -14,7 +14,7 @@ use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
 
 /**
- * Whether the server log tools hide file names and paths, from the "Server log" block of the admin page.
+ * Whether the server log tools hide the text of log messages, from the "Server log" block of the admin page.
  * Admin-only and CSRF-protected by Nextcloud defaults.
  */
 class LogsPrivacyController extends Controller {

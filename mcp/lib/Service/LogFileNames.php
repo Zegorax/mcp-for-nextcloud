@@ -10,10 +10,11 @@ namespace OCA\Mcp\Service;
 use OCP\IAppConfig;
 
 /**
- * Whether the server log tools hide the names and paths of files, chosen by the administrator on the admin page.
+ * Whether the server log tools hide the text of log messages, chosen by the administrator on the admin page. The text
+ * goes whole, since free text cannot tell where the name of a file starts or ends.
  *
  * On by default. It only takes effect while files are hidden by tags: a configured list of hidden tags, or a stored
- * setting that cannot be read, which the guard treats as hiding everything. Off, the log tools show full names for
+ * setting that cannot be read, which the guard treats as hiding everything. Off, the log tools show full messages for
  * diagnosis and do not respect the hiding by tags.
  */
 class LogFileNames {
@@ -34,12 +35,12 @@ class LogFileNames {
         }
     }
 
-    /** @param bool $enabled whether the log tools hide file names while files are hidden by tags */
+    /** @param bool $enabled whether the log tools hide the text of messages while files are hidden by tags */
     public function setEnabled(bool $enabled): void {
         $this->appConfig->setValueBool('mcp', self::CONFIG_KEY, $enabled);
     }
 
-    /** @return bool whether the log tools hide file names right now */
+    /** @return bool whether the log tools hide the text of messages right now */
     public function active(): bool {
         return $this->enabled()
             && (!$this->visibility->isConfigurationValid() || $this->visibility->getHiddenTagIds() !== []);

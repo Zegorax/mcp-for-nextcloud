@@ -11,8 +11,9 @@ namespace OCA\Mcp\Tools\Logs;
  * The summary of logs_analyze over the entries of one window that passed the filters: totals by level, app and user,
  * the most frequent message signatures, the most requested URL paths and user agents, and a histogram by hour.
  *
- * Everything shown goes through {@see LogRedactor} first, so a summary carries no more than the entries would, file
- * names and paths included when they are hidden.
+ * Everything shown goes through {@see LogRedactor} first, so a summary carries no more than the entries would. With
+ * messages hidden, no text of a message is read into the summary: a signature groups the entries by level, app and
+ * exception class, and both the signature and the example are {@see LogRedactor::HIDDEN}.
  */
 final class LogAnalyzer {
     /** Signatures listed, the most frequent first. */
@@ -40,20 +41,19 @@ final class LogAnalyzer {
 
     /**
      * @param LogTime $time how the core writes the time of an entry
-     * @param bool $hideFileNames whether the names and paths of files in messages, examples and URLs are hidden
+     * @param bool $hideMessages whether the messages are hidden whole and the URLs keep only their route prefix
      */
-    public function __construct(private LogTime $time, private bool $hideFileNames = false) {}
+    public function __construct(private LogTime $time, private bool $hideMessages = false) {}
 
     /**
      * What varies between two occurrences of the same problem, folded into '#': quoted text, paths and URLs, UUIDs,
      * hashes and numbers.
      *
      * @param string $message the message of an entry
-     * @param bool $hideFileNames whether the names and paths of files are hidden before folding
      * @return string its signature, at most SIGNATURE_LIMIT characters
      */
-    public static function signature(string $message, bool $hideFileNames = false): string {
-        $text = LogRedactor::shown($message, LogRedactor::MESSAGE_LIMIT, $hideFileNames);
+    public static function signature(string $message): string {
+        $text = LogRedactor::text($message, LogRedactor::MESSAGE_LIMIT);
         $text = preg_replace(['/"[^"]*"/u', '/“[^”]*”/u', "/(?<!\\w)'[^']*'/u"], '#', $text) ?? '';
         $text = preg_replace('#\S*/\S*#u', '#', $text) ?? '';
         $text = preg_replace('/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', '#', $text) ?? '';
@@ -66,7 +66,7 @@ final class LogAnalyzer {
     /**
      * @param list<\stdClass> $entries entries that passed the filters, newest first
      * @return array<string, mixed> matched, byLevel, byApp, byUser, signatures, distinctSignatures, topUrls,
-     *     topUserAgents, hourly and hourlyUnparsed
+     *     topUserAgents, hourly and hourlyUnparsed; with messages hidden each signature also carries its exception class
      */
     public function analyze(array $entries): array {
         $levels = $apps = $users = $urls = $agents = $signatures = $hours = [];
@@ -78,18 +78,26 @@ final class LogAnalyzer {
             $apps[$app] = ($apps[$app] ?? 0) + 1;
             $user = self::field($entry, 'user', 100);
             $users[$user] = ($users[$user] ?? 0) + 1;
-            $url = self::path(is_scalar($entry->url ?? null) ? LogRedactor::shownUrl((string)$entry->url, 2000, $this->hideFileNames) : '');
+            $url = self::path(is_scalar($entry->url ?? null) ? LogRedactor::shownUrl((string)$entry->url, 2000, $this->hideMessages) : '');
             $urls[$url] = ($urls[$url] ?? 0) + 1;
             $agent = self::field($entry, 'userAgent', 300);
             $agents[$agent] = ($agents[$agent] ?? 0) + 1;
 
             $time = is_string($entry->time ?? null) ? LogRedactor::text($entry->time, 64) : '';
-            $message = is_string($entry->message ?? null) ? $entry->message : '';
-            $signature = self::signature($message, $this->hideFileNames);
-            $key = $level . "\0" . $app . "\0" . $signature;
-            // Newest first: the first occurrence read is the last one written, and each older one moves `first` back.
-            $signatures[$key] ??= ['signature' => $signature, 'level' => $level, 'app' => $app, 'count' => 0, 'first' => $time, 'last' => $time,
-                'example' => LogRedactor::shown($message, LogRedactor::MESSAGE_LIMIT, $this->hideFileNames)];
+            if ($this->hideMessages) {
+                // No text of the message is read: the exception class is the server's own code, not the user's text.
+                $class = LogRedactor::exception($entry->exception ?? null, true)['class'] ?? null;
+                $key = $level . "\0" . $app . "\0" . ($class ?? '');
+                $signatures[$key] ??= ['signature' => LogRedactor::HIDDEN, 'exception' => $class, 'level' => $level, 'app' => $app,
+                    'count' => 0, 'first' => $time, 'last' => $time, 'example' => LogRedactor::HIDDEN];
+            } else {
+                $message = is_string($entry->message ?? null) ? $entry->message : '';
+                $signature = self::signature($message);
+                $key = $level . "\0" . $app . "\0" . $signature;
+                // Newest first: the first occurrence read is the last one written, and each older one moves `first` back.
+                $signatures[$key] ??= ['signature' => $signature, 'level' => $level, 'app' => $app, 'count' => 0, 'first' => $time, 'last' => $time,
+                    'example' => LogRedactor::text($message, LogRedactor::MESSAGE_LIMIT)];
+            }
             $signatures[$key]['count']++;
             $signatures[$key]['first'] = $time;
 
@@ -103,7 +111,9 @@ final class LogAnalyzer {
             $hours[$hour]['count']++;
         }
         $signatures = array_values($signatures);
-        usort($signatures, static fn (array $a, array $b): int => $b['count'] <=> $a['count'] ?: strcmp($a['signature'], $b['signature']));
+        // Ties by text, then app and exception class: with messages hidden every signature has the same text.
+        usort($signatures, static fn (array $a, array $b): int => $b['count'] <=> $a['count'] ?: strcmp($a['signature'], $b['signature'])
+            ?: strcmp($a['app'], $b['app']) ?: strcmp((string)($a['exception'] ?? ''), (string)($b['exception'] ?? '')));
         usort($hours, static fn (array $a, array $b): int => $a['start'] <=> $b['start']);
         // Highest level first; a level the core does not define comes last, under its own number.
         $byLevel = [];

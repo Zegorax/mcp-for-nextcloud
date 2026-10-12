@@ -24,8 +24,8 @@ use OCP\IConfig;
  *
  * The entries come from {@see LogReader} only, are redacted by {@see LogRedactor}, travel in the untrusted envelope of
  * {@see LogEnvelope}, and every call, refused ones included, is handed to audit() by the registry and recorded by
- * {@see LogAudit}. While {@see LogFileNames} is active, the names and paths of files are hidden in what is shown and
- * in what `contains` matches.
+ * {@see LogAudit}. While {@see LogFileNames} is active, the text of every message is hidden whole, URLs keep only
+ * their route prefix, and `contains`, which would match the hidden text, is refused.
  */
 class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
     /** Default and largest page of logs_list. */
@@ -33,6 +33,10 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
     public const MAX_LIMIT = 100;
     /** Arguments recorded by the audit, in this order. */
     private const AUDITED_ARGUMENTS = ['min_level', 'app', 'user', 'since', 'until', 'contains', 'req_id', 'offset', 'limit'];
+    /** What source.messages says while messages are hidden. */
+    private const HIDDEN_NOTE = 'The administrator hides the text of log messages while files are hidden by tags: every message '
+        . 'and exception message is ' . LogRedactor::HIDDEN . ', URLs keep only their route prefix, signatures group entries by '
+        . 'level, app and exception class, and contains is not available.';
     /** Level the core writes from when loglevel is not set: warning. */
     private const DEFAULT_LOG_LEVEL = 2;
 
@@ -65,8 +69,8 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
             if (is_int($value)) {
                 $filters[$key] = $value;
             } elseif (is_string($value)) {
-                // What the reader searched for may be a file name: the audit log never carries one.
-                $filters[$key] = LogRedactor::fileNames(LogRedactor::text($value, LogFilter::MAX_CONTAINS));
+                // What the reader searched for may be a file name: the audit log never carries that text.
+                $filters[$key] = $key === 'contains' ? LogRedactor::HIDDEN : LogRedactor::text($value, LogFilter::MAX_CONTAINS);
             }
         }
         $this->audit->record($userId, LogRedactor::text($tool, 64), $outcome, $filters);
@@ -90,9 +94,10 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
             'Start with logs_analyze to see what dominates a period, then call logs_list with app, contains or req_id to read '
                 . 'the entries behind one signature. IP addresses are masked, stack traces keep ten frames without arguments '
                 . 'and every call is recorded in the audit log.',
-            'When source.fileNamesHidden is true, the administrator hides file names and paths from these tools: they '
-                . 'appear as ' . LogRedactor::HIDDEN . ' (in a message, from the first path to its end; in a URL, after the route), '
-                . 'contains does not match them, and they cannot be recovered here.',
+            'When source.messagesHidden is true, the administrator hides the text of log messages from these tools: every '
+                . 'message and exception message is ' . LogRedactor::HIDDEN . ' and cannot be recovered here, URLs keep only their '
+                . 'route prefix, signatures of logs_analyze group entries by level, app and exception class, and contains is '
+                . 'refused. Time, level, app, user, request id, exception class and stack frames stay.',
         ];
     }
 
@@ -129,7 +134,8 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
      * @param array<string, mixed> $arguments arguments validated against the schema, defaults applied
      * @param string $userId authenticated user
      * @return array{content: list<array{type:string, text:string}>, structuredContent: array<string, mixed>}
-     * @throws InvalidArgumentException for an unknown tool or an invalid filter, before anything is read
+     * @throws InvalidArgumentException for an unknown tool or an invalid filter, and for contains while messages are
+     *         hidden, before anything is read
      * @throws \OCA\Mcp\Tools\ToolFailure when the log cannot be read
      */
     public function call(string $name, array $arguments, string $userId): array {
@@ -137,10 +143,12 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
             throw new InvalidArgumentException('Unknown tool');
         }
         $hide = $this->fileNames->active();
-        $filter = LogFilter::fromArguments($arguments, $this->time());
-        if ($hide) {
-            $filter = $filter->hidingFileNames();
+        // A search inside hidden text would answer, by its count, whether a name is there: it is refused instead.
+        if ($hide && isset($arguments['contains'])) {
+            throw new InvalidArgumentException('contains is not available while the administrator hides the text of log '
+                . 'messages; filter by min_level, app, user, since, until or req_id instead');
         }
+        $filter = LogFilter::fromArguments($arguments, $this->time());
         $offset = (int)($arguments['offset'] ?? 0);
         $limit = $name === 'logs_list' ? (int)($arguments['limit'] ?? self::DEFAULT_LIMIT) : null;
         if ($limit !== null && ($limit < 1 || $limit > self::MAX_LIMIT)) {
@@ -174,8 +182,8 @@ class LogsModule implements ToolModule, ToolGuideNotes, RestrictedModule {
         return LogEnvelope::result($name, [
             'file' => LogEnvelope::SOURCE_FILE,
             'serverLogLevel' => $this->config->getSystemValueInt('loglevel', self::DEFAULT_LOG_LEVEL),
-            'fileNamesHidden' => $hide,
-        ], $payload);
+            'messagesHidden' => $hide,
+        ] + ($hide ? ['messages' => self::HIDDEN_NOTE] : []), $payload);
     }
 
     /** @return LogTime how the core writes the time of an entry on this server */
