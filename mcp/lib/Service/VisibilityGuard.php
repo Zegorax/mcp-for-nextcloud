@@ -61,14 +61,17 @@ class VisibilityGuard {
     ) {
         // Invalidate this very instance after OCP mutations outside the MCP tools,
         // too. Run after ordinary privacy hooks; tools also clear in finally.
+        $invalidate = fn () => $this->clearCache();
         foreach ([
             \OCP\Files\Events\Node\NodeRenamedEvent::class,
             \OCP\Files\Events\Node\NodeCreatedEvent::class,
             \OCP\Files\Events\Node\NodeCopiedEvent::class,
             \OCP\Files\Events\Node\NodeDeletedEvent::class,
             \OCP\Files\Events\Node\NodeWrittenEvent::class,
+            \OCP\SystemTag\MapperEvent::EVENT_ASSIGN,
+            \OCP\SystemTag\MapperEvent::EVENT_UNASSIGN,
         ] as $event) {
-            $events?->addListener($event, fn () => $this->clearCache(), PHP_INT_MIN);
+            $events?->addListener($event, $invalidate, PHP_INT_MIN);
         }
     }
 

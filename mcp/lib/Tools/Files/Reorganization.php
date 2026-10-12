@@ -362,6 +362,8 @@ final class Reorganization {
      * A batch whose plan is not ok is refused rather than partly run: the user approved a plan, and
      * quietly dropping the item that conflicts would leave a state neither they nor the agent asked for.
      *
+     * If a privacy hook hides a result, the batch is recorded but the generic refusal omits its batch_id.
+     *
      * @param Folder $root the user's folder
      * @param string $userId authenticated user
      * @param list<array{from:string, to:string}> $moves requested moves
@@ -644,11 +646,11 @@ final class Reorganization {
         $undone = 0;
         foreach (array_reverse($batch->moves) as $move) {
             try {
-                $this->assertUndoVisible($root, $batch);
+                $this->assertPathsVisible($root, [$move['to'], $move['from']]);
                 $node = NodeAccess::run(fn () => NodeAccess::get($root, $move['to']));
                 NodeAccess::run(fn () => $this->locked(fn (): Node => $node->move($this->absolute($root, $move['from'])), $node, $userId));
                 $undone++;
-                $this->assertUndoVisible($root, $batch);
+                $this->assertPathsVisible($root, [$move['to'], $move['from']]);
             } catch (\Throwable $e) {
                 // Every condition was checked above, so this is a lock or a permission that changed in
                 // between. The row keeps only what did not go back: an item that already moved is no longer
@@ -663,10 +665,15 @@ final class Reorganization {
                         'reason' => $e instanceof ToolFailure ? $e->getMessage() : FilesMessages::moveFailed()]]];
             }
         }
+        // All moves have returned; a later privacy refusal must not leave them
+        // pending in the record and make every retry report absent destinations.
+        $store->keepRemaining($batchId, $userId, []);
+        $this->assertUndoVisible($root, $batch);
         $removed = [];
         $kept = [];
         // Deepest first: a folder cannot go while something the undo just emptied is still inside it.
         foreach ($this->byDepth($batch->dirs) as $dir) {
+            $this->assertPathsVisible($root, [$dir]);
             $relative = ltrim($dir, '/');
             if (!$root->nodeExists($relative)) {
                 continue;
@@ -677,9 +684,10 @@ final class Reorganization {
                 continue;
             }
             NodeAccess::run(fn () => NodeAccess::mutate(fn () => $folder->delete(), $this->visibilityGuard));
-            $this->assertUndoVisible($root, $batch);
+            $this->assertPathsVisible($root, [$dir]);
             $removed[] = $dir;
         }
+        $this->assertUndoVisible($root, $batch);
         $store->markUndone($batchId, $userId, $now);
         return [
             'batch_id' => $batchId,
@@ -702,13 +710,18 @@ final class Reorganization {
      * @throws ToolFailure when one of those nodes is hidden or cannot be checked
      */
     private function assertUndoVisible(Folder $root, Batch $batch): void {
-        if ($this->visibilityGuard === null) {
-            return;
-        }
         $paths = $batch->dirs;
         foreach ($batch->moves as $move) {
             $paths[] = $move['to'];
             $paths[] = $move['from'];
+        }
+        $this->assertPathsVisible($root, $paths);
+    }
+
+    /** @param list<string> $paths paths or nearest existing ancestors to check */
+    private function assertPathsVisible(Folder $root, array $paths): void {
+        if ($this->visibilityGuard === null) {
+            return;
         }
         foreach ($paths as $path) {
             try {

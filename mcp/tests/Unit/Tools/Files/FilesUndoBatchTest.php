@@ -325,9 +325,9 @@ final class FilesUndoBatchTest extends FilesToolsTestCase {
         $this->assertArrayNotHasKey('/alice/files/Arquivado/2026', $this->tree->nodes);
         $finished = $this->batches->find($id, 'alice');
         $this->assertNotNull($finished->undoneAt, 'o lote terminou');
-        // The row still holds the two it reverted on the retry; the one that went back on the first attempt
-        // was narrowed out then. undone_at, not the list, is what stops the batch being replayed.
-        $this->assertCount(2, $finished->moves);
+        // Once every move has returned, none may remain pending if the
+        // directory cleanup or its privacy check subsequently refuses the undo.
+        $this->assertSame([], $finished->moves);
         $this->assertTrue($finished->isUndone());
     }
 
