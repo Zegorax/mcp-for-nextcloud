@@ -492,4 +492,106 @@ final class NotesModuleTest extends TestCase {
         $this->expectExceptionMessage(CommonMessages::notFound());
         $module->call('notes_read', ['id' => $this->ata], 'alice');
     }
+
+    public function testCreateInACategoryUnderAHiddenFolderIsRefusedBeforeCreatingAnything(): void {
+        $secretId = $this->tree->addFolder('/alice/files/Notes/Segredo');
+        $module = $this->moduleHiding([$secretId]);
+
+        // Plan and write give the very same answer as a category that does not exist, and nothing is built.
+        try {
+            $module->preview('notes_create', ['title' => 'Roteiro', 'category' => 'Segredo/Nova/Sub'], 'alice');
+            $this->fail('notes_create planned a category under a hidden folder');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        try {
+            $this->callOn($module, 'notes_create', ['title' => 'Roteiro', 'category' => 'Segredo/Nova/Sub']);
+            $this->fail('notes_create accepted a category under a hidden folder');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        $this->assertArrayNotHasKey('/alice/files/Notes/Segredo/Nova', $this->tree->nodes);
+        $this->assertArrayNotHasKey('/alice/files/Notes/Segredo/Nova/Sub', $this->tree->nodes);
+    }
+
+    public function testMoveToACategoryUnderAHiddenFolderIsRefusedWithoutCreatingAnything(): void {
+        $secretId = $this->tree->addFolder('/alice/files/Notes/Segredo');
+        $module = $this->moduleHiding([$secretId]);
+
+        try {
+            $module->preview('notes_move', ['id' => $this->ata, 'category' => 'Segredo/Nova'], 'alice');
+            $this->fail('notes_move planned a category under a hidden folder');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        try {
+            $this->callOn($module, 'notes_move', ['id' => $this->ata, 'category' => 'Segredo/Nova']);
+            $this->fail('notes_move accepted a category under a hidden folder');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        $this->assertSame('/alice/files/Notes/Reuniões/Ata.md', $this->tree->node('/alice/files/Notes/Reuniões/Ata.md')->getPath());
+        $this->assertArrayNotHasKey('/alice/files/Notes/Segredo/Nova', $this->tree->nodes);
+    }
+
+    public function testACategoryUnderAVisibleFolderIsStillCreated(): void {
+        $this->tree->addFolder('/alice/files/Notes/Publico');
+        $module = $this->moduleHiding([]); // nothing is hidden here
+
+        $plan = $module->preview('notes_create', ['title' => 'Roteiro', 'category' => 'Publico/Nova'], 'alice');
+        $this->assertSame('Publico/Nova', $plan['note']['category']);
+
+        $note = $this->callOn($module, 'notes_create', ['title' => 'Roteiro', 'category' => 'Publico/Nova']);
+        $this->assertSame('Publico/Nova', $note['category']);
+        $this->assertArrayHasKey('/alice/files/Notes/Publico/Nova', $this->tree->nodes);
+    }
+
+    public function testAnEmptyCategoryWithAHiddenNotesRootIsRefused(): void {
+        $notesId = $this->tree->node('/alice/files/Notes')->getId();
+        $module = $this->moduleHiding([$notesId]);
+
+        try {
+            $module->preview('notes_create', ['title' => 'Roteiro'], 'alice');
+            $this->fail('notes_create planned at a hidden notes root');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        try {
+            $this->callOn($module, 'notes_create', ['title' => 'Roteiro']);
+            $this->fail('notes_create accepted a hidden notes root');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+    }
+
+    /** A module whose notes repository and guard hide the given file ids with one hidden tag. */
+    private function moduleHiding(array $hiddenIds): NotesModule {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = json_encode(['999']);
+        $tagMapper = $this->createMock(\OCP\SystemTag\ISystemTagObjectMapper::class);
+        $tagMapper->method('getTagIdsForObjects')->willReturnCallback(static function (array $ids) use ($hiddenIds): array {
+            $out = [];
+            foreach ($ids as $id) {
+                $out[(string)$id] = in_array((int)$id, $hiddenIds, true) ? ['999'] : [];
+            }
+            return $out;
+        });
+        $guard = new VisibilityGuard($this->config->mock($this), $tagMapper);
+
+        $root = $this->createMock(IRootFolder::class);
+        $root->method('getUserFolder')->willReturnCallback(fn () => $this->tree->rootFolder());
+        $apps = $this->createMock(IAppManager::class);
+        $apps->method('isEnabledForUser')->willReturnCallback(fn (string $app) => in_array($app, $this->apps, true));
+        $users = $this->createMock(IUserManager::class);
+        $users->method('get')->willReturn($this->createMock(IUser::class));
+        $access = new NodeAccessInfo(FakeUsers::manager($this, FakeUsers::DEFAULTS), $this->tree->shareManager());
+        return new NotesModule(new NotesRepository($root, $this->config->mock($this), $guard), $apps, $users,
+            new SharedWriteGuard($access), $access, $guard);
+    }
+
+    private function callOn(NotesModule $module, string $name, array $arguments = []): array {
+        $definition = array_column($module->definitions(), null, 'name')[$name];
+        $published = WriteGate::publish($definition);
+        $result = $module->call($name, ArgumentValidator::validate($published['inputSchema'], $arguments), 'alice');
+        return json_decode($result['content'][0]['text'], true, 512, JSON_THROW_ON_ERROR);
+    }
 }

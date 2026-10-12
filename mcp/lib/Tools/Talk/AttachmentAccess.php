@@ -66,12 +66,14 @@ class AttachmentAccess {
         if ($this->visibilityGuard !== null) {
             try {
                 $node = $share->getNode();
-                if ($node instanceof \OCP\Files\Node && !$this->visibilityGuard->isVisible($node)) {
-                    throw new ConversationAccessException(Messages::attachmentNotFound());
-                }
-            } catch (ConversationAccessException $e) {
-                throw $e;
-            } catch (\Throwable) {}
+            } catch (Throwable $e) {
+                // A share whose node cannot be resolved cannot be checked against the hidden tags, so it is
+                // refused with the very same answer as an unknown attachment, in the draft and in the confirm.
+                throw new ConversationAccessException(Messages::attachmentNotFound(), $e);
+            }
+            if (!$node instanceof \OCP\Files\Node || !$this->visibilityGuard->isVisible($node)) {
+                throw new ConversationAccessException(Messages::attachmentNotFound());
+            }
         }
 
         return $share;

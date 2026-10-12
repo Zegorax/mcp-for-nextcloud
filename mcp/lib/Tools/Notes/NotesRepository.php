@@ -49,7 +49,7 @@ class NotesRepository {
         $userFolder = $this->rootFolder->getUserFolder($userId);
         $path = PathGuard::normalize($this->config->getUserValue($userId, 'notes', 'notesPath', self::DEFAULT_FOLDER) ?: self::DEFAULT_FOLDER);
         if ($create) {
-            return NodeAccess::ensureFolder($userFolder, $path);
+            return NodeAccess::ensureFolder($userFolder, $path, $this->visibilityGuard);
         }
         if (!$userFolder->nodeExists(ltrim($path, '/'))) {
             return null;
@@ -158,6 +158,42 @@ class NotesRepository {
             'modified' => (int)$note->getMTime(),
             'etag' => (string)$note->getEtag(),
         ];
+    }
+
+    /**
+     * Walks the category tree as it exists today, without creating anything: the notes root and every
+     * ancestor of the requested category that already exists must be visible. A hidden one refuses exactly
+     * like a category that does not exist, even for the empty category. The walk stops at the first missing
+     * segment, because what is below it would be created under a checked, visible parent
+     * ({@see NodeAccess::ensureFolder} with the guard does the same walk when it is time to write).
+     *
+     * @param Folder $root notes folder
+     * @param string $category requested category; '' checks the notes root itself
+     * @throws InvalidArgumentException on traversal or control characters
+     * @throws ToolFailure when the root or an existing ancestor is hidden
+     */
+    public function assertCategoryVisible(Folder $root, string $category): void {
+        try {
+            $relative = PathGuard::normalize($category);
+        } catch (InvalidArgumentException) {
+            throw new InvalidArgumentException('Invalid argument: category');
+        }
+        if ($this->visibilityGuard === null) {
+            return;
+        }
+        $this->visibilityGuard->assertVisible($root);
+        $folder = $root;
+        foreach (array_filter(explode('/', $relative)) as $segment) {
+            if (!$folder->nodeExists($segment)) {
+                return;
+            }
+            $next = $folder->get($segment);
+            $this->visibilityGuard->assertVisible($next);
+            if (!$next instanceof Folder) {
+                return;
+            }
+            $folder = $next;
+        }
     }
 
     /**
