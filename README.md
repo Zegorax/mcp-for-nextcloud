@@ -36,7 +36,7 @@ From 1.0.0 on the app is published in the [Nextcloud App Store](https://apps.nex
 - **1.0.3: Nextcloud 32–35.** The app declares support for Nextcloud 32 to 35, checked by API contract tests against Deck 1.16–1.19 and Talk 22–25. Fixes: editing a Deck card on 1.18/1.19 no longer clears its start date or colour, and Talk respects the lobby when reading and writing.
 - **1.0.4: store description.** The description in the App Store (English, Portuguese and Spanish) now lists the server log module added in 1.0.2. No functional change.
 - **1.0.5: locked files and licensing.** A note or file open in Text or Nextcloud Office, locked by another person or by a WebDAV client is no longer a generic error: the plan warns about it, and the write is refused before any change with the app or person holding the lock, since when, until when and what to do. Your own manual lock still lets you write, the app never unlocks or takes over a lock, a version restore no longer writes under an open editor, and the checkout upload answers 423. The app refuses the locks Nextcloud reports when it checks; locks of people and apps are also enforced by Nextcloud at the write (with one exception for Text on delete and rename), while a WebDAV token lock is refused only by the app's own check, which is not atomic with the write and may miss a lock taken during the same request (see the known limitations in [`CHANGELOG.md`](CHANGELOG.md)). The repository now follows REUSE, with `NOTICE`, third-party notices and the "Developed by Sintax" credit on the admin page.
-- **1.0.6: hidden tags fix.** With a hidden system tag configured, ordinary files and folders are visible again; since 0.8.0 they were all reported as not found. Backups of hidden files stay hidden. Thanks to @NightDragon1.
+- **1.0.6: hidden tags fix.** With a hidden system tag configured, ordinary files and folders are visible again; since 0.8.0 they were all reported as not found. Backups of hidden files stay hidden. The tag-based hiding was audited on every access path and the gaps were closed (undo, Talk quotes, Notes categories, resources, shares, cached decisions), and a new admin option hides the text of log messages while files are hidden. Thanks to @NightDragon1 (#5) and @matt-ek (#4).
 
 Upgrading from 0.7.0 or later runs the schema migrations by itself (tables `mcp_file_batches`, `mcp_oauth_spent` and `mcp_logs_groups`): no manual step, no `occ`, and nothing changes in `config.php`.
 
@@ -50,7 +50,7 @@ Upgrading from 0.7.0 or later runs the schema migrations by itself (tables `mcp_
 | **Contacts** | list personal/shared address books, search and read contacts, including the read-only accounts catalog of the instance (colleagues, with `accountId` for invitations) under the admin user-enumeration settings | create and edit while preserving unknown vCard fields; permanently delete only after a verified `.vcf` backup in `/MCP backups/Contacts` |
 | **Tasks** | list task calendars and VTODO tasks, including undated tasks; read tasks | create, edit, complete and delete simple tasks through CalDAV; deletion uses calendar trash and is refused when retention is zero |
 | **Deck** | boards, stacks, cards, and a **follow-up** of the boards you manage: cards grouped by assignee, with due date, overdue flag (in your own time zone) and a link to the card | create, edit, move and delete cards, and assign or unassign the board members; create a board with its lists and first cards, or a list in a board you manage; delete a board or a list only when it is empty, straight to the Deck trash |
-| **Server log** | for administrators and the groups they choose: list the entries of `nextcloud.log` with filters, and summarize them (totals, frequent signatures, URLs, user agents, entries per hour). Off by default for everyone; IPs masked, output marked as untrusted, every read audited | — (read only) |
+| **Server log** | for administrators and the groups they choose: list the entries of `nextcloud.log` with filters, and summarize them (totals, frequent signatures, URLs, user agents, entries per hour). Off by default for everyone; IPs masked, output marked as untrusted, every read audited. While hidden tags are configured, the admin option "Hide the text of log messages" (on by default) hides the text of messages and exceptions, the user agent and the URL detail, and refuses the `contains` filter; turned off, the logs come back in full for diagnosis | — (read only) |
 | **Talk** | conversations and messages (never marks anything as read) | reply (optionally quoting a message or linking a Deck card or calendar event you can see), direct message to a user, batch of messages, share or quote a file, create a group conversation (separate grant, off by default). **Nothing is sent before the user approves: a call without `confirm: true` returns only the plan (recipient, final text, attachments, what would be created or shared) and runs nothing; with `confirm: true` it checks the permissions again and sends. No approval id, token or record is kept on the server.** |
 
 Plus:
@@ -109,7 +109,7 @@ Task deletion uses native calendar trash and is refused when `dav/calendarRetent
 
    Adjust paths and the web server user to your setup. With Docker, run `occ` inside the container.
 
-Then, **configure** in *Administration settings → MCP for Nextcloud* (the app has its own entry with an icon in the settings menu): turn the service on, mark who may connect, grant write permissions where needed, and select system tags for hiding sensitive files. The page is split into blocks: **Status** (endpoint to copy, service switch, app version, eligible/connected users, active connections and the editable checkout upload limit in MiB, shown next to PHP's `post_max_size` ceiling), **OAuth clients**, **Hidden files & tags**, **OCR**, **Permissions** (the users × permissions matrix, with search, group and "can connect / connected" filters, an "All" menu per module for the users on the page, and pagers on top and bottom), **Server log** (the groups whose members may read the server log besides the administrators) and **Active connections**.
+Then, **configure** in *Administration settings → MCP for Nextcloud* (the app has its own entry with an icon in the settings menu): turn the service on, mark who may connect, grant write permissions where needed, and select system tags for hiding sensitive files. The page is split into blocks: **Status** (endpoint to copy, service switch, app version, eligible/connected users, active connections and the editable checkout upload limit in MiB, shown next to PHP's `post_max_size` ceiling), **OAuth clients**, **Hidden files & tags**, **OCR**, **Permissions** (the users × permissions matrix, with search, group and "can connect / connected" filters, an "All" menu per module for the users on the page, and pagers on top and bottom), **Server log** (the groups whose members may read the server log besides the administrators, and the switch that hides the text of log messages while files are hidden by tags) and **Active connections**.
 
 Server log access groups are stored in the app's own versioned table, created automatically by its native migration. Existing appconfig groups are imported on first read. The admin API returns `version` with GET and requires it on PUT; stale saves get 409. The database compare-and-swap still protects revocations with `filelocking.enabled=false`, when the extra Nextcloud lock becomes Noop.
 
@@ -207,6 +207,13 @@ curl -u 'alice:APP-PASSWORD' \
 - The consent screen is CSRF-protected and cannot be framed.
 - Found a vulnerability? Please report it privately to the maintainers instead of opening a public issue.
 
+### Hidden tags
+
+- A tag on a file or folder covers every file and folder below it.
+- An item reached through a local share inherits the hiding of its owner's source folder chain; team folders, external storage and federated shares are checked along their mounted path, and a federated share only by the tags of the local installation.
+- In doubt the app refuses: a configuration that cannot be validated or a tag query that fails keeps the item hidden, and the admin page explains the state and offers the repair.
+- The hiding protects this MCP connector; other connectors or AI tools that read the same Nextcloud are not covered by it.
+
 ## Development
 
 ```bash
@@ -234,6 +241,8 @@ AGPL-3.0-or-later, with the additional section 7(b) attribution term in [NOTICE]
 ## Credits
 
 The package includes Smalot PdfParser, Symfony Polyfill Mbstring and the Composer autoloader. See versions, licenses, copyright and development dependencies in [THIRD-PARTY-NOTICES.md](mcp/THIRD-PARTY-NOTICES.md).
+
+**Contributors.** Thanks to @NightDragon1 (#5) for the root visibility check and to @matt-ek (#4) for the report behind the hidden-tags audit.
 
 ## About Sintax
 
