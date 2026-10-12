@@ -312,9 +312,10 @@ class VisibilityGuard {
             return $this->hiddenTagIds;
         }
         $raw = $this->config->getAppValue('mcp', self::CONFIG_KEY, '[]');
-        $decoded = json_decode($raw, true);
+        // Objects stay objects: decoded as arrays, {} and {"0":"42"} would pass for lists.
+        $decoded = json_decode($raw);
         $ids = [];
-        $valid = is_array($decoded) && array_is_list($decoded);
+        $valid = is_array($decoded);
         foreach ($valid ? $decoded : [] as $id) {
             $str = is_int($id) || is_string($id) ? (string)$id : '';
             if (!ctype_digit($str) || (int)$str <= 0) {

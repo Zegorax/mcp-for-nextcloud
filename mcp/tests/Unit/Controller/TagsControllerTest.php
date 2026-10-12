@@ -169,4 +169,25 @@ final class TagsControllerTest extends TestCase {
         $this->assertSame(Http::STATUS_OK, $this->controller()->update()->getStatus());
         $this->assertFalse($this->controller()->index()->getData()['invalid']);
     }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function storedValues(): iterable {
+        yield 'empty object' => ['{}', true];
+        yield 'object with list-like keys' => ['{"0":"10"}', true];
+        yield 'empty list' => ['[]', false];
+    }
+
+    /** @dataProvider storedValues */
+    public function testIndexFlagsAJsonObjectAsInvalidButNotTheEmptyList(string $raw, bool $invalid): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = $raw;
+        $this->tagManager->method('getAllTags')->willReturn([]);
+
+        $data = $this->controller()->index()->getData();
+
+        $this->assertSame($invalid, $data['invalid']);
+        $this->assertSame([], $data['selected']);
+        $this->assertSame($raw, $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+    }
 }

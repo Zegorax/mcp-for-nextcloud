@@ -391,4 +391,48 @@ final class VisibilityGuardTest extends TestCase {
         $manager->method('getAllTags')->willThrowException(new \RuntimeException('down'));
         return $manager;
     }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function objectConfigurations(): iterable {
+        yield 'empty object' => ['{}'];
+        yield 'object with list-like keys' => ['{"0":"42"}'];
+    }
+
+    /**
+     * A JSON object is not the list the admin page saves, even when decoding it as an array would look like one:
+     * every path of the guard refuses, the log names no value and the value stays as it was.
+     *
+     * @dataProvider objectConfigurations
+     */
+    public function testJsonObjectConfigurationIsInvalidOnEveryPath(string $raw): void {
+        $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = $raw;
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            'MCP hidden tags configuration is invalid; access refused', ['app' => 'mcp']
+        );
+        $guard = new VisibilityGuard($this->config->mock($this), $this->tagMapper, null, null, $logger);
+        $this->tree->addFile('/alice/files/plain.txt', 'plain');
+        $this->tree->addFile('/alice/files/copy.txt', 'copy');
+        $plain = $this->tree->node('/alice/files/plain.txt');
+
+        $this->assertFalse($guard->isVisible($plain));
+        $this->assertSame([], $guard->filter([$plain]));
+        $this->assertFalse($guard->isPathAllowedForWrite($this->tree->rootFolder(), '/new.txt'));
+        try {
+            $guard->assertVisible($plain);
+            $this->fail('assertVisible must refuse');
+        } catch (ToolFailure $e) {
+            $this->assertSame(CommonMessages::notFound(), $e->getMessage());
+        }
+        try {
+            $guard->copyHiddenTags($plain, $this->tree->node('/alice/files/copy.txt'));
+            $this->fail('copyHiddenTags must refuse');
+        } catch (ToolFailure $e) {
+            $this->assertStringNotContainsString('42', $e->getMessage());
+        }
+        $this->assertFalse($guard->isConfigurationValid());
+        $this->assertSame($raw, $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY]);
+    }
 }
