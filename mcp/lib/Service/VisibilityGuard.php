@@ -14,6 +14,7 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\Node;
+use OCP\Files\Storage\ISharedStorage;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 use OCP\SystemTag\ISystemTag;
@@ -44,6 +45,12 @@ class VisibilityGuard {
     /** whether the invalid configuration was already logged by this instance */
     private bool $invalidLogged = false;
 
+    /** @var array<int, bool> per-request visibility in the owner's tree, independent of mounted paths */
+    private array $ownerCache = [];
+
+    /** @var array<string, array{node: Node, mount: string}|null> share root by ancestor id and mounted path */
+    private array $shareRootCache = [];
+
     public function __construct(
         private IConfig $config,
         private ISystemTagObjectMapper $tagMapper,
@@ -66,6 +73,12 @@ class VisibilityGuard {
         $hiddenTags = $this->getHiddenTagIds();
         if ($hiddenTags === []) {
             return true;
+        }
+
+        // Only local share mounts need the owner's tree: ordinary mounts may
+        // have no local owner. Detect shares before using the mounted-path cache.
+        if (!$this->isVisibleThroughLocalShare($node, $hiddenTags)) {
+            return false;
         }
 
         $nodeId = (int)$node->getId();
@@ -157,6 +170,133 @@ class VisibilityGuard {
             $this->cache[$nodeId] = true;
         }
         return true;
+    }
+
+    /**
+     * Wrappers report local shares via the public ISharedStorage interface.
+     * Also inspect ancestors: a child can be on another storage under a share
+     * mount. Core federated storages implement only the legacy OCA interface;
+     * their locally configured tags are checked through the mounted chain.
+     *
+     * @param list<string> $hiddenTags
+     */
+    private function isVisibleThroughLocalShare(Node $node, array $hiddenTags): bool {
+        try {
+            $current = $node;
+            $seen = [];
+            $keys = [];
+            $shareRoot = null;
+            while (!$current instanceof IRootFolder) {
+                if (isset($seen[spl_object_id($current)])) {
+                    throw new \RuntimeException();
+                }
+                $seen[spl_object_id($current)] = $current;
+                $id = (int)$current->getId();
+                if ($id > 0) {
+                    // A file id can occur through both personal and shared paths.
+                    // Keep classification local to the mounted path, unlike tags.
+                    $key = $id . ':' . $current->getPath();
+                    if (array_key_exists($key, $this->shareRootCache)) {
+                        $known = $this->shareRootCache[$key];
+                        if ($shareRoot === null || ($known !== null && $known['mount'] === $shareRoot['mount'])) {
+                            $shareRoot = $known;
+                        }
+                        break;
+                    }
+                    if ($current->getStorage()->instanceOfStorage(ISharedStorage::class)) {
+                        $mount = $current->getMountPoint()->getMountPoint();
+                        if ($mount === '') {
+                            throw new \RuntimeException();
+                        }
+                        if ($shareRoot !== null && $mount !== $shareRoot['mount']) {
+                            break; // a different mount is not part of this share
+                        }
+                        $shareRoot = ['node' => $current, 'mount' => $mount];
+                    } elseif ($shareRoot !== null) {
+                        break; // reached the parent outside the shared mount
+                    }
+                    $keys[] = $key;
+                }
+                // Nodes without an id cannot be memoized or resolved by id;
+                // continue to their parent so an enclosing share is still checked.
+                $parent = $current->getParent();
+                if (!$parent instanceof Node || $parent === $current
+                    || ($id > 0 && (int)$parent->getId() === $id)) {
+                    break;
+                }
+                $current = $parent;
+            }
+            foreach ($keys as $key) {
+                $this->shareRootCache[$key] = $shareRoot;
+            }
+            // Descendants below this root have the same mounted and owner chain;
+            // only the omitted parents above the mount need canonical resolution.
+            return $shareRoot === null || $this->isVisibleInOwnerTree($shareRoot['node'], $hiddenTags);
+        } catch (\Throwable) {
+            $this->warnVisibilityFailure();
+            return false;
+        }
+    }
+
+    /**
+     * Resolves metadata only; tools still access content through the caller's node
+     * and its native permissions. getById covers every owner alias, unlike the
+     * arbitrary single result of getFirstNodeById. No directory scan is needed.
+     *
+     * @param list<string> $hiddenTags
+     */
+    private function isVisibleInOwnerTree(Node $node, array $hiddenTags): bool {
+        try {
+            $id = (int)$node->getId();
+            if ($id <= 0 || $this->rootFolder === null) {
+                throw new \RuntimeException();
+            }
+            if (isset($this->ownerCache[$id])) {
+                return $this->ownerCache[$id];
+            }
+            $owner = $node->getOwner();
+            if ($owner === null || $owner->getUID() === '') {
+                throw new \RuntimeException();
+            }
+            $folder = $this->rootFolder->getUserFolder($owner->getUID());
+            $folderId = (int)$folder->getId();
+            $origins = $id === $folderId ? [$folder] : $folder->getById($id);
+            if ($origins === []) {
+                throw new \RuntimeException();
+            }
+            $ids = [];
+            foreach ($origins as $origin) {
+                if (!$origin instanceof Node || (int)$origin->getId() !== $id) {
+                    throw new \RuntimeException();
+                }
+                $current = $origin;
+                $seen = [];
+                while (true) {
+                    $cid = (int)$current->getId();
+                    if ($cid <= 0 || isset($seen[$cid])) {
+                        throw new \RuntimeException();
+                    }
+                    $seen[$cid] = true;
+                    $ids[$cid] = (string)$cid;
+                    if ($cid === $folderId) {
+                        break; // do not call Root::getParent()
+                    }
+                    $current = $current->getParent();
+                }
+            }
+            $tagsByObject = $this->tagMapper->getTagIdsForObjects(array_values($ids), 'files');
+            foreach ($ids as $cid) {
+                foreach ($tagsByObject[$cid] ?? [] as $tagId) {
+                    if (in_array((string)$tagId, $hiddenTags, true)) {
+                        return $this->ownerCache[$id] = false;
+                    }
+                }
+            }
+            return $this->ownerCache[$id] = true;
+        } catch (\Throwable) {
+            $this->warnVisibilityFailure();
+            return false; // resolution failures are retried, never cached as visible
+        }
     }
 
     /** Logs a privacy refusal without node names, paths or exception details. */
@@ -389,6 +529,10 @@ class VisibilityGuard {
         $this->hiddenTagIds = $sanitized;
         $this->configInvalid = false;
         $this->cache = [];
+        $this->ownerCache = [];
+        $this->shareRootCache = [];
+        $this->ownerCache = [];
+        $this->shareRootCache = [];
     }
 
     /** Clears the in-memory caches. */
@@ -396,6 +540,8 @@ class VisibilityGuard {
         $this->hiddenTagIds = null;
         $this->configInvalid = false;
         $this->cache = [];
+        $this->ownerCache = [];
+        $this->shareRootCache = [];
     }
 
     /**

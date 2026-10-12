@@ -122,11 +122,12 @@ final class FakeTree {
     /**
      * Mirrors Nextcloud's Root above the user folder: id 0, and getParent() throws by design.
      */
-    private function filesystemRoot(): IRootFolder {
+    public function filesystemRoot(): IRootFolder {
         $root = $this->mock(IRootFolder::class);
         $root->method('getId')->willReturn(0);
         $root->method('getName')->willReturn('');
         $root->method('getPath')->willReturn('/');
+        $root->method('getUserFolder')->willReturnCallback(fn () => $this->rootFolder());
         $root->method('getParent')->willThrowException(new NotFoundException());
         return $root;
     }

@@ -98,6 +98,13 @@ abstract class FilesToolsTestCase extends TestCase {
     /** @var list<string> apps enabled for alice; a test can empty it to simulate files_versions being off */
     protected array $enabled = ['files_versions'];
 
+    /** Root lookup follows the current tree when a scenario rebuilds its fixtures. */
+    protected function visibilityRoot(): \OCP\Files\IRootFolder {
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getUserFolder')->willReturnCallback(fn () => $this->tree->rootFolder());
+        return $root;
+    }
+
     protected function setUp(): void {
         $this->tree = new FakeTree($this);
         $this->tree->addFolder('/alice/files/Documentos');
@@ -177,7 +184,7 @@ abstract class FilesToolsTestCase extends TestCase {
             $this->visibilityGuard,
             ...$this->sharing($urls),
             creation: new FileCreation($access, new SharedWriteGuard($access), $checkout, $this->filenames,
-                $this->visibilityGuard ?? new \OCA\Mcp\Service\VisibilityGuard($config, $this->tagMapper), $this->creationLogger, $locks),
+                $this->visibilityGuard ?? new \OCA\Mcp\Service\VisibilityGuard($config, $this->tagMapper, $this->visibilityRoot()), $this->creationLogger, $locks),
             locks: $locks,
         );
     }
