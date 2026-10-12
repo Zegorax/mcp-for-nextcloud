@@ -2,6 +2,12 @@
 
 All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/appinfo/info.xml`.
 
+## 1.0.6
+
+### Fixed
+
+- files, notes: with any hidden system tag configured, every file and folder outside `/MCP backups` was reported as not found (since 0.8.0). The backup check of `VisibilityGuard` walked up the parents past the user folder to Nextcloud's root, whose `getParent()` throws by design, and the fail-closed handling read that as "hidden". The walk now stops at the root, so ordinary files are visible again, and a backup of a hidden original stays hidden. Thanks to @NightDragon1 (#5).
+
 ## 1.0.5
 
 ### Added
