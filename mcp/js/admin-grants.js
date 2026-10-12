@@ -495,6 +495,12 @@
 		 * @param {Set<string>} selectedSet tag ids to hide
 		 */
 		async function saveTags(selectedSet) {
+			// An empty list turns the protection off; from an invalid setting that goes from hiding everything to
+			// hiding nothing, so it is never saved without the administrator saying so.
+			if (selectedSet.size === 0
+				&& !window.confirm(t('mcp', 'Saving with no hidden tags turns the protection off: every file becomes visible to the MCP tools again. Continue?'))) {
+				throw new Error('cancelled')
+			}
 			try {
 				await api('PUT', '/api/admin/tags', { tagIds: Array.from(selectedSet) })
 			} catch (e) {
@@ -524,7 +530,7 @@
 						try {
 							await saveTags(selectedSet)
 						} catch {
-							// saveTags already told the admin
+							// saveTags already told the admin, or the admin cancelled the empty save
 						} finally {
 							repair.disabled = false
 						}

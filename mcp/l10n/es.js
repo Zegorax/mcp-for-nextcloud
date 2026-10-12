@@ -165,6 +165,7 @@ OC.L10N.register(
     "Could not restore this version." : "No se pudo restaurar esta versión.",
     "Could not save the permission for {user}." : "No se pudo guardar el permiso de {user}.",
     "Could not update hidden tags." : "No se pudieron actualizar las etiquetas ocultas.",
+    "Saving with no hidden tags turns the protection off: every file becomes visible to the MCP tools again. Continue?" : "Guardar sin ninguna etiqueta oculta desactiva la protección: todos los archivos vuelven a ser visibles para las herramientas MCP. ¿Continuar?",
     "The saved hidden tags setting cannot be read, so the MCP tools treat every file and folder as not found. Choose the hidden tags and save them again." : "La configuración guardada de las etiquetas ocultas no se puede leer, por eso las herramientas MCP tratan todos los archivos y carpetas como no encontrados. Elija las etiquetas ocultas y guárdelas de nuevo.",
     "Save hidden tags" : "Guardar etiquetas ocultas",
     "Could not check the system tags, so the hidden tags were not changed. Try again later." : "No se pudieron consultar las etiquetas del sistema, por eso las etiquetas ocultas no se cambiaron. Inténtelo de nuevo más tarde.",
