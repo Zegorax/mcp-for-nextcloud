@@ -42,6 +42,9 @@ class VisibilityGuard {
     /** @var array<int, bool> per-request visibility in the owner's tree, independent of mounted paths */
     private array $ownerCache = [];
 
+    /** @var array<string, array{node: Node, mount: string}|null> share root by ancestor id and mounted path */
+    private array $shareRootCache = [];
+
     public function __construct(
         private IConfig $config,
         private ISystemTagObjectMapper $tagMapper,
@@ -171,24 +174,54 @@ class VisibilityGuard {
         try {
             $current = $node;
             $seen = [];
+            $keys = [];
+            $shareRoot = null;
             while (!$current instanceof IRootFolder) {
+                if (isset($seen[spl_object_id($current)])) {
+                    throw new \RuntimeException();
+                }
+                $seen[spl_object_id($current)] = $current;
                 $id = (int)$current->getId();
-                if ($id <= 0 || isset($seen[$id])) {
-                    break;
+                if ($id > 0) {
+                    // A file id can occur through both personal and shared paths.
+                    // Keep classification local to the mounted path, unlike tags.
+                    $key = $id . ':' . $current->getPath();
+                    if (array_key_exists($key, $this->shareRootCache)) {
+                        $known = $this->shareRootCache[$key];
+                        if ($shareRoot === null || ($known !== null && $known['mount'] === $shareRoot['mount'])) {
+                            $shareRoot = $known;
+                        }
+                        break;
+                    }
+                    if ($current->getStorage()->instanceOfStorage(ISharedStorage::class)) {
+                        $mount = $current->getMountPoint()->getMountPoint();
+                        if ($mount === '') {
+                            throw new \RuntimeException();
+                        }
+                        if ($shareRoot !== null && $mount !== $shareRoot['mount']) {
+                            break; // a different mount is not part of this share
+                        }
+                        $shareRoot = ['node' => $current, 'mount' => $mount];
+                    } elseif ($shareRoot !== null) {
+                        break; // reached the parent outside the shared mount
+                    }
+                    $keys[] = $key;
                 }
-                $seen[$id] = true;
-                if ($current->getStorage()->instanceOfStorage(ISharedStorage::class)) {
-                    // The first shared node's canonical ancestry covers the
-                    // omitted parents. Content access stays on the caller's node.
-                    return $this->isVisibleInOwnerTree($current, $hiddenTags);
-                }
+                // Nodes without an id cannot be memoized or resolved by id;
+                // continue to their parent so an enclosing share is still checked.
                 $parent = $current->getParent();
-                if (!$parent instanceof Node || (int)$parent->getId() === $id) {
+                if (!$parent instanceof Node || $parent === $current
+                    || ($id > 0 && (int)$parent->getId() === $id)) {
                     break;
                 }
                 $current = $parent;
             }
-            return true;
+            foreach ($keys as $key) {
+                $this->shareRootCache[$key] = $shareRoot;
+            }
+            // Descendants below this root have the same mounted and owner chain;
+            // only the omitted parents above the mount need canonical resolution.
+            return $shareRoot === null || $this->isVisibleInOwnerTree($shareRoot['node'], $hiddenTags);
         } catch (\Throwable) {
             $this->warnVisibilityFailure();
             return false;
@@ -451,6 +484,7 @@ class VisibilityGuard {
         $this->hiddenTagIds = $sanitized;
         $this->cache = [];
         $this->ownerCache = [];
+        $this->shareRootCache = [];
     }
 
     /** Clears the in-memory caches. */
@@ -458,6 +492,7 @@ class VisibilityGuard {
         $this->hiddenTagIds = null;
         $this->cache = [];
         $this->ownerCache = [];
+        $this->shareRootCache = [];
     }
 
     /**

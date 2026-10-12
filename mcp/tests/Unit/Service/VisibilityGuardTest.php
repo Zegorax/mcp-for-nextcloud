@@ -289,7 +289,7 @@ final class VisibilityGuardTest extends TestCase {
 
     /** Same file id, physical chain 30→20→10, recipient chain 30→20→90. */
     public function testSharedFileKeepsHiddenOwnerAncestor(): void {
-        [$guard, $alias] = $this->sharedFixture();
+        [$guard, $alias] = $this->sharedFixture(false, 1, false, true, true);
         $this->tagAssignments['10'] = ['42'];
         $this->assertFalse($guard->isVisible($alias));
         $this->expectException(ToolFailure::class);
@@ -299,7 +299,7 @@ final class VisibilityGuardTest extends TestCase {
 
     /** A subfolder mount exposes 20 and its child 30, but omits hidden grandparent 10. */
     public function testSharedSubfolderChildKeepsHiddenOwnerGrandparent(): void {
-        [$guard, $alias, $subfolder] = $this->sharedFixture(false, 2);
+        [$guard, $alias, $subfolder] = $this->sharedFixture(false, 1);
         $this->tagAssignments['10'] = ['42'];
         $this->assertFalse($guard->isVisible($alias));
         $this->assertFalse($guard->isVisible($subfolder));
@@ -412,6 +412,9 @@ final class VisibilityGuardTest extends TestCase {
             $this->assertTrue($guard->isVisible($file));
         }
         $this->assertSame(1, $counts->lookups, 'One owner lookup per share, not per leaf');
+        $guard->clearCache();
+        $this->assertTrue($guard->isVisible($files[0]));
+        $this->assertSame(2, $counts->lookups, 'Cache clearing resolves the root again');
     }
 
     public function testPersonalSearchCostClassifiesEachAncestorOnce(): void {
@@ -429,6 +432,17 @@ final class VisibilityGuardTest extends TestCase {
         $this->tagAssignments['10'] = ['42'];
         $node = $this->ancestryNode(0, $parent, null);
         $this->assertFalse($guard->isVisible($node));
+    }
+
+    public function testPersonalClassificationDoesNotBypassShareAliasProtection(): void {
+        [$guard, $file, $sharedRoot] = $this->sharedFixture();
+        $owner = $this->createMock(\OCP\IUser::class);
+        $root = $this->createMock(\OCP\Files\IRootFolder::class);
+        $root->method('getId')->willReturn(-1);
+        $personalAlias = $this->ancestryNode(20, $root, $owner, false, '/alice/files/alias');
+        $this->tagAssignments['10'] = ['42'];
+        $this->assertTrue($guard->isVisible($personalAlias));
+        $this->assertFalse($guard->isVisible($file));
     }
 
     /** @return array{VisibilityGuard, list<Node>, object} */
@@ -495,7 +509,7 @@ final class VisibilityGuardTest extends TestCase {
     }
 
     /** @return array{VisibilityGuard, Node, Node} */
-    private function sharedFixture(bool $failure = false, int $lookups = 1, bool $multipleOrigins = false, bool $sharedLeaf = true): array {
+    private function sharedFixture(bool $failure = false, int $lookups = 1, bool $multipleOrigins = false, bool $sharedLeaf = true, bool $fileShare = false): array {
         $this->config->app['mcp'][VisibilityGuard::CONFIG_KEY] = '["42"]';
         $owner = $this->createMock(\OCP\IUser::class);
         $owner->method('getUID')->willReturn('alice');
@@ -507,9 +521,10 @@ final class VisibilityGuardTest extends TestCase {
         $canonicalSub = $this->ancestryNode(20, $secret, $owner);
         $canonicalFile = $this->ancestryNode(30, $canonicalSub, $owner);
         $recipient = $this->ancestryNode(90, $root, $owner);
-        $aliasSub = $this->ancestryNode(20, $recipient, $owner, true);
-        $alias = $this->ancestryNode(30, $aliasSub, $owner, $sharedLeaf);
+        $aliasSub = $this->ancestryNode(20, $recipient, $owner, !$fileShare, '/bob/files/share');
+        $alias = $this->ancestryNode(30, $aliasSub, $owner, $sharedLeaf, '/bob/files/share/file');
         $visibleOwnerAlias = $this->ancestryNode(30, $ownerFolder, $owner);
+        $visibleOwnerSubAlias = $this->ancestryNode(20, $ownerFolder, $owner);
         $root->method('getUserFolder')->with('alice')->willReturn($ownerFolder);
         if ($failure) {
             $ownerFolder->method('getById')->willThrowException(new \RuntimeException('/secret/sub/file'));
@@ -517,7 +532,7 @@ final class VisibilityGuardTest extends TestCase {
             $ownerFolder->expects($this->exactly($lookups))->method('getById')->willReturnCallback(
                 static fn (int $id): array => match ($id) {
                     30 => $multipleOrigins ? [$visibleOwnerAlias, $canonicalFile] : [$canonicalFile],
-                    20 => [$canonicalSub],
+                    20 => $multipleOrigins ? [$visibleOwnerSubAlias, $canonicalSub] : [$canonicalSub],
                     default => [],
                 }
             );
@@ -525,10 +540,11 @@ final class VisibilityGuardTest extends TestCase {
         return [new VisibilityGuard($this->config->mock($this), $this->tagMapper, $root), $alias, $aliasSub];
     }
 
-    private function ancestryNode(int $id, Node $parent, ?\OCP\IUser $owner, bool $shared = false): Folder {
+    private function ancestryNode(int $id, Node $parent, ?\OCP\IUser $owner, bool $shared = false, string $path = ''): Folder {
         $node = $this->createMock(Folder::class);
         $node->method('getId')->willReturn($id);
         $node->method('getOwner')->willReturn($owner);
+        $node->method('getPath')->willReturn($path);
         $node->method('getStorage')->willReturn($this->storage($shared));
         $mount = $this->createMock(\OCP\Files\Mount\IMountPoint::class);
         $mount->method('getMountPoint')->willReturn('/bob/files/share');
