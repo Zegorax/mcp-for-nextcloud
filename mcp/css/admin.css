@@ -371,8 +371,43 @@
 	color: var(--color-text-maxcontrast);
 }
 
-#mcp-admin .mcp-dim {
-	opacity: 0.55;
+/* The three states of a permission cell, none by colour alone: a checked box, an empty box, a "no entry" mark. */
+#mcp-admin .mcp-state-unavailable {
+	background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--color-border) 6px 7px);
+	color: var(--color-text-maxcontrast);
+	cursor: help;
+}
+
+#mcp-admin .mcp-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+#mcp-admin .mcp-state-mark {
+	display: inline-block;
+	font-size: 1.25em;
+	line-height: 1;
+}
+
+#mcp-admin .mcp-bulk-notice {
+	display: none;
+	align-items: center;
+	gap: 12px;
+	margin: 8px 0;
+	padding: 6px 12px;
+	border: 1px solid var(--color-border-dark);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-background-dark);
+	color: var(--color-main-text);
+}
+
+#mcp-admin .mcp-bulk-notice.mcp-notice-on {
+	display: flex;
 }
 
 #mcp-admin .mcp-badge-connected {

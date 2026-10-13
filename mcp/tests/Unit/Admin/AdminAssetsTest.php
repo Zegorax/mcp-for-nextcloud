@@ -199,6 +199,27 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString('tabQueries.set(hash, fragment.slice(hash.length))', $tabs);
     }
 
+    /** The three permission states are drawn in one place and the bulk actions confirm, report and undo with the same endpoint. */
+    public function testMatrixStatesAndBulkUndoStayInTheExistingEndpoints(): void {
+        $app = dirname(__DIR__, 3);
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString('const PERMISSION_STATES = {', $script);
+        foreach (['allowed', 'denied', 'unavailable'] as $state) {
+            $this->assertStringContainsString("$state: { className: 'mcp-state-$state'", $script);
+        }
+        $this->assertStringContainsString("textContent: '⊘'", $script);
+        $this->assertStringContainsString("mark.setAttribute('aria-hidden', 'true')", $script);
+        $this->assertSame(1, substr_count($script, "api('POST', '/api/grants/bulk'"), 'bulk and undo share one request');
+        $this->assertStringContainsString('async function undoBulk(', $script);
+        $this->assertStringNotContainsString('innerHTML', $script);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertStringContainsString('id="mcp-bulk-notice" role="status" aria-live="polite"', $template);
+        $this->assertStringContainsString('id="mcp-bulk-undo" hidden', $template);
+        $css = (string)file_get_contents($app . '/css/admin.css');
+        $this->assertStringContainsString('.mcp-state-unavailable', $css);
+        $this->assertDoesNotMatchRegularExpression('/#mcp-admin \.mcp-(state|bulk-notice|sr-only)[^{]*\{[^}]*#[0-9a-fA-F]{3,6}\b/', $css);
+    }
+
     /** Names, header rows and their corner have separate stacking layers; desktop legacy has no gap. */
     public function testMatrixStickyLayersAndToggleClearanceAreScoped(): void {
         $css = (string)file_get_contents(dirname(__DIR__, 3) . '/css/admin.css');
