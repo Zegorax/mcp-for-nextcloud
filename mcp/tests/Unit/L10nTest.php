@@ -84,6 +84,43 @@ final class L10nTest extends TestCase {
         $this->assertSame($fromJson, $fromJs, 'l10n/' . self::LANGUAGE . '.js and .json must list the same keys');
     }
 
+    /** Every locale supplies every plural form declared by its own rule, in JSON and JS. */
+    public function testAllLocalesSupplyEveryDeclaredPluralForm(): void {
+        $files = glob($this->path('l10n/*.json')) ?: [];
+        $this->assertNotEmpty($files);
+        foreach ($files as $file) {
+            $locale = basename($file, '.json');
+            $decoded = json_decode((string)file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame(1, preg_match('/\bnplurals\s*=\s*(\d+)\s*;/', $decoded['pluralForm'], $rule), $locale);
+            $forms = (int)$rule[1];
+            $this->assertGreaterThan(0, $forms, $locale);
+            $js = (string)file_get_contents($this->path('l10n/' . $locale . '.js'));
+            $this->assertStringContainsString(json_encode($decoded['pluralForm'], JSON_THROW_ON_ERROR), $js, "$locale JS and JSON plural rules must match");
+            $this->assertSame(1, preg_match('/\{.*\}/s', $js, $bundle), $locale);
+            $fromJs = json_decode($bundle[0], true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame($decoded['translations'], $fromJs, "$locale JS and JSON must match");
+            foreach ($decoded['translations'] as $key => $value) {
+                if (!str_starts_with($key, '_') || !str_contains($key, '_::_')) {
+                    continue;
+                }
+                $this->assertIsArray($value, "$locale: $key");
+                $this->assertCount($forms, $value, "$locale: $key must supply $forms plural forms");
+                foreach ($value as $translation) {
+                    $this->assertIsString($translation, "$locale: $key");
+                    $this->assertNotSame('', $translation, "$locale: $key");
+                }
+            }
+        }
+    }
+
+    /** Plural extraction uses the same separator as Nextcloud's translation registry. */
+    public function testPluralKeysUseTheNextcloudRegistrySeparator(): void {
+        $this->assertSame(['_One group_::_Many groups_'],
+            $this->literalKeys("n('mcp', 'One group', 'Many groups', 2)", 'admin.js'));
+        $this->assertSame(['_One group_::_Many groups_'],
+            $this->literalKeys("\$l->n('One group', 'Many groups', 2)", 'admin.php'));
+    }
+
     /**
      * Collects the translation keys referenced by templates/ and js/.
      *
@@ -173,7 +210,7 @@ final class L10nTest extends TestCase {
             foreach (["/\\\$l->n\\s*\\(\\s*'((?:[^'\\\\]|\\\\.)*)'\\s*,\\s*'((?:[^'\\\\]|\\\\.)*)'/s", '/\$l->n\s*\(\s*"((?:[^"\\\\]|\\\\.)*)"\s*,\s*"((?:[^"\\\\]|\\\\.)*)"/s'] as $pattern) {
                 preg_match_all($pattern, $source, $matches);
                 foreach ($matches[1] as $i => $singular) {
-                    $keys[] = '_' . $this->unescape($singular) . '_::' . $this->unescape($matches[2][$i]) . '_';
+                    $keys[] = '_' . $this->unescape($singular) . '_::_' . $this->unescape($matches[2][$i]) . '_';
                 }
             }
             return $keys;
@@ -186,7 +223,7 @@ final class L10nTest extends TestCase {
         foreach (["/(?<![A-Za-z0-9_\$.])n\\s*\\(\\s*'mcp'\\s*,\\s*'((?:[^'\\\\]|\\\\.)*)'\\s*,\\s*'((?:[^'\\\\]|\\\\.)*)'/s", '/(?<![A-Za-z0-9_$.])n\s*\(\s*"mcp"\s*,\s*"((?:[^"\\\\]|\\\\.)*)"\s*,\s*"((?:[^"\\\\]|\\\\.)*)"/s'] as $pattern) {
             preg_match_all($pattern, $source, $matches);
             foreach ($matches[1] as $i => $singular) {
-                $keys[] = '_' . $this->unescape($singular) . '_::' . $this->unescape($matches[2][$i]) . '_';
+                $keys[] = '_' . $this->unescape($singular) . '_::_' . $this->unescape($matches[2][$i]) . '_';
             }
         }
         return $keys;

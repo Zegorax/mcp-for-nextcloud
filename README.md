@@ -26,7 +26,7 @@ AI assistants are most useful when they can reach the tools a team already uses.
 - **Sign in with Nextcloud.** Clients such as claude.ai use OAuth ("Sign in"): the user logs into their own Nextcloud and clicks **Allow**. App passwords (HTTP Basic) still work for other clients.
 - **Admin in control.** Service on/off switch, per-user eligibility and a **user × permission matrix**. Reading is on by default for eligible users; every write, move, delete, transfer, restore or share is **off until the admin grants it**, sharing a file and creating a public link being two separate grants.
 - **Nextcloud ACLs always apply.** The app never widens what a user can already do in Nextcloud.
-- **Hide sensitive files by system tag.** Administrators can configure system tags (recommended: restricted or invisible) to make tagged files and folders completely invisible to MCP tools and resources, including every folder below them. It fails closed: if a tag lookup errors, the item stays hidden. Backups taken by the app inherit the tag before they receive any content.
+- **Exclude sensitive files from MCP access by system tag.** Administrators can configure system tags (recommended: restricted or invisible) to make tagged files and folders completely invisible to the tools and resources of this MCP connector, including everything below a tagged folder (the server log tools only while "Hide the text of log messages" is on). It fails closed: if a tag lookup errors, the item stays hidden. Backups taken by the app inherit the tag before they receive any content.
 
 ## What's new in 1.0
 
@@ -55,7 +55,7 @@ Upgrading from 0.7.0 or later runs the schema migrations by itself (tables `mcp_
 | **Contacts** | list personal/shared address books, search and read contacts, including the read-only accounts catalog of the instance (colleagues, with `accountId` for invitations) under the admin user-enumeration settings | create and edit while preserving unknown vCard fields; permanently delete only after a verified `.vcf` backup in `/MCP backups/Contacts` |
 | **Tasks** | list task calendars and VTODO tasks, including undated tasks; read tasks | create, edit, complete and delete simple tasks through CalDAV; deletion uses calendar trash and is refused when retention is zero |
 | **Deck** | boards, stacks, cards, and a **follow-up** of the boards you manage: cards grouped by assignee, with due date, overdue flag (in your own time zone) and a link to the card | create, edit, move and delete cards, and assign or unassign the board members; create a board with its lists and first cards, or a list in a board you manage; delete a board or a list only when it is empty, straight to the Deck trash |
-| **Server log** | for administrators and the groups they choose: list the entries of `nextcloud.log` with filters, and summarize them (totals, frequent signatures, URLs, user agents, entries per hour). Off by default for everyone; IPs masked, output marked as untrusted, every read audited. While hidden tags are configured, the admin option "Hide the text of log messages" (on by default) hides the text of messages and exceptions, the user agent and the URL detail, and refuses the `contains` filter; turned off, the logs come back in full for diagnosis | — (read only) |
+| **Server log** | for administrators and the groups they choose: list the entries of `nextcloud.log` with filters, and summarize them (totals, frequent signatures, URLs, user agents, entries per hour). Off by default for everyone; IPs masked, output marked as untrusted, every read audited. While exclusion tags are configured, the admin option "Hide the text of log messages" (on by default) hides the text of messages and exceptions, the user agent and the URL detail, and refuses the `contains` filter; turned off, the logs come back in full for diagnosis | — (read only) |
 | **Talk** | conversations and messages (never marks anything as read) | reply (optionally quoting a message or linking a Deck card or calendar event you can see), direct message to a user, batch of messages, share or quote a file, create a group conversation (separate grant, off by default). **Nothing is sent before the user approves: a call without `confirm: true` returns only the plan (recipient, final text, attachments, what would be created or shared) and runs nothing; with `confirm: true` it checks the permissions again and sends. No approval id, token or record is kept on the server.** |
 
 Plus:
@@ -114,7 +114,7 @@ Task deletion uses native calendar trash and is refused when `dav/calendarRetent
 
    Adjust paths and the web server user to your setup. With Docker, run `occ` inside the container.
 
-Then, **configure** in *Administration settings → MCP for Nextcloud* (the app has its own entry with an icon in the settings menu): turn the service on, mark who may connect, grant write permissions where needed, and select system tags for hiding sensitive files. The page is split into blocks: **Status** (endpoint to copy, service switch, app version, eligible/connected users, active connections and the editable checkout upload limit in MiB, shown next to PHP's `post_max_size` ceiling), **OAuth clients**, **Hidden files & tags**, **OCR**, **Permissions** (the users × permissions matrix, with search, group and "can connect / connected" filters, an "All" menu per module for the users on the page, and pagers on top and bottom), **Server log** (the groups whose members may read the server log besides the administrators, and the switch that hides the text of log messages while files are hidden by tags) and **Active connections**.
+Then, **configure** in *Administration settings → MCP for Nextcloud* (the app has its own entry with an icon in the settings menu): turn the service on, mark who may connect, grant write permissions where needed, and select the system tags that exclude sensitive files from MCP access. The page is split into blocks: **Status** (endpoint to copy, service switch, app version, eligible/connected users, active connections and the editable checkout upload limit in MiB, shown next to PHP's `post_max_size` ceiling), **OAuth clients**, **Excluded from MCP access**, **OCR**, **Permissions** (the users × permissions matrix, with search, group and "can connect / connected" filters, an "All" menu per module for the users on the page, and pagers on top and bottom), **Server log** (the groups whose members may read the server log besides the administrators, and the switch that hides the text of log messages while files are excluded by tags) and **Active connections**.
 
 Server log access groups are stored in the app's own versioned table, created automatically by its native migration. Existing appconfig groups are imported on first read. The admin API returns `version` with GET and requires it on PUT; stale saves get 409. The database compare-and-swap still protects revocations with `filelocking.enabled=false`, when the extra Nextcloud lock becomes Noop.
 
@@ -212,12 +212,12 @@ curl -u 'alice:APP-PASSWORD' \
 - The consent screen is CSRF-protected and cannot be framed.
 - Found a vulnerability? Please report it privately to the maintainers instead of opening a public issue.
 
-### Hidden tags
+### Excluded from MCP access
 
 - A tag on a file or folder covers every file and folder below it.
 - An item reached through a local share inherits the hiding of its owner's source folder chain; team folders, external storage and federated shares are checked along their mounted path, and a federated share only by the tags of the local installation.
 - In doubt the app refuses: a configuration that cannot be validated or a tag query that fails keeps the item hidden, and the admin page explains the state and offers the repair.
-- The hiding protects this MCP connector; other connectors or AI tools that read the same Nextcloud are not covered by it.
+- The protection applies only to this MCP connector: it does not cover other AI tools or other connectors that read the same Nextcloud, and nothing stops someone from sending a file to an AI by hand.
 
 ## Development
 
