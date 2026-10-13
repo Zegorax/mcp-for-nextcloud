@@ -118,9 +118,9 @@
                 <button type="button" id="mcp-next"><?php p($l->t('Next')); ?></button>
             </span>
         </div>
-        <p class="settings-hint mcp-hint mcp-legend"><?php p($l->t('In the table, a checked box means allowed, an empty box means denied and ⊘ means unavailable; point at ⊘ to see why.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('In the table, a checked box means allowed, an empty box means denied and ⊘ means unavailable; point at ⊘ to see why.')); ?></p>
         <div class="mcp-bulk-notice" id="mcp-bulk-notice" role="status" aria-live="polite">
-            <span id="mcp-bulk-notice-text"></span>
+            <span id="mcp-bulk-notice-text" tabindex="-1"></span>
             <button type="button" id="mcp-bulk-undo" hidden><?php p($l->t('Undo')); ?></button>
         </div>
         <div class="mcp-matrix-wrap">
