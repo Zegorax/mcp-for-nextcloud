@@ -937,7 +937,7 @@
     "Analyze server log" : "Analisar log do servidor",
     "Server log" : "Log do servidor",
     "This server writes its log to %s, not to a file, so the server log tools stay hidden. They need the file log, the default of Nextcloud." : "Este servidor grava o log em %s, não em arquivo, por isso as ferramentas do log do servidor ficam ocultas. Elas precisam do log em arquivo, o padrão do Nextcloud.",
-    "The log shows file names, addresses and accounts of every user. Only Nextcloud administrators and members of the groups selected here can read it through MCP, and only after their “Server log” permission is turned on in the “Access and permissions” tab; it starts off." : "O log mostra nomes de arquivos, endereços e contas de todos os usuários. Só administradores do Nextcloud e membros dos grupos marcados aqui podem lê-lo pelo MCP, e só depois que a permissão “Log do servidor” deles for ligada na aba “Acesso e permissões”; ela começa desligada.",
+    "The server log shows file names, addresses and accounts of every user. Choose below which groups, besides administrators, may read it through MCP." : "O log do servidor mostra nomes de arquivos, endereços e contas de todos os usuários. Escolha abaixo quais grupos, além dos administradores, podem lê-lo pelo MCP.",
     "Loading groups…" : "Carregando grupos…",
     "Read and analyze the server log; starts off" : "Ler e analisar o log do servidor; começa desligada",
     "Only administrators and members of the groups selected in “Server log” can read the log; the saved permission is kept." : "Só administradores e membros dos grupos marcados em “Log do servidor” podem ler o log; a permissão salva é mantida.",

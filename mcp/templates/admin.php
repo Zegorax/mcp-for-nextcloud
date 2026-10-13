@@ -211,7 +211,7 @@
         <?php if (!$_['logsAvailable']) { ?>
             <p class="mcp-unsupported-app" id="mcp-logs-unavailable"><?php p($l->t('This server writes its log to %s, not to a file, so the server log tools stay hidden. They need the file log, the default of Nextcloud.', [$_['logType']])); ?></p>
         <?php } ?>
-        <p class="settings-hint mcp-hint"><?php p($l->t('The log shows file names, addresses and accounts of every user. Only Nextcloud administrators and members of the groups selected here can read it through MCP, and only after their “Server log” permission is turned on in the “Access and permissions” tab; it starts off.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('The server log shows file names, addresses and accounts of every user. Choose below which groups, besides administrators, may read it through MCP.')); ?></p>
         <div id="mcp-logs-groups" class="mcp-logs-groups" aria-busy="true">
             <span class="mcp-tags-loading"><?php p($l->t('Loading groups…')); ?></span>
         </div>
