@@ -8,6 +8,51 @@
 	max-width: 900px;
 }
 
+/* Tab navigation (js/admin-tabs.js): the bar appears only once the script marks the page ready, so
+   without JavaScript every panel stays visible and the page keeps its old single-column layout. */
+#mcp-admin .mcp-tab-bar {
+	display: none;
+	flex-wrap: nowrap;
+	gap: 4px;
+	margin-bottom: 16px;
+	overflow-x: auto;
+	border-bottom: 1px solid var(--color-border);
+}
+
+#mcp-admin.mcp-tabs-on .mcp-tab-bar {
+	display: flex;
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"] {
+	padding: 8px 16px;
+	border: none;
+	border-bottom: 2px solid transparent;
+	background: none;
+	color: var(--color-text-maxcontrast);
+	font-weight: bold;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"]:hover {
+	color: var(--color-main-text);
+	background-color: var(--color-background-hover);
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"][aria-selected="true"] {
+	color: var(--color-primary-element);
+	border-bottom-color: var(--color-primary-element);
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"]:focus-visible {
+	outline: 2px solid var(--color-primary-element);
+	outline-offset: -2px;
+}
+
+#mcp-admin .mcp-tab-panel[hidden] {
+	display: none;
+}
+
 #mcp-admin .mcp-endpoint code {
 	padding: 2px 6px;
 	border-radius: var(--border-radius);

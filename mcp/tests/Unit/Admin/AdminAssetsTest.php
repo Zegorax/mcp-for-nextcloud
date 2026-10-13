@@ -64,7 +64,7 @@ final class AdminAssetsTest extends TestCase {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
         preg_match_all("/Util::add(Script|Style)\\(\\s*'mcp'\\s*,\\s*'([^']+)'/", $template, $matches, PREG_SET_ORDER);
-        $this->assertCount(3, $matches);
+        $this->assertCount(4, $matches);
         foreach ($matches as [, $kind, $name]) {
             $file = $kind === 'Script' ? "$app/js/$name.js" : "$app/css/$name.css";
             $this->assertFileExists($file);
@@ -74,13 +74,13 @@ final class AdminAssetsTest extends TestCase {
     }
 
     /**
-     * Every element id the admin script looks up appears exactly once, and the div tags balance, so
+     * Every element id the admin scripts look up appears exactly once, and the div tags balance, so
      * getElementById() never binds to a stray copy of a section (the hidden-tags block was once merged in three times).
      */
     public function testAdminTemplateHasUniqueIdsAndBalancedDivs(): void {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
-        $script = (string)file_get_contents($app . '/js/admin-grants.js') . file_get_contents($app . '/js/connections.js');
+        $script = (string)file_get_contents($app . '/js/admin-grants.js') . file_get_contents($app . '/js/connections.js') . file_get_contents($app . '/js/admin-tabs.js');
         preg_match_all("/getElementById\\('([^']+)'\\)/", $script, $used);
         $this->assertNotEmpty($used[1]);
         foreach (array_unique($used[1]) as $id) {
@@ -91,23 +91,22 @@ final class AdminAssetsTest extends TestCase {
     }
 
     /**
-     * The blocks follow the planned order (status, OAuth clients, hidden tags, OCR, permissions), and each
-     * string of the OAuth clients section is translated.
+     * The OAuth clients block opens the Clients and connections tab (before the Active connections
+     * block), and each string of the section is translated.
      */
     public function testOauthClientsSectionIsPlacedAndTranslated(): void {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
-        $status = strpos($template, "t('Status')");
-        $oauth = strpos($template, "t('OAuth clients')");
-        $tags = strpos($template, "t('Excluded from MCP access')");
-        $ocr = strpos($template, "t('OCR')");
-        $toolbar = strpos($template, 'class="mcp-toolbar"');
-        $this->assertTrue($status < $oauth && $oauth < $tags && $tags < $ocr && $ocr < $toolbar);
+        $start = strpos($template, 'id="mcp-block-oauth"');
+        $end = strpos($template, 'id="mcp-connections"');
+        $this->assertIsInt($start, 'the OAuth clients block');
+        $this->assertIsInt($end, 'the active connections block');
+        $this->assertTrue($start < $end, 'the OAuth clients block opens the Clients and connections tab');
         foreach (['mcp-oauth-hosts', 'mcp-oauth-hosts-status', 'mcp-native-client', 'mcp-native-client-status', 'mcp-native-client-details'] as $id) {
             $this->assertSame(1, substr_count($template, 'id="' . $id . '"'), $id);
         }
         $this->assertStringContainsString('data-copy="mcp-native-client-id"', $template);
-        $section = substr($template, $oauth, $toolbar - $oauth);
+        $section = substr($template, $start, $end - $start);
         preg_match_all("/\\\$l->t\\('([^']+)'\\)/", $section, $fromTemplate);
         $script = (string)file_get_contents($app . '/js/admin-grants.js');
         $oauthScript = substr($script, (int)strpos($script, 'async function initOauthClients'));
@@ -122,12 +121,63 @@ final class AdminAssetsTest extends TestCase {
         }
     }
 
-    /** Seven blocks, each a core settings section with its own heading, in the planned order. */
+    /**
+     * Five WAI-ARIA tabs in the planned order (overview, access, clients, protection, advanced), each
+     * a mapped URL hash, each bound to a role=tabpanel that names the tab back, the panels wrapping
+     * the named section blocks in that order, and none of them hidden: without JavaScript the whole
+     * page stays visible. The tabs script is loaded by the template.
+     */
+    public function testAdminPageHasAccessibleTabsMappedToUrlHashes(): void {
+        $app = dirname(__DIR__, 3);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+
+        $this->assertStringContainsString("Util::addScript('mcp', 'admin-tabs')", $template);
+        $this->assertSame(1, substr_count($template, 'role="tablist"'));
+        preg_match_all('/<button type="button" role="tab" id="(mcp-tab-[a-z]+)" data-tab-hash="([a-z]+)" aria-controls="(mcp-panel-[a-z]+)" aria-selected="(true|false)">/', $template, $tabs, PREG_SET_ORDER);
+        $this->assertCount(5, $tabs);
+        $this->assertSame(['overview', 'access', 'clients', 'protection', 'advanced'], array_map(static fn (array $tab) => $tab[2], $tabs));
+        foreach ($tabs as [, $tabId, $hash]) {
+            $this->assertSame($hash, substr($tabId, strlen('mcp-tab-')), "tab $tabId must carry its own name as the hash");
+        }
+        $this->assertSame('true', $tabs[0][4]);
+        foreach (array_slice($tabs, 1) as $tab) {
+            $this->assertSame('false', $tab[4], 'only the first tab starts selected');
+        }
+
+        $panels = [];
+        preg_match_all('/<div role="tabpanel" id="(mcp-panel-[a-z]+)" aria-labelledby="(mcp-tab-[a-z]+)" class="mcp-tab-panel">/', $template, $panelMatches, PREG_SET_ORDER);
+        foreach ($panelMatches as $panel) {
+            $panels[$panel[1]] = $panel[2];
+        }
+        $this->assertCount(5, $panels);
+        foreach ($tabs as [, $tabId, , $panelId]) {
+            $this->assertSame($tabId, $panels[$panelId] ?? null, "panel $panelId must name its tab");
+        }
+        $this->assertSame(0, preg_match('/class="mcp-tab-panel"[^>]*\shidden\b/', $template), 'no panel ships hidden: without JS the page must not be empty');
+
+        // The panels wrap their blocks in the tab order; ids and classes of the blocks stay as they were.
+        $ordered = [
+            'role="tablist"',
+            'id="mcp-panel-overview"', 'id="mcp-block-status"',
+            'id="mcp-panel-access"', 'id="mcp-block-matrix"',
+            'id="mcp-panel-clients"', 'id="mcp-block-oauth"', 'id="mcp-connections"',
+            'id="mcp-panel-protection"', 'id="mcp-block-tags"',
+            'id="mcp-panel-advanced"', 'id="mcp-block-logs"', 'id="mcp-block-ocr"',
+            'class="mcp-attribution"',
+        ];
+        $positions = array_map(static fn (string $needle) => strpos($template, $needle), $ordered);
+        $this->assertSame(false, in_array(false, $positions, true), 'every tab, panel and block must exist');
+        $sorted = $positions;
+        sort($sorted);
+        $this->assertSame($sorted, $positions, 'tabs, panels and blocks must appear in the tab order');
+    }
+
+    /** Seven blocks, each a core settings section with its own heading, in the tab order. */
     public function testAdminPageHasSevenSectionBlocks(): void {
         $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
         preg_match_all('/<div class="section mcp-block" id="([^"]+)"[^>]*>\s*<h2><\?php p\(\$l->t\(\'([^\']+)\'\)\); \?><\/h2>/', $template, $blocks);
-        $this->assertSame(['mcp-block-status', 'mcp-block-oauth', 'mcp-block-tags', 'mcp-block-ocr', 'mcp-block-matrix', 'mcp-block-logs', 'mcp-connections'], $blocks[1]);
-        $this->assertSame(['Status', 'OAuth clients', 'Excluded from MCP access', 'OCR', 'Permissions', 'Server log', 'Active connections'], $blocks[2]);
+        $this->assertSame(['mcp-block-status', 'mcp-block-matrix', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-ocr'], $blocks[1]);
+        $this->assertSame(['Status', 'Permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'OCR'], $blocks[2]);
         $this->assertStringContainsString('data-scope="admin"', $template);
     }
 
