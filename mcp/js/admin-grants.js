@@ -445,7 +445,9 @@
 		if (rowReason !== null) {
 			// One notice instead of a mark in every column; the saved permissions come back with "Can connect".
 			const notice = el('td', { className: 'mcp-cell mcp-row-unavailable', colSpan: visiblePermissionColumns(), textContent: rowReason })
-			notice.title = t('mcp', 'The saved permissions are kept and shown again when “Can connect” is on.')
+			notice.title = user.enabled
+				? t('mcp', 'The saved permissions are kept and shown again when “Can connect” is on.')
+				: t('mcp', 'The saved permissions are kept and shown again when the account is enabled and “Can connect” is on.')
 			row.append(notice)
 			row.append(el('td', { className: 'mcp-connected', textContent: user.connected ? t('mcp', 'yes') : t('mcp', 'no') }))
 			return row
@@ -569,17 +571,29 @@
 		box.addEventListener('change', async () => {
 			const value = box.checked
 			const payload = Object.fromEntries(Object.entries(body).map(([key, v]) => [key, v === null ? value : v]))
+			const hadFocus = document.activeElement === box
+			// The focus comes back to this checkbox only when the admin did not move it during the save.
+			const focusStayed = () => hadFocus && (document.activeElement === null || document.activeElement === document.body || document.activeElement === box)
 			box.disabled = true
 			try {
 				const updated = await api('PUT', '/api/grants/' + encodeURIComponent(user.uid), payload)
 				const index = state.data.users.findIndex((u) => u.uid === user.uid)
 				state.data.users[index] = updated
+				const restore = focusStayed()
 				const fresh = renderRow(updated)
 				cell.parentElement.replaceWith(fresh)
-				flash(fresh.children[cell.cellIndex], true)
+				const freshCell = fresh.children[cell.cellIndex]
+				flash(freshCell, true)
+				if (restore) {
+					freshCell.querySelector('input')?.focus()
+				}
 			} catch (e) {
+				const restore = focusStayed()
 				box.checked = !value
 				box.disabled = false
+				if (restore) {
+					box.focus()
+				}
 				flash(cell, false)
 				notifyError(t('mcp', 'Could not save the permission for {user}.', { user: user.displayName }))
 			}
@@ -805,8 +819,9 @@
 			setBulkBusy(false)
 		}
 		if (undo !== null && pendingUndo === undo) {
-			// The menu that started the change is gone after the reload; the focus goes to its undo.
-			undoButton.focus({ preventScroll: true })
+			// The menu that started the change is gone after the reload; the focus goes to its undo,
+			// scrolling the notice under the table into view when it is below the fold.
+			undoButton.focus()
 		}
 	}
 

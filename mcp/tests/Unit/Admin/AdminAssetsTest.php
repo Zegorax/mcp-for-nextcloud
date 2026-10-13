@@ -228,6 +228,10 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString("filter: 'eligible'", $script);
         $this->assertStringContainsString('function rowUnavailableReason(user)', $script);
         $this->assertStringContainsString("td.mcp-row-unavailable", $script);
+        $this->assertStringContainsString('the account is enabled and “Can connect” is on', $script);
+        $this->assertStringContainsString("freshCell.querySelector('input')?.focus()", $script);
+        $css = (string)file_get_contents($app . '/css/admin.css');
+        $this->assertDoesNotMatchRegularExpression('/\\.mcp-bulk-notice \\{[^}]*position: sticky/s', $css, 'the undo notice never covers a row');
         $template = (string)file_get_contents($app . '/templates/admin.php');
         $this->assertStringContainsString('id="mcp-bulk-notice" role="status" aria-live="polite"', $template);
         $this->assertStringContainsString('id="mcp-bulk-undo" hidden', $template);

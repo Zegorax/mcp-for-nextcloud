@@ -423,12 +423,9 @@
 	line-height: 1;
 }
 
-/* Under the table, kept in view while the table is on screen. */
+/* Under the table, in the normal flow, so it never covers a row. */
 #mcp-admin .mcp-bulk-notice {
 	display: none;
-	position: sticky;
-	bottom: var(--default-grid-baseline);
-	z-index: 5;
 	align-items: center;
 	gap: 12px;
 	margin: 8px 0;
