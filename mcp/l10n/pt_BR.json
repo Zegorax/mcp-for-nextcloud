@@ -539,6 +539,8 @@
     "Paste the endpoint in the MCP client. Turning the service off signs every client out at once." : "Cole o endpoint no cliente MCP. Desligar o serviço desconecta todos os clientes na hora.",
     "Permissions" : "Permissões",
     "Each change is saved at once. The “All” menus in the header allow or deny a permission for every user on the current page." : "Cada alteração é salva na hora. Os menus “Todos” no cabeçalho permitem ou negam uma permissão para todos os usuários da página atual.",
+    "Show apps" : "Mostrar aplicativos",
+    "All apps" : "Todos os aplicativos",
     "Show" : "Mostrar",
     "Everyone" : "Todos",
     "Only users who can connect" : "Só quem pode conectar",

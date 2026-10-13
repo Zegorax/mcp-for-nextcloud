@@ -25,6 +25,8 @@
 	const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'))
 	/** @type {Map<string, HTMLElement>} data-tab-hash value to its tab */
 	const byHash = new Map()
+	// Query strings belong to each tab; navigation preserves them without knowing their meaning.
+	const tabQueries = new Map()
 
 	for (const tab of tabs) {
 		const hash = tab.getAttribute('data-tab-hash')
@@ -46,9 +48,11 @@
 	 * @return {{tab: HTMLElement, element: HTMLElement|null}}
 	 */
 	function resolveFromHash() {
-		const hash = window.location.hash.replace(/^#/, '')
+		const fragment = window.location.hash.replace(/^#/, '')
+		const hash = fragment.split('?')[0]
 		const direct = byHash.get(hash)
 		if (direct) {
+			tabQueries.set(hash, fragment.slice(hash.length))
 			return { tab: direct, element: null }
 		}
 		const element = hash === '' ? null : document.getElementById(hash)
@@ -83,7 +87,8 @@
 			tab.focus()
 		}
 		if (trackHash) {
-			const hash = tab.getAttribute('data-tab-hash')
+			resolveFromHash()
+			const hash = tab.getAttribute('data-tab-hash') + (tabQueries.get(tab.getAttribute('data-tab-hash')) || '')
 			if (window.location.hash !== '#' + hash) {
 				// One history entry per switch, so back/forward revisit the tab.
 				window.location.hash = hash

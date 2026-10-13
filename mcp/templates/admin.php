@@ -103,6 +103,10 @@
                 <option value="eligible"><?php p($l->t('Only users who can connect')); ?></option>
                 <option value="connected"><?php p($l->t('Only connected users')); ?></option>
             </select>
+            <label for="mcp-app"><?php p($l->t('Show apps')); ?></label>
+            <select id="mcp-app" disabled>
+                <option value=""><?php p($l->t('All apps')); ?></option>
+            </select>
             <span>
                 <input type="checkbox" class="checkbox" id="mcp-compact">
                 <label for="mcp-compact"><?php p($l->t('Compact rows')); ?></label>

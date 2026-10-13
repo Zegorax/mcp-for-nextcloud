@@ -17,11 +17,12 @@
 		return
 	}
 
-	const state = { search: '', group: '', filter: '', page: 1, data: null, groupsLoaded: false }
+	const state = { search: '', group: '', filter: '', page: 1, app: '', data: null, groupsLoaded: false }
 	const table = document.getElementById('mcp-matrix')
 	const searchInput = document.getElementById('mcp-search')
 	const groupSelect = document.getElementById('mcp-group')
 	const filterSelect = document.getElementById('mcp-filter')
+	const appSelect = document.getElementById('mcp-app')
 	const compactBox = document.getElementById('mcp-compact')
 	const countInfo = document.getElementById('mcp-count')
 	const prevButtons = [document.getElementById('mcp-prev'), document.getElementById('mcp-prev-bottom')]
@@ -177,6 +178,7 @@
 		const cell = el('td', { colSpan: table.tHead.rows[1] ? table.tHead.rows[1].cells.length + 3 : 1, className: 'mcp-empty mcp-load-error' },
 			[t('mcp', 'Could not load the users.'), ' ', retry])
 		table.tBodies[0].replaceChildren(el('tr', {}, [cell]))
+		applyAppFilter()
 	}
 
 	/** Fills the group filter once, keeping the current selection. */
@@ -189,6 +191,66 @@
 		}
 		state.groupsLoaded = true
 	}
+
+	/** Populate app choices from the actual catalog, preserving a valid selection. */
+	function renderApps() {
+		const labels = moduleLabels()
+		const modules = Object.keys(state.data.catalog)
+		if (!modules.includes(state.app)) {
+			state.app = ''
+		}
+		appSelect.replaceChildren(el('option', { value: '', textContent: t('mcp', 'All apps') }),
+			...modules.map((module) => el('option', { value: module, textContent: labels[module] || module })))
+		appSelect.value = state.app
+		appSelect.disabled = false
+	}
+
+	/** Filter only presentation; user queries and permission payloads stay unchanged. */
+	function applyAppFilter() {
+		for (const cell of table.querySelectorAll('[data-module]')) {
+			cell.hidden = state.app !== '' && cell.dataset.module !== state.app
+			if (cell.hidden) {
+				for (const menu of cell.querySelectorAll('details[open]')) {
+					menu.open = false
+				}
+			}
+		}
+		const columns = 3 + Object.entries(state.data?.catalog || {})
+			.filter(([module]) => state.app === '' || module === state.app)
+			.reduce((sum, [, operations]) => sum + operations.length, 0)
+		for (const cell of table.querySelectorAll('td.mcp-empty')) {
+			cell.colSpan = columns
+		}
+		stickSecondHeaderRow()
+	}
+
+	/** Read the Access tab's app parameter on reload and history navigation. */
+	function readAppFromHash() {
+		const [tab, query = ''] = window.location.hash.slice(1).split('?')
+		if (tab !== 'access') {
+			return
+		}
+		state.app = new URLSearchParams(query).get('app') || ''
+		if (state.data) {
+			renderApps()
+			applyAppFilter()
+		}
+	}
+
+	appSelect.addEventListener('change', () => {
+		state.app = appSelect.value
+		applyAppFilter()
+		const params = new URLSearchParams(window.location.hash.split('?')[1] || '')
+		if (state.app === '') {
+			params.delete('app')
+		} else {
+			params.set('app', state.app)
+		}
+		const query = params.toString()
+		window.location.hash = 'access' + (query ? '?' + query : '')
+	})
+	window.addEventListener('hashchange', readAppFromHash)
+	readAppFromHash()
 
 	/**
 	 * Header menu ("All") that allows or denies permissions for every user on the page.
@@ -264,6 +326,7 @@
 	function render() {
 		const data = state.data
 		renderGroups()
+		renderApps()
 		const modules = moduleLabels()
 		const operations = operationLabels()
 
@@ -279,16 +342,20 @@
 			const name = modules[module] || module
 			const entries = ops.map((operation) => ({ operations: [operation], label: name + ': ' + (operations[operation] || operation) }))
 			entries.push({ operations: ops, label: t('mcp', '{module}: every permission', { module: name }) })
-			top.append(el('th', { colSpan: ops.length, scope: 'colgroup', className: 'mcp-module ' + band }, [
+			const header = el('th', { colSpan: ops.length, scope: 'colgroup', className: 'mcp-module ' + band }, [
 				name, ' ', bulkMenu(module, entries, t('mcp', 'Change {module} permissions for every user on this page', { module: name })),
-			]))
+			])
+			header.dataset.module = module
+			top.append(header)
 			ops.forEach((operation, i) => {
-				sub.append(el('th', {
+				const cell = el('th', {
 					scope: 'col',
 					className: band + (i === 0 ? ' mcp-module' : ''),
 					title: operationHint(module, operation),
 					textContent: operations[operation] || operation,
-				}))
+				})
+				cell.dataset.module = module
+				sub.append(cell)
 			})
 		})
 		top.append(el('th', { rowSpan: 2, scope: 'col', textContent: t('mcp', 'Connected') }))
@@ -302,6 +369,7 @@
 			rows.push(el('tr', {}, [el('td', { colSpan: columns, className: 'mcp-empty', textContent: t('mcp', 'No users found.') })]))
 		}
 		table.tBodies[0].replaceChildren(...rows)
+		applyAppFilter()
 
 		const pageText = data.total === null
 			? t('mcp', 'Page {page}', { page: data.page })
@@ -346,6 +414,8 @@
 			ops.forEach((operation, i) => {
 				const available = user.appsEnabled[module]
 				const cell = checkboxCell(user, !user.enabled || !user.eligible || !available, user.grants[module][operation], module + ':' + operation, { module, operation, granted: null })
+				cell.dataset.module = module
+				cell.hidden = state.app !== '' && state.app !== module
 				cell.classList.add('mcp-band-' + (index % 2))
 				if (i === 0) {
 					cell.classList.add('mcp-module')
