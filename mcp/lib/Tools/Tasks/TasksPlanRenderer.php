@@ -38,7 +38,7 @@ final class TasksPlanRenderer {
      *
      * @var list<string>
      */
-    private const FIELDS = ['summary', 'description', 'start', 'due', 'priority', 'percentComplete'];
+    private const FIELDS = ['summary', 'description', 'start', 'due', 'priority', 'percentComplete', 'categories'];
 
     /**
      * @param string $tool write tool of this module
@@ -190,7 +190,11 @@ final class TasksPlanRenderer {
         foreach (self::FIELDS as $field) {
             $from = $this->value($before[$field] ?? null, $field, $zone);
             $to = $this->value($after[$field] ?? null, $field, $zone);
-            if ($from === $to) {
+            // Categories are compared as lists: two different lists may read alike once joined.
+            $same = $field === 'categories'
+                ? $this->names($before[$field] ?? null) === $this->names($after[$field] ?? null)
+                : $from === $to;
+            if ($same) {
                 continue;
             }
             $lines[] = '- ' . $this->label($field) . ': ' . ($from ?? Translator::t('empty'))
@@ -264,6 +268,9 @@ final class TasksPlanRenderer {
         if (in_array($field, ['start', 'due', 'completed'], true)) {
             return $this->date($value, $zone);
         }
+        if ($field === 'categories') {
+            return $this->categories($value);
+        }
         $text = $this->text($value);
 
         return $text === '' ? null : PlanText::inline($text, self::EXCERPT);
@@ -295,6 +302,29 @@ final class TasksPlanRenderer {
         $formatted = (new IntlDateFormatter(Translator::locale(), IntlDateFormatter::MEDIUM, IntlDateFormatter::SHORT, $zone))->format($date);
 
         return is_string($formatted) ? $formatted : $date->setTimezone($zone)->format('Y-m-d H:i');
+    }
+
+    /**
+     * The categories of the task as one line, in the order the task keeps them.
+     *
+     * Each name is a complete quoted literal, so delimiters and whitespace cannot make two states read alike
+     * and a change at the end of a long name stays visible.
+     *
+     * @param mixed $value raw plan value of the categories field
+     * @return string|null the quoted categories separated by commas, or null when the task has none
+     */
+    private function categories(mixed $value): ?string {
+        $names = array_map(PlanText::quoted(...), $this->names($value));
+
+        return $names === [] ? null : implode(', ', $names);
+    }
+
+    /**
+     * @param mixed $value raw plan value of the categories field
+     * @return list<string> the non-empty category names, in order
+     */
+    private function names(mixed $value): array {
+        return array_values(array_filter(array_map($this->text(...), is_array($value) ? $value : []), static fn (string $name) => $name !== ''));
     }
 
     /** @param int $priority iCalendar priority, 0 undefined and 1 the highest */
@@ -343,6 +373,7 @@ final class TasksPlanRenderer {
             'priority' => Translator::t('Priority'),
             'percentComplete' => Translator::t('Progress'),
             'completed' => Translator::t('Completed at'),
+            'categories' => Translator::t('Categories'),
             default => Translator::t('Title'),
         };
     }

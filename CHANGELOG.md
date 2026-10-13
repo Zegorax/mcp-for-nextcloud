@@ -2,6 +2,35 @@
 
 All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/appinfo/info.xml`.
 
+## 1.0.7
+
+### Added
+
+- tasks: task categories (the VTODO `CATEGORIES` property, shown as categories in the Tasks app). `tasks_read_task` and `tasks_list_tasks` return a structured `categories` list, merged from every `CATEGORIES` line of the task, with escaped commas read back intact; names are trimmed and a name repeated with a different case (including Greek "Σ", "σ" and "ς") is listed once, with its first spelling. `tasks_read_task` also returns the raw `icalendar`. A task without categories returns `[]` ([#6](https://github.com/sintax-tech/mcp-for-nextcloud/issues/6)).
+- tasks: `tasks_create_task` and `tasks_edit_task` accept `categories`, a list of up to 50 texts of 1 to 255 characters after trimming, with no control characters; an invalid value is refused before anything is written. On an edit, omitting `categories` leaves the existing lines untouched, `[]` removes them all and a list replaces them all with a single line (a comma inside a name is escaped and reads back intact). Recurring tasks and tasks with participants are still refused ([#6](https://github.com/sintax-tech/mcp-for-nextcloud/issues/6)).
+- tasks: `tasks_list_tasks` accepts `category` and lists only the tasks with that category, compared exactly but ignoring case; it works together with `include_completed`, and `offset`/`limit` page over the matching tasks only. Private and confidential tasks of another owner stay hidden, and so do their categories ([#6](https://github.com/sintax-tech/mcp-for-nextcloud/issues/6)).
+- tasks: the confirmation plan shows the categories before and after a change, and "empty" when they are cleared. Each name is written in quotes, with doubled spaces and invisible or control characters shown as visible escapes, so that "A, B" and "A" + "B" never read alike and no change is hidden ([#6](https://github.com/sintax-tech/mcp-for-nextcloud/issues/6)).
+- admin: the settings page is split into five tabs — Overview, Access and permissions, Clients and connections, Data protection and Advanced — reachable by keyboard and by address (`#overview`, `#access`, `#clients`, `#protection`, `#advanced`), so a link opens the tab it names. When the saved exclusion setting cannot be read, the Overview tab says so and points to Data protection, where it is repaired ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: the groups that may read the server log and the exclusion tags are chosen in a searchable list with a summary, instead of a long list of checkboxes; the log privacy option has its own "Log privacy" block with a "Learn more" text ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: the permission matrix can show one app at a time ("Show apps", kept in the address, e.g. `#access?app=files`), keeps the column of names fixed while scrolling sideways and starts with "Only users who can connect". A legend explains the states ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: permission cells show Allowed, Denied or Unavailable. A disabled account or a user with "Can connect" off has one notice across the app-permission columns. For other users, an unavailable app or log role is marked with ⊘ in the affected cells, with the reason on hover and for screen readers ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: the "All" menu asks for confirmation that says what it will change: how many users change, how many are left out because the permission is unavailable to them and how many already have the value. Nothing is sent when nothing would change. After a change, "Undo" restores the previous values for 10 seconds (the timer pauses while the pointer or the keyboard focus is on it); one change or undo runs at a time ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+
+### Changed
+
+- admin: the "Hidden files & tags" block is now "Excluded from MCP access" and says what it really does. Files and folders with a selected tag, and everything inside them, are hidden from the tools of this connector only; other AI tools or connectors that read the same Nextcloud are not covered. An invisible tag can be assigned or removed only by administrators; a restricted tag also by the groups the administrators allow; any tag that is not selected is an ordinary label. The server log tools respect the exclusion only while "Hide the text of log messages" is on. The README, the technical README and the store description (en, pt-BR, es) use the same wording ([#4](https://github.com/sintax-tech/mcp-for-nextcloud/issues/4)).
+- admin: "All" applies the permission to the users that change on the current page; users for whom the permission is unavailable are no longer written (their effective access was already denied).
+- admin: the help of "Server log" says that the log shows file names, addresses and accounts of every user, and that the groups chosen there may read it besides the administrators.
+- appinfo: the store description (en, pt-BR, es) mentions the categories of the Tasks tools.
+
+### Known limitations
+
+- "All" applies to the page shown (50 users); to change more users, go through the pages or use the filters.
+- "Undo" writes the previous values back: if another administrator, or the same one in another window, changed the same permission in the meantime, that change is overwritten (last write wins).
+- Undoing a "Denied" on "Can connect" restores the permission but not the sign-ins that denying it revoked: the user signs in again in the client.
+- Categories are compared by their characters: the same text typed with a precomposed and with a combining accent (NFC and NFD) counts as two categories, and a few invisible characters outside the control characters (for example a zero-width space) are accepted in a name.
+- The Nextcloud Files interface does not show which files are excluded from MCP access; the exclusion itself is unchanged.
+
 ## 1.0.6
 
 ### Fixed

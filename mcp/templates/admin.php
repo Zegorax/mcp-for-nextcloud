@@ -4,19 +4,34 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 /**
- * Admin page of the "MCP for Nextcloud" settings section, one core `.section` per block:
- * status, OAuth clients, hidden files & tags, OCR, the users × permissions matrix, the server log and the active
- * connections. The matrix, OAuth clients, tags and log groups are filled by js/admin-grants.js, the connections by
- * js/connections.js.
+ * Admin page of the "MCP for Nextcloud" settings section: five WAI-ARIA tabs, each with one
+ * `role="tabpanel"` holding the core `.section` blocks of its area — overview (status), access and
+ * permissions (the users × permissions matrix), clients and connections (OAuth clients and active
+ * connections), data protection (exclusion tags) and advanced (server log, log privacy, OCR).
+ * js/admin-tabs.js provides the tab behavior and the URL hash mapping; js/admin-picker.js is the
+ * readable-search multi-select of the log groups and the exclusion tags; the matrix, OAuth clients,
+ * tags and log groups are filled by js/admin-grants.js, the connections by js/connections.js. Without
+ * JavaScript every panel stays visible, the tab bar stays hidden and the log privacy detail stays open.
  *
  * @var array{endpoint:string, serviceEnabled:bool, ocrActive:bool, ocrUrl:string, version:string, eligibleUsers:int, connectedUsers:int, activeConnections:int, unsupportedApps:list<array{name:string, installed:string, required:string}>, logsAvailable:bool, logType:string} $_
  * @var \OCP\IL10N $l
  */
+\OCP\Util::addScript('mcp', 'admin-picker');
 \OCP\Util::addScript('mcp', 'admin-grants');
 \OCP\Util::addScript('mcp', 'connections');
+\OCP\Util::addScript('mcp', 'admin-tabs');
 \OCP\Util::addStyle('mcp', 'admin');
 ?>
 <div id="mcp-admin" class="mcp-settings" data-service-enabled="<?php p($_['serviceEnabled'] ? '1' : '0'); ?>">
+    <div class="mcp-tab-bar" role="tablist" aria-label="<?php p($l->t('Sections')); ?>">
+        <button type="button" role="tab" id="mcp-tab-overview" data-tab-hash="overview" aria-controls="mcp-panel-overview" aria-selected="true"><?php p($l->t('Overview')); ?></button>
+        <button type="button" role="tab" id="mcp-tab-access" data-tab-hash="access" aria-controls="mcp-panel-access" aria-selected="false"><?php p($l->t('Access and permissions')); ?></button>
+        <button type="button" role="tab" id="mcp-tab-clients" data-tab-hash="clients" aria-controls="mcp-panel-clients" aria-selected="false"><?php p($l->t('Clients and connections')); ?></button>
+        <button type="button" role="tab" id="mcp-tab-protection" data-tab-hash="protection" aria-controls="mcp-panel-protection" aria-selected="false"><?php p($l->t('Data protection')); ?><span id="mcp-tab-protection-alert" class="mcp-tab-alert" hidden> <?php p($l->t('(action needed)')); ?></span></button>
+        <button type="button" role="tab" id="mcp-tab-advanced" data-tab-hash="advanced" aria-controls="mcp-panel-advanced" aria-selected="false"><?php p($l->t('Advanced')); ?></button>
+    </div>
+
+    <div role="tabpanel" id="mcp-panel-overview" aria-labelledby="mcp-tab-overview" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-status">
         <h2><?php p($l->t('Status')); ?></h2>
         <div class="mcp-cards">
@@ -64,8 +79,71 @@
             </div>
         </div>
         <p class="settings-hint mcp-hint"><?php p($l->t('Paste the endpoint in the MCP client. Turning the service off signs every client out at once.')); ?></p>
+        <div id="mcp-tags-invalid-overview" class="mcp-tags-warning" role="alert" hidden>
+            <p><?php p($l->t('The saved exclusion tags setting cannot be read, so the MCP tools treat every file and folder as not found. Choose the exclusion tags and save them again.')); ?> <a href="#protection"><?php p($l->t('Open Data protection')); ?></a></p>
+        </div>
+    </div>
     </div>
 
+    <div role="tabpanel" id="mcp-panel-access" aria-labelledby="mcp-tab-access" class="mcp-tab-panel" tabindex="0">
+    <div class="section mcp-block" id="mcp-block-matrix">
+        <h2><?php p($l->t('Permissions')); ?></h2>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Users need “Can connect” and must turn the connection on in their personal settings. Reading starts allowed except the server log; writing, deleting and transferring start denied; Nextcloud permissions still apply. Changes save at once, and “All” applies to the current page.')); ?></p>
+        <?php foreach ($_['unsupportedApps'] as $app) { ?>
+            <p class="mcp-unsupported-app"><?php p($l->t('%1$s %2$s is installed, but MCP for Nextcloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.', [$app['name'], $app['installed'], $app['required']])); ?></p>
+        <?php } ?>
+        <div class="mcp-toolbar">
+            <input type="search" id="mcp-search" placeholder="<?php p($l->t('Search user (name, user ID or e-mail)')); ?>" aria-label="<?php p($l->t('Search user')); ?>">
+            <select id="mcp-group" aria-label="<?php p($l->t('Group')); ?>">
+                <option value=""><?php p($l->t('All users')); ?></option>
+            </select>
+            <select id="mcp-filter" aria-label="<?php p($l->t('Show')); ?>">
+                <option value=""><?php p($l->t('Everyone')); ?></option>
+                <option value="eligible" selected><?php p($l->t('Only users who can connect')); ?></option>
+                <option value="connected"><?php p($l->t('Only connected users')); ?></option>
+            </select>
+            <label for="mcp-app"><?php p($l->t('Show apps')); ?></label>
+            <select id="mcp-app" disabled>
+                <option value=""><?php p($l->t('All apps')); ?></option>
+            </select>
+            <span>
+                <input type="checkbox" class="checkbox" id="mcp-compact">
+                <label for="mcp-compact"><?php p($l->t('Compact rows')); ?></label>
+            </span>
+            <span class="mcp-pager">
+                <span id="mcp-count" class="mcp-count" aria-live="polite"></span>
+                <button type="button" id="mcp-prev"><?php p($l->t('Previous')); ?></button>
+                <span id="mcp-page-info"></span>
+                <button type="button" id="mcp-next"><?php p($l->t('Next')); ?></button>
+            </span>
+        </div>
+        <div class="mcp-matrix-wrap">
+            <table class="mcp-matrix" id="mcp-matrix" aria-busy="true">
+                <thead></thead>
+                <tbody><tr><td class="mcp-empty"><?php p($l->t('Loading…')); ?></td></tr></tbody>
+            </table>
+        </div>
+        <div class="mcp-bulk-notice" id="mcp-bulk-notice" role="status" aria-live="polite">
+            <span id="mcp-bulk-notice-text" tabindex="-1"></span>
+            <button type="button" id="mcp-bulk-undo" hidden><?php p($l->t('Undo')); ?></button>
+        </div>
+        <div class="mcp-toolbar mcp-toolbar-bottom">
+            <p class="mcp-legend">
+                <span class="mcp-legend-item"><input type="checkbox" checked disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Allowed')); ?></span>
+                <span class="mcp-legend-item"><input type="checkbox" disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Denied')); ?></span>
+                <span class="mcp-legend-item"><span class="mcp-state-mark" aria-hidden="true">⊘</span> <?php p($l->t('Unavailable')); ?></span>
+                <span><?php p($l->t('Point at ⊘ for the reason.')); ?></span>
+            </p>
+            <span class="mcp-pager">
+                <button type="button" id="mcp-prev-bottom"><?php p($l->t('Previous')); ?></button>
+                <span id="mcp-page-info-bottom"></span>
+                <button type="button" id="mcp-next-bottom"><?php p($l->t('Next')); ?></button>
+            </span>
+        </div>
+    </div>
+    </div>
+
+    <div role="tabpanel" id="mcp-panel-clients" aria-labelledby="mcp-tab-clients" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-oauth">
         <h2><?php p($l->t('OAuth clients')); ?></h2>
         <p>
@@ -89,98 +167,6 @@
             <ul id="mcp-native-redirects" class="mcp-native-redirects"></ul>
             <p class="settings-hint mcp-hint"><?php p($l->t('Paste this client_id in the client settings, for example Gemini CLI settings.json → mcpServers.<name>.oauth.clientId.')); ?></p>
         </div>
-    </div>
-
-    <div class="section mcp-block" id="mcp-block-tags">
-        <h2><?php p($l->t('Hidden files & tags')); ?></h2>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Files and folders tagged with the selected system tags will be completely hidden from MCP tools. Recommended: use restricted or invisible tags so users cannot remove them.')); ?></p>
-        <div id="mcp-hidden-tags-section" class="mcp-hidden-tags">
-            <div id="mcp-tags-list" class="mcp-tags-container" aria-busy="true">
-                <span class="mcp-tags-loading"><?php p($l->t('Loading tags…')); ?></span>
-            </div>
-            <div id="mcp-tags-invalid" class="mcp-tags-warning" role="alert" style="display: none;">
-                <p><?php p($l->t('The saved hidden tags setting cannot be read, so the MCP tools treat every file and folder as not found. Choose the hidden tags and save them again.')); ?></p>
-                <button type="button" id="mcp-tags-repair"><?php p($l->t('Save hidden tags')); ?></button>
-            </div>
-            <div id="mcp-tags-warning" class="mcp-tags-warning" style="display: none;">
-                <?php p($l->t('Warning: one or more selected tags are collaborative. Users with edit access can remove collaborative tags, which may expose hidden files.')); ?>
-            </div>
-            <span class="mcp-status" id="mcp-tags-status" aria-live="polite"></span>
-        </div>
-    </div>
-
-    <div class="section mcp-block" id="mcp-block-ocr">
-        <h2><?php p($l->t('OCR')); ?></h2>
-        <?php if ($_['ocrActive']) { ?>
-            <p class="mcp-ocr" id="mcp-ocr" data-active="1"><?php p($l->t('Workflow OCR is active. PDFs it processes gain a text layer that files_read can read.')); ?></p>
-        <?php } else { ?>
-            <p class="mcp-ocr settings-hint mcp-hint" id="mcp-ocr" data-active="0">
-                <?php p($l->t('Workflow OCR is not active. Scanned PDFs and images have no text for the AI; it is told to ask you or to view the page as an image.')); ?>
-                <a href="<?php p($_['ocrUrl']); ?>" target="_blank" rel="noopener noreferrer"><?php p($l->t('Get Workflow OCR in the App Store')); ?></a>.
-                <?php p($l->t('It needs ocrmypdf installed on the server. Nothing else in MCP depends on it.')); ?>
-            </p>
-        <?php } ?>
-    </div>
-
-    <div class="section mcp-block" id="mcp-block-matrix">
-        <h2><?php p($l->t('Permissions')); ?></h2>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Users need “Can connect” and must activate the connection in their personal settings. Read permissions start allowed, except the server log; write, delete and transfer start denied. Nextcloud permissions and shares still apply.')); ?></p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Each change is saved at once. The “All” menus in the header allow or deny a permission for every user on the current page.')); ?></p>
-        <?php foreach ($_['unsupportedApps'] as $app) { ?>
-            <p class="mcp-unsupported-app"><?php p($l->t('%1$s %2$s is installed, but MCP for Nextcloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.', [$app['name'], $app['installed'], $app['required']])); ?></p>
-        <?php } ?>
-        <div class="mcp-toolbar">
-            <input type="search" id="mcp-search" placeholder="<?php p($l->t('Search user (name, user ID or e-mail)')); ?>" aria-label="<?php p($l->t('Search user')); ?>">
-            <select id="mcp-group" aria-label="<?php p($l->t('Group')); ?>">
-                <option value=""><?php p($l->t('All users')); ?></option>
-            </select>
-            <select id="mcp-filter" aria-label="<?php p($l->t('Show')); ?>">
-                <option value=""><?php p($l->t('Everyone')); ?></option>
-                <option value="eligible"><?php p($l->t('Only users who can connect')); ?></option>
-                <option value="connected"><?php p($l->t('Only connected users')); ?></option>
-            </select>
-            <span>
-                <input type="checkbox" class="checkbox" id="mcp-compact">
-                <label for="mcp-compact"><?php p($l->t('Compact rows')); ?></label>
-            </span>
-            <span class="mcp-pager">
-                <span id="mcp-count" class="mcp-count" aria-live="polite"></span>
-                <button type="button" id="mcp-prev"><?php p($l->t('Previous')); ?></button>
-                <span id="mcp-page-info"></span>
-                <button type="button" id="mcp-next"><?php p($l->t('Next')); ?></button>
-            </span>
-        </div>
-        <div class="mcp-matrix-wrap">
-            <table class="mcp-matrix" id="mcp-matrix" aria-busy="true">
-                <thead></thead>
-                <tbody><tr><td class="mcp-empty"><?php p($l->t('Loading…')); ?></td></tr></tbody>
-            </table>
-        </div>
-        <div class="mcp-toolbar mcp-toolbar-bottom">
-            <span class="mcp-pager">
-                <button type="button" id="mcp-prev-bottom"><?php p($l->t('Previous')); ?></button>
-                <span id="mcp-page-info-bottom"></span>
-                <button type="button" id="mcp-next-bottom"><?php p($l->t('Next')); ?></button>
-            </span>
-        </div>
-    </div>
-
-    <div class="section mcp-block" id="mcp-block-logs">
-        <h2><?php p($l->t('Server log')); ?></h2>
-        <?php if (!$_['logsAvailable']) { ?>
-            <p class="mcp-unsupported-app" id="mcp-logs-unavailable"><?php p($l->t('This server writes its log to %s, not to a file, so the server log tools stay hidden. They need the file log, the default of Nextcloud.', [$_['logType']])); ?></p>
-        <?php } ?>
-        <p class="settings-hint mcp-hint"><?php p($l->t('The log shows file names, addresses and accounts of every user. Only Nextcloud administrators and members of the groups selected here can read it through MCP, and only after their “Server log” permission is turned on in the table above; it starts off.')); ?></p>
-        <div id="mcp-logs-groups" class="mcp-logs-groups" aria-busy="true">
-            <span class="mcp-tags-loading"><?php p($l->t('Loading groups…')); ?></span>
-        </div>
-        <span class="mcp-status" id="mcp-logs-status" aria-live="polite"></span>
-        <p>
-            <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
-            <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
-            <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
-        </p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while hidden tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the hiding by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">
@@ -208,6 +194,73 @@
             <tbody><tr><td colspan="5" class="mcp-empty"><?php p($l->t('Loading…')); ?></td></tr></tbody>
         </table>
     </div>
+    </div>
+
+    <div role="tabpanel" id="mcp-panel-protection" aria-labelledby="mcp-tab-protection" class="mcp-tab-panel" tabindex="0">
+    <div class="section mcp-block" id="mcp-block-tags">
+        <h2><?php p($l->t('Excluded from MCP access')); ?></h2>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Files and folders tagged with a selected tag, and everything inside those folders, are completely hidden from the tools of this MCP connector. The server log tools respect this only while “Hide the text of log messages” is on.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('The protection applies only to this connector: it does not cover other AI tools or connectors, and nothing stops someone from sending a file to an AI by hand. Only the tags selected here exclude files; any other tag is an ordinary label.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Recommended: invisible tags, which only administrators can assign or remove, or restricted tags, which only administrators and the groups they allow can assign or remove; users with edit access can remove collaborative tags.')); ?></p>
+        <div id="mcp-hidden-tags-section" class="mcp-hidden-tags">
+            <div id="mcp-tags-list" class="mcp-tags-container" aria-busy="true">
+                <span class="mcp-tags-loading"><?php p($l->t('Loading tags…')); ?></span>
+            </div>
+            <div id="mcp-tags-invalid" class="mcp-tags-warning" role="alert" style="display: none;">
+                <p><?php p($l->t('The saved exclusion tags setting cannot be read, so the MCP tools treat every file and folder as not found. Choose the exclusion tags and save them again.')); ?></p>
+                <button type="button" id="mcp-tags-repair"><?php p($l->t('Save exclusion tags')); ?></button>
+            </div>
+            <div id="mcp-tags-warning" class="mcp-tags-warning" style="display: none;">
+                <?php p($l->t('Warning: one or more selected tags are collaborative. Users with edit access can remove collaborative tags, which may expose excluded files.')); ?>
+            </div>
+            <span class="mcp-status" id="mcp-tags-status" aria-live="polite"></span>
+        </div>
+    </div>
+    </div>
+
+    <div role="tabpanel" id="mcp-panel-advanced" aria-labelledby="mcp-tab-advanced" class="mcp-tab-panel" tabindex="0">
+    <div class="section mcp-block" id="mcp-block-logs">
+        <h2><?php p($l->t('Server log')); ?></h2>
+        <?php if (!$_['logsAvailable']) { ?>
+            <p class="mcp-unsupported-app" id="mcp-logs-unavailable"><?php p($l->t('This server writes its log to %s, not to a file, so the server log tools stay hidden. They need the file log, the default of Nextcloud.', [$_['logType']])); ?></p>
+        <?php } ?>
+        <p class="settings-hint mcp-hint"><?php p($l->t('The server log shows file names, addresses and accounts of every user. Choose below which groups, besides administrators, may read it through MCP.')); ?></p>
+        <div id="mcp-logs-groups" class="mcp-logs-groups" aria-busy="true">
+            <span class="mcp-tags-loading"><?php p($l->t('Loading groups…')); ?></span>
+        </div>
+        <p class="mcp-picker-summary mcp-hint" id="mcp-logs-summary"></p>
+        <span class="mcp-status" id="mcp-logs-status" aria-live="polite"></span>
+    </div>
+
+    <div class="section mcp-block" id="mcp-block-logs-privacy">
+        <h2><?php p($l->t('Log privacy')); ?></h2>
+        <p>
+            <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
+            <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
+            <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
+        </p>
+        <p>
+            <button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail" hidden><?php p($l->t('Learn more')); ?></button>
+        </p>
+        <div id="mcp-logs-privacy-detail" class="mcp-learn-more-box">
+            <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while exclusion tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the exclusion by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
+        </div>
+    </div>
+
+    <div class="section mcp-block" id="mcp-block-ocr">
+        <h2><?php p($l->t('OCR')); ?></h2>
+        <?php if ($_['ocrActive']) { ?>
+            <p class="mcp-ocr" id="mcp-ocr" data-active="1"><?php p($l->t('Workflow OCR is active. PDFs it processes gain a text layer that files_read can read.')); ?></p>
+        <?php } else { ?>
+            <p class="mcp-ocr settings-hint mcp-hint" id="mcp-ocr" data-active="0">
+                <?php p($l->t('Workflow OCR is not active. Scanned PDFs and images have no text for the AI; it is told to ask you or to view the page as an image.')); ?>
+                <a href="<?php p($_['ocrUrl']); ?>" target="_blank" rel="noopener noreferrer"><?php p($l->t('Get Workflow OCR in the App Store')); ?></a>.
+                <?php p($l->t('It needs ocrmypdf installed on the server. Nothing else in MCP depends on it.')); ?>
+            </p>
+        <?php } ?>
+    </div>
+    </div>
+
     <footer class="mcp-attribution">
         <?php p($l->t('Developed by Sintax')); ?> · <a href="https://sintax.tech" target="_blank" rel="noopener noreferrer">sintax.tech</a>
     </footer>

@@ -8,6 +8,225 @@
 	max-width: 900px;
 }
 
+/* Tab navigation (js/admin-tabs.js): the bar appears only once the script marks the page ready, so
+   without JavaScript every panel stays visible and the page keeps its old single-column layout. */
+#mcp-admin .mcp-tab-bar {
+	display: none;
+	flex-wrap: nowrap;
+	gap: 4px;
+	margin-bottom: 16px;
+	padding-block-start: 0;
+	overflow-x: auto;
+	border-bottom: 1px solid var(--color-border);
+}
+
+/* Vue settings have a navigation toggle at every viewport size (NC 34+). */
+#app-content-vue #mcp-admin .mcp-tab-bar {
+	padding-block-start: calc(var(--default-clickable-area) + 2 * var(--app-navigation-padding, calc(2 * var(--default-grid-baseline))));
+}
+
+/* Legacy settings show their toggle only on mobile (NC 32/33). */
+@media (max-width: 1024px) {
+	#app-content #mcp-admin .mcp-tab-bar {
+		padding-block-start: calc(var(--default-clickable-area) + 2 * var(--app-navigation-padding, calc(2 * var(--default-grid-baseline))));
+	}
+}
+
+/* NC 35 SettingsContentWrapper already reserves the toggle clearance, minus the
+   seven grid units normally supplied by the first settings section. */
+#app-content-vue .settings-content #mcp-admin .mcp-tab-bar {
+	padding-block-start: calc(7 * var(--default-grid-baseline));
+}
+
+#mcp-admin.mcp-tabs-on .mcp-tab-bar {
+	display: flex;
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"] {
+	padding: 8px 16px;
+	border: none;
+	border-bottom: 2px solid transparent;
+	background: none;
+	color: var(--color-text-maxcontrast);
+	font-weight: bold;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"]:hover {
+	color: var(--color-main-text);
+	background-color: var(--color-background-hover);
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"][aria-selected="true"] {
+	color: var(--color-primary-element);
+	border-bottom-color: var(--color-primary-element);
+}
+
+#mcp-admin .mcp-tab-bar [role="tab"]:focus-visible {
+	outline: 2px solid var(--color-primary-element);
+	outline-offset: -2px;
+}
+
+/* The marker on a tab that needs the administrator, for example the unreadable exclusion setting. */
+#mcp-admin .mcp-tab-alert {
+	margin-inline-start: 4px;
+	color: var(--color-warning-text, var(--color-warning));
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-tab-panel[hidden] {
+	display: none;
+}
+
+/* Searchable multi-select picker (js/admin-picker.js): chips of the selected options on top, a
+   search field that filters the existing options and a collapsed listbox. Theme variables only. */
+#mcp-admin .mcp-picker {
+	inline-size: 100%;
+	max-inline-size: 500px;
+	box-sizing: border-box;
+}
+
+#mcp-admin .mcp-picker-box {
+	inline-size: 100%;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: calc(2 * var(--default-grid-baseline));
+}
+
+#mcp-admin .mcp-picker-busy {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+#mcp-admin .mcp-picker-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+
+#mcp-admin .mcp-picker-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 8px;
+	background-color: var(--color-background-dark);
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-pill, var(--border-radius));
+	font-size: 0.9em;
+	user-select: none;
+}
+
+#mcp-admin .mcp-picker-remove {
+	background: none;
+	border: none;
+	padding: 0 2px;
+	color: var(--color-text-maxcontrast);
+	font-weight: bold;
+	cursor: pointer;
+}
+
+#mcp-admin .mcp-picker-remove:hover {
+	color: var(--color-main-text);
+}
+
+/* Let the core draw the input's border and focus ring; the chips have no outer frame. */
+#mcp-admin .mcp-picker-search {
+	flex: 1 1 100%;
+	inline-size: 100%;
+	min-inline-size: 0;
+	margin: 0;
+}
+
+#mcp-admin .mcp-picker-search:focus {
+	border-color: var(--color-main-text);
+	outline: none;
+}
+
+#mcp-admin .mcp-picker-list {
+	box-sizing: border-box;
+	inline-size: 100%;
+	max-height: 220px;
+	overflow-y: auto;
+	margin: 4px 0 0;
+	padding: 4px;
+	list-style: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-main-background);
+}
+
+#mcp-admin .mcp-picker-option {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 8px;
+	padding: 6px 10px;
+	border-radius: var(--border-radius);
+	cursor: pointer;
+	user-select: none;
+}
+
+/* A checked box adds a non-color cue to the listbox's aria-selected state. */
+#mcp-admin .mcp-picker-option::before {
+	content: '';
+	flex: 0 0 1em;
+	inline-size: 1em;
+	block-size: 1em;
+	line-height: 1em;
+	text-align: center;
+	border: 1px solid currentColor;
+	border-radius: var(--border-radius);
+}
+
+#mcp-admin .mcp-picker-option[aria-selected="true"]::before {
+	content: '✓';
+}
+
+#mcp-admin .mcp-picker-option:hover,
+#mcp-admin .mcp-picker-option.mcp-picker-active {
+	background-color: var(--color-background-hover);
+	outline: 2px solid var(--color-main-text);
+	outline-offset: -2px;
+}
+
+#mcp-admin .mcp-picker-option[aria-selected="true"] {
+	background-color: var(--color-primary-element-light);
+	color: var(--color-primary-element-light-text, var(--color-main-text));
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-picker-no-match {
+	padding: 6px 10px;
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-picker-summary {
+	margin: 8px 0;
+}
+
+/* The "Learn more" expansion of the log privacy block. */
+#mcp-admin .mcp-learn-more {
+	background: none;
+	border: none;
+	padding: 0;
+	color: var(--color-primary-element);
+	font-size: var(--default-font-size);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+#mcp-admin .mcp-learn-more-box {
+	margin: 8px 0;
+	padding: 8px 12px;
+	max-width: 900px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius);
+	background-color: var(--color-background-hover);
+}
+
 #mcp-admin .mcp-endpoint code {
 	padding: 2px 6px;
 	border-radius: var(--border-radius);
@@ -66,6 +285,12 @@
 	font-weight: bold;
 }
 
+/* Header menus must paint above the second header row and the sticky corner. A browser without :has()
+   is a progressive-enhancement case: the open menu then paints under the second header row. */
+#mcp-admin .mcp-matrix thead th:has(.mcp-bulk-menu[open]) {
+	z-index: 4;
+}
+
 #mcp-admin .mcp-matrix thead th[title] {
 	cursor: help;
 }
@@ -109,6 +334,7 @@
 	border-inline-start: 1px solid var(--color-border);
 }
 
+/* Body names sit above scrolling cells (1); headers above names (2); corner above both (3). */
 #mcp-admin .mcp-matrix .mcp-user-col {
 	position: sticky;
 	inset-inline-start: 0;
@@ -146,8 +372,72 @@
 	color: var(--color-text-maxcontrast);
 }
 
-#mcp-admin .mcp-dim {
-	opacity: 0.55;
+/* The three states of a permission cell, none by colour alone: a checked box, an empty box, a "no entry" mark. */
+#mcp-admin .mcp-state-unavailable {
+	color: var(--color-text-maxcontrast);
+	cursor: help;
+}
+
+/* A disabled account or "Can connect" off: one quiet notice across the permission columns. */
+#mcp-admin .mcp-matrix td.mcp-row-unavailable {
+	color: var(--color-text-maxcontrast);
+	font-style: italic;
+	text-align: start;
+	cursor: help;
+}
+
+/* The legend sits under the table, next to the bottom pager. */
+#mcp-admin .mcp-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 16px;
+	margin: 0;
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+#mcp-admin .mcp-legend input[type="checkbox"] {
+	margin: 0;
+	pointer-events: none;
+}
+
+#mcp-admin .mcp-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+#mcp-admin .mcp-state-mark {
+	display: inline-block;
+	font-size: 1.25em;
+	line-height: 1;
+}
+
+/* Under the table, in the normal flow, so it never covers a row. */
+#mcp-admin .mcp-bulk-notice {
+	display: none;
+	align-items: center;
+	gap: 12px;
+	margin: 8px 0;
+	padding: 6px 12px;
+	border: 1px solid var(--color-border-dark);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-background-dark);
+	color: var(--color-main-text);
+}
+
+#mcp-admin .mcp-bulk-notice.mcp-notice-on {
+	display: flex;
 }
 
 #mcp-admin .mcp-badge-connected {
