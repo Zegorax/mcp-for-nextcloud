@@ -145,7 +145,7 @@ final class AdminAssetsTest extends TestCase {
         }
 
         $panels = [];
-        preg_match_all('/<div role="tabpanel" id="(mcp-panel-[a-z]+)" aria-labelledby="(mcp-tab-[a-z]+)" class="mcp-tab-panel">/', $template, $panelMatches, PREG_SET_ORDER);
+        preg_match_all('/<div role="tabpanel" id="(mcp-panel-[a-z]+)" aria-labelledby="(mcp-tab-[a-z]+)" class="mcp-tab-panel" tabindex="0">/', $template, $panelMatches, PREG_SET_ORDER);
         foreach ($panelMatches as $panel) {
             $panels[$panel[1]] = $panel[2];
         }
@@ -279,5 +279,62 @@ final class AdminAssetsTest extends TestCase {
         $this->assertSame(1, substr_count($template, 'class="mcp-picker-summary mcp-hint" id="mcp-logs-summary"'));
         $script = (string)file_get_contents($app . '/js/admin-grants.js');
         $this->assertStringContainsString("more.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true')", $script);
+    }
+
+    /**
+     * Real containment, not just order: each block id's ancestor with role=tabpanel must be the panel
+     * of its tab, so a block can never leak out of its tab and show on every one.
+     */
+    public function testEveryBlockLivesInsideItsOwnTabPanel(): void {
+        $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
+        // The panel/block structure is plain HTML; the PHP in the template only echoes texts.
+        $html = preg_replace('/<\?php.*?\?>/s', '', $template);
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $doc = new \DOMDocument();
+            $loaded = $doc->loadHTML($html);
+        } finally {
+            libxml_use_internal_errors($previous);
+        }
+        $this->assertTrue($loaded);
+        $blocks = [
+            'mcp-panel-overview' => ['mcp-block-status'],
+            'mcp-panel-access' => ['mcp-block-matrix'],
+            'mcp-panel-clients' => ['mcp-block-oauth', 'mcp-connections'],
+            'mcp-panel-protection' => ['mcp-block-tags'],
+            'mcp-panel-advanced' => ['mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'],
+        ];
+        foreach ($blocks as $panelId => $blockIds) {
+            foreach ($blockIds as $blockId) {
+                $block = $doc->getElementById($blockId);
+                $this->assertNotNull($block, $blockId);
+                $ancestor = $block->parentNode;
+                while ($ancestor instanceof \DOMElement && $ancestor->getAttribute('role') !== 'tabpanel') {
+                    $ancestor = $ancestor->parentNode;
+                }
+                $this->assertInstanceOf(\DOMElement::class, $ancestor, "$blockId must live inside a tab panel");
+                $this->assertSame($panelId, $ancestor->getAttribute('id'), "$blockId must live inside $panelId");
+            }
+        }
+    }
+
+    /**
+     * The unreadable exclusion setting refuses every file, so the sign of it cannot stay inside a
+     * hidden tab panel: the Status block of Overview shows the same alert with a link to the
+     * protection tab, the tab carries a marker, and the script toggles both.
+     */
+    public function testUnreadableTagsSettingIsSignalledInOverviewAndOnTheTab(): void {
+        $app = dirname(__DIR__, 3);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertSame(1, preg_match('/<div id="mcp-tags-invalid-overview" class="mcp-tags-warning" role="alert" hidden>/', $template), 'the Overview alert starts hidden and is announced when shown');
+        $this->assertSame(1, substr_count($template, '<a href="#protection">'), 'the alert links to the Data protection tab');
+        $this->assertSame(1, substr_count($template, '<span id="mcp-tab-protection-alert" class="mcp-tab-alert" hidden>'), 'the tab marker');
+        // The Overview alert repeats the repair sentence of the protection block.
+        $this->assertSame(2, substr_count($template, "t('The saved exclusion tags setting cannot be read"), 'the same text on both alerts');
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString("document.getElementById('mcp-tags-invalid-overview')", $script);
+        $this->assertStringContainsString("document.getElementById('mcp-tab-protection-alert')", $script);
+        $this->assertStringContainsString('overviewAlert.hidden = !isInvalid', $script);
+        $this->assertStringContainsString('tabAlert.hidden = !isInvalid', $script);
     }
 }

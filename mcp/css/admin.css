@@ -49,6 +49,13 @@
 	outline-offset: -2px;
 }
 
+/* The marker on a tab that needs the administrator, for example the unreadable exclusion setting. */
+#mcp-admin .mcp-tab-alert {
+	margin-inline-start: 4px;
+	color: var(--color-warning-text, var(--color-warning));
+	font-weight: bold;
+}
+
 #mcp-admin .mcp-tab-panel[hidden] {
 	display: none;
 }

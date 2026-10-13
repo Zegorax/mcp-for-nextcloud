@@ -38,10 +38,28 @@
 	const validTabs = tabs.filter((tab) => byHash.get(tab.getAttribute('data-tab-hash')) === tab)
 	const firstTab = validTabs[0]
 
-	/** @return {HTMLElement|null} the tab matching the current URL hash, or null */
-	function tabFromHash() {
+	/**
+	 * Resolves the current URL hash to a tab. A tab hash wins; a hash that is the id of an element
+	 * inside a panel (for example #mcp-connections) opens the panel that contains it and scrolls to
+	 * the element; anything else, or no hash, opens the first tab.
+	 *
+	 * @return {{tab: HTMLElement, element: HTMLElement|null}}
+	 */
+	function resolveFromHash() {
 		const hash = window.location.hash.replace(/^#/, '')
-		return byHash.get(hash) ?? null
+		const direct = byHash.get(hash)
+		if (direct) {
+			return { tab: direct, element: null }
+		}
+		const element = hash === '' ? null : document.getElementById(hash)
+		const panel = element ? element.closest('[role="tabpanel"]') : null
+		if (panel) {
+			const tab = validTabs.find((candidate) => candidate.getAttribute('aria-controls') === panel.id) ?? null
+			if (tab) {
+				return { tab, element }
+			}
+		}
+		return { tab: firstTab, element: null }
 	}
 
 	/**
@@ -114,9 +132,13 @@
 
 	window.addEventListener('hashchange', () => {
 		// Back/forward or a pasted hash: activate without writing the address again.
-		activate(tabFromHash() ?? firstTab, false, false)
+		const resolved = resolveFromHash()
+		activate(resolved.tab, false, false)
+		resolved.element?.scrollIntoView()
 	})
 
 	root.classList.add('mcp-tabs-on')
-	activate(tabFromHash() ?? firstTab, false, false)
+	const initial = resolveFromHash()
+	activate(initial.tab, false, false)
+	initial.element?.scrollIntoView()
 })()

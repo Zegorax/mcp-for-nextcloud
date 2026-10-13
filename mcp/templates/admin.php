@@ -27,11 +27,11 @@
         <button type="button" role="tab" id="mcp-tab-overview" data-tab-hash="overview" aria-controls="mcp-panel-overview" aria-selected="true"><?php p($l->t('Overview')); ?></button>
         <button type="button" role="tab" id="mcp-tab-access" data-tab-hash="access" aria-controls="mcp-panel-access" aria-selected="false"><?php p($l->t('Access and permissions')); ?></button>
         <button type="button" role="tab" id="mcp-tab-clients" data-tab-hash="clients" aria-controls="mcp-panel-clients" aria-selected="false"><?php p($l->t('Clients and connections')); ?></button>
-        <button type="button" role="tab" id="mcp-tab-protection" data-tab-hash="protection" aria-controls="mcp-panel-protection" aria-selected="false"><?php p($l->t('Data protection')); ?></button>
+        <button type="button" role="tab" id="mcp-tab-protection" data-tab-hash="protection" aria-controls="mcp-panel-protection" aria-selected="false"><?php p($l->t('Data protection')); ?><span id="mcp-tab-protection-alert" class="mcp-tab-alert" hidden> <?php p($l->t('(action needed)')); ?></span></button>
         <button type="button" role="tab" id="mcp-tab-advanced" data-tab-hash="advanced" aria-controls="mcp-panel-advanced" aria-selected="false"><?php p($l->t('Advanced')); ?></button>
     </div>
 
-    <div role="tabpanel" id="mcp-panel-overview" aria-labelledby="mcp-tab-overview" class="mcp-tab-panel">
+    <div role="tabpanel" id="mcp-panel-overview" aria-labelledby="mcp-tab-overview" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-status">
         <h2><?php p($l->t('Status')); ?></h2>
         <div class="mcp-cards">
@@ -79,10 +79,13 @@
             </div>
         </div>
         <p class="settings-hint mcp-hint"><?php p($l->t('Paste the endpoint in the MCP client. Turning the service off signs every client out at once.')); ?></p>
+        <div id="mcp-tags-invalid-overview" class="mcp-tags-warning" role="alert" hidden>
+            <p><?php p($l->t('The saved exclusion tags setting cannot be read, so the MCP tools treat every file and folder as not found. Choose the exclusion tags and save them again.')); ?> <a href="#protection"><?php p($l->t('Open Data protection')); ?></a></p>
+        </div>
     </div>
     </div>
 
-    <div role="tabpanel" id="mcp-panel-access" aria-labelledby="mcp-tab-access" class="mcp-tab-panel">
+    <div role="tabpanel" id="mcp-panel-access" aria-labelledby="mcp-tab-access" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-matrix">
         <h2><?php p($l->t('Permissions')); ?></h2>
         <p class="settings-hint mcp-hint"><?php p($l->t('Users need “Can connect” and must activate the connection in their personal settings. Read permissions start allowed, except the server log; write, delete and transfer start denied. Nextcloud permissions and shares still apply.')); ?></p>
@@ -127,7 +130,7 @@
     </div>
     </div>
 
-    <div role="tabpanel" id="mcp-panel-clients" aria-labelledby="mcp-tab-clients" class="mcp-tab-panel">
+    <div role="tabpanel" id="mcp-panel-clients" aria-labelledby="mcp-tab-clients" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-oauth">
         <h2><?php p($l->t('OAuth clients')); ?></h2>
         <p>
@@ -180,7 +183,7 @@
     </div>
     </div>
 
-    <div role="tabpanel" id="mcp-panel-protection" aria-labelledby="mcp-tab-protection" class="mcp-tab-panel">
+    <div role="tabpanel" id="mcp-panel-protection" aria-labelledby="mcp-tab-protection" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-tags">
         <h2><?php p($l->t('Excluded from MCP access')); ?></h2>
         <p class="settings-hint mcp-hint"><?php p($l->t('Files and folders tagged with a selected tag, and everything inside those folders, are completely hidden from the tools of this MCP connector. The server log tools respect this only while “Hide the text of log messages” is on.')); ?></p>
@@ -202,7 +205,7 @@
     </div>
     </div>
 
-    <div role="tabpanel" id="mcp-panel-advanced" aria-labelledby="mcp-tab-advanced" class="mcp-tab-panel">
+    <div role="tabpanel" id="mcp-panel-advanced" aria-labelledby="mcp-tab-advanced" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-logs">
         <h2><?php p($l->t('Server log')); ?></h2>
         <?php if (!$_['logsAvailable']) { ?>

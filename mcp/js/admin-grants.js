@@ -234,6 +234,32 @@
 		}
 	}
 
+	/** The first header row currently observed, so a re-created row (every render) is observed again. */
+	let observedHeaderRow = null
+	let headerObserver = null
+
+	/**
+	 * Re-measures the first header row whenever it resizes. The Access panel starts hidden, so the
+	 * render there measures zero; showing the tab (or changing density or font size) resizes the row
+	 * and the observer re-sticks the second row below it. A browser without ResizeObserver keeps the
+	 * render-time measure, which is correct whenever the panel is visible.
+	 */
+	function observeHeaderRow() {
+		if (!window.ResizeObserver) {
+			return
+		}
+		const top = table.tHead?.rows?.[0]
+		if (!top || top === observedHeaderRow) {
+			return
+		}
+		if (!headerObserver) {
+			headerObserver = new window.ResizeObserver(stickSecondHeaderRow)
+		}
+		headerObserver.disconnect()
+		observedHeaderRow = top
+		headerObserver.observe(top)
+	}
+
 	/** Renders header and rows from state.data. */
 	function render() {
 		const data = state.data
@@ -268,6 +294,7 @@
 		top.append(el('th', { rowSpan: 2, scope: 'col', textContent: t('mcp', 'Connected') }))
 		table.tHead.replaceChildren(top, sub)
 		stickSecondHeaderRow()
+		observeHeaderRow()
 
 		const rows = data.users.map(renderRow)
 		if (rows.length === 0) {
@@ -485,8 +512,26 @@
 		const status = document.getElementById('mcp-tags-status')
 		const invalid = document.getElementById('mcp-tags-invalid')
 		const repair = document.getElementById('mcp-tags-repair')
+		// The gravest state of the app is an unreadable exclusion setting (fail-closed: every file is
+		// refused). The repair block lives in the Data protection tab, so the Status block of Overview
+		// also shows it and the tab carries a marker.
+		const overviewAlert = document.getElementById('mcp-tags-invalid-overview')
+		const tabAlert = document.getElementById('mcp-tab-protection-alert')
 		if (!container || !window.McpAdminPicker) {
 			return
+		}
+
+		/** @param {boolean} isInvalid shows or hides every sign of the unreadable setting */
+		function setInvalidState(isInvalid) {
+			if (invalid) {
+				invalid.style.display = isInvalid ? 'block' : 'none'
+			}
+			if (overviewAlert) {
+				overviewAlert.hidden = !isInvalid
+			}
+			if (tabAlert) {
+				tabAlert.hidden = !isInvalid
+			}
 		}
 
 		let allTags = []
@@ -532,9 +577,7 @@
 					: t('mcp', 'Could not update exclusion tags.'))
 				throw e
 			}
-			if (invalid) {
-				invalid.style.display = 'none'
-			}
+			setInvalidState(false)
 		}
 
 		try {
@@ -560,18 +603,16 @@
 				errorStatus: '',
 			})
 
-			if (invalid && res.invalid) {
-				invalid.style.display = 'block'
-				if (repair) {
-					repair.addEventListener('click', async () => {
-						repair.disabled = true
-						try {
-							await picker.commit()
-						} finally {
-							repair.disabled = false
-						}
-					})
-				}
+			setInvalidState(Boolean(res.invalid))
+			if (res.invalid && repair) {
+				repair.addEventListener('click', async () => {
+					repair.disabled = true
+					try {
+						await picker.commit()
+					} finally {
+						repair.disabled = false
+					}
+				})
 			}
 
 			updateWarning(picker.getSelected())

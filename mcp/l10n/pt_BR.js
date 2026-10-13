@@ -256,6 +256,8 @@ OC.L10N.register(
     "Learn more" : "Saiba mais",
     "Log access: administrators + {count} groups ({names}). Each member still needs the “Server log” permission in the “Access and permissions” tab." : "Leitura do log: administradores + {count} grupos ({names}). Cada membro ainda precisa da permissão “Log do servidor” na aba “Acesso e permissões”.",
     "Log access: administrators only. Each member still needs the “Server log” permission in the “Access and permissions” tab." : "Leitura do log: somente administradores. Cada membro ainda precisa da permissão “Log do servidor” na aba “Acesso e permissões”.",
+    "Open Data protection" : "Abrir Proteção de dados",
+    "(action needed)" : "(precisa de ação)",
     "HTTP status of refusal" : "status HTTP da recusa",
     "I will create the Talk group '%s' with you as the owner%s. Show this plan to the user and only repeat the same call with confirm: true after they explicitly say yes; if they ask for changes, edit the plan and call the tool again. Without that confirmation the server creates nothing." : "Vou criar no Talk o grupo '%s' com você como dono%s. Mostre este plano ao usuário e só repita a mesma chamada com confirm: true depois que ele disser sim de forma explícita; se ele pedir mudanças, ajuste o plano e chame a tool de novo. Sem essa confirmação o servidor não cria nada.",
     "Insufficient space in the user quota." : "Espaço insuficiente na cota do usuário.",
