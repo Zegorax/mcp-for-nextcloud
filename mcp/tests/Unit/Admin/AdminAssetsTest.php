@@ -221,7 +221,17 @@ final class AdminAssetsTest extends TestCase {
         $this->assertSame(2, preg_match_all('/setBulkBusy\(true\)\s+try \{/', $script), 'bulk and undo both run under the lock');
         $this->assertSame(2, preg_match_all('/\} finally \{\s+setBulkBusy\(false\)/', $script), 'the lock is released on failure too');
         $this->assertStringContainsString('id="mcp-bulk-notice-text" tabindex="-1"', (string)file_get_contents($app . '/templates/admin.php'));
-        $this->assertStringNotContainsString('mcp-legend', (string)file_get_contents($app . '/templates/admin.php'));
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertGreaterThan(strpos($template, 'class="mcp-matrix-wrap"'), strpos($template, 'class="mcp-legend"'), 'the legend sits under the table');
+        $this->assertGreaterThan(strpos($template, 'class="mcp-matrix-wrap"'), strpos($template, 'id="mcp-bulk-notice"'), 'the notice sits under the table');
+        $this->assertStringContainsString('<option value="eligible" selected>', $template);
+        $this->assertStringContainsString("filter: 'eligible'", $script);
+        $this->assertStringContainsString('function rowUnavailableReason(user)', $script);
+        $this->assertStringContainsString("td.mcp-row-unavailable", $script);
+        $this->assertStringContainsString('the account is enabled and “Can connect” is on', $script);
+        $this->assertStringContainsString("freshCell.querySelector('input')?.focus()", $script);
+        $css = (string)file_get_contents($app . '/css/admin.css');
+        $this->assertDoesNotMatchRegularExpression('/\\.mcp-bulk-notice \\{[^}]*position: sticky/s', $css, 'the undo notice never covers a row');
         $template = (string)file_get_contents($app . '/templates/admin.php');
         $this->assertStringContainsString('id="mcp-bulk-notice" role="status" aria-live="polite"', $template);
         $this->assertStringContainsString('id="mcp-bulk-undo" hidden', $template);

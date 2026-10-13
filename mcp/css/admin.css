@@ -374,9 +374,37 @@
 
 /* The three states of a permission cell, none by colour alone: a checked box, an empty box, a "no entry" mark. */
 #mcp-admin .mcp-state-unavailable {
-	background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--color-border) 6px 7px);
 	color: var(--color-text-maxcontrast);
 	cursor: help;
+}
+
+/* A disabled account or "Can connect" off: one quiet notice across the permission columns. */
+#mcp-admin .mcp-matrix td.mcp-row-unavailable {
+	color: var(--color-text-maxcontrast);
+	font-style: italic;
+	text-align: start;
+	cursor: help;
+}
+
+/* The legend sits under the table, next to the bottom pager. */
+#mcp-admin .mcp-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 16px;
+	margin: 0;
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+#mcp-admin .mcp-legend input[type="checkbox"] {
+	margin: 0;
+	pointer-events: none;
 }
 
 #mcp-admin .mcp-sr-only {
@@ -395,6 +423,7 @@
 	line-height: 1;
 }
 
+/* Under the table, in the normal flow, so it never covers a row. */
 #mcp-admin .mcp-bulk-notice {
 	display: none;
 	align-items: center;
