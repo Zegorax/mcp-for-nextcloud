@@ -550,6 +550,7 @@ OC.L10N.register(
     "Could not undo the whole change. The table was reloaded with the saved values." : "No se pudo deshacer todo el cambio. La tabla se recargó con los valores guardados.",
     "Change undone." : "Cambio deshecho.",
     "The previous undo is no longer available." : "El deshacer anterior ya no está disponible.",
+    "Wait until the change in progress is saved." : "Espere hasta que se guarde el cambio en curso.",
     "Undo" : "Deshacer",
     "In the table, a checked box means allowed, an empty box means denied and ⊘ means unavailable; point at ⊘ to see why." : "En la tabla, una casilla marcada significa permitido, una vacía denegado y ⊘ no disponible; señale ⊘ para ver el motivo.",
     "_%n user with this permission unavailable is left out._::_%n users with this permission unavailable are left out._" : ["Queda fuera %n usuario con este permiso no disponible.", "Quedan fuera %n usuarios con este permiso no disponible.", "Quedan fuera %n usuarios con este permiso no disponible."],

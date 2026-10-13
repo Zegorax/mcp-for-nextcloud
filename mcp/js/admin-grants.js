@@ -387,6 +387,9 @@
 		})
 		top.append(el('th', { rowSpan: 2, scope: 'col', textContent: t('mcp', 'Connected') }))
 		table.tHead.replaceChildren(top, sub)
+		if (bulkBusy) {
+			setBulkBusy(true)
+		}
 		stickSecondHeaderRow()
 		observeHeaderRow()
 
@@ -558,6 +561,24 @@
 	const undoButton = document.getElementById('mcp-bulk-undo')
 	let noticeTimer = null
 	let pendingUndo = null
+	/** True while a bulk change or its undo saves and the matrix reloads: only one runs at a time. */
+	let bulkBusy = false
+
+	/**
+	 * Locks the "All" menus and the undo while a bulk change or an undo is saving, so an older
+	 * operation can never finish on top of a newer one's notice, undo or focus.
+	 *
+	 * @param {boolean} on whether an operation is running
+	 */
+	function setBulkBusy(on) {
+		bulkBusy = on
+		const reason = on ? t('mcp', 'Wait until the change in progress is saved.') : ''
+		for (const button of root.querySelectorAll('.mcp-bulk, #mcp-bulk-undo')) {
+			button.disabled = on
+			button.setAttribute('aria-disabled', on ? 'true' : 'false')
+			button.title = reason
+		}
+	}
 
 	/** Clears the notice and forgets the undo it offered. */
 	function hideNotice() {
@@ -589,10 +610,6 @@
 		noticeText.textContent = replaced ? message + ' ' + t('mcp', 'The previous undo is no longer available.') : message
 		undoButton.hidden = undo === null
 		notice.classList.add('mcp-notice-on')
-		if (undo !== null) {
-			// The menu that started the change is gone after the reload; the focus goes to its undo.
-			undoButton.focus({ preventScroll: true })
-		}
 		armNotice()
 	}
 
@@ -606,7 +623,7 @@
 	})
 	undoButton.addEventListener('click', () => {
 		const undo = pendingUndo
-		if (!undo) {
+		if (!undo || bulkBusy) {
 			return
 		}
 		// The button disappears, so the focus moves to the notice text, which announces the outcome
@@ -698,6 +715,9 @@
 	 * @param {string} label permission name
 	 */
 	async function bulk(module, operationList, granted, label) {
+		if (bulkBusy) {
+			return
+		}
 		const plan = bulkPlan(module, operationList, granted)
 		const vars = { permission: label }
 		const lines = []
@@ -723,20 +743,30 @@
 			return
 		}
 		const requests = plan.changes.map((change) => ({ operation: change.operation, uids: [...change.previous.keys()], granted }))
-		const saved = await sendBulk(module, requests)
-		const done = plan.changes.slice(0, saved)
-		const undo = done.length === 0 ? null : () => undoBulk(module, done)
-		if (saved < requests.length) {
-			notifyError(t('mcp', 'Could not update the users on this page.'))
-			if (undo) {
-				showNotice(t('mcp', 'Part of the change was saved.'), undo)
+		let undo = null
+		setBulkBusy(true)
+		try {
+			const saved = await sendBulk(module, requests)
+			const done = plan.changes.slice(0, saved)
+			undo = done.length === 0 ? null : () => undoBulk(module, done)
+			if (saved < requests.length) {
+				notifyError(t('mcp', 'Could not update the users on this page.'))
+				if (undo) {
+					showNotice(t('mcp', 'Part of the change was saved.'), undo)
+				}
+			} else {
+				showNotice(granted
+					? n('mcp', 'Allowed “{permission}” for %n user.', 'Allowed “{permission}” for %n users.', plan.users, vars, { escape: false })
+					: n('mcp', 'Denied “{permission}” for %n user.', 'Denied “{permission}” for %n users.', plan.users, vars, { escape: false }), undo)
 			}
-		} else {
-			showNotice(granted
-				? n('mcp', 'Allowed “{permission}” for %n user.', 'Allowed “{permission}” for %n users.', plan.users, vars, { escape: false })
-				: n('mcp', 'Denied “{permission}” for %n user.', 'Denied “{permission}” for %n users.', plan.users, vars, { escape: false }), undo)
+			await load()
+		} finally {
+			setBulkBusy(false)
 		}
-		await load()
+		if (undo !== null && pendingUndo === undo) {
+			// The menu that started the change is gone after the reload; the focus goes to its undo.
+			undoButton.focus({ preventScroll: true })
+		}
 	}
 
 	/**
@@ -749,15 +779,20 @@
 	 */
 	async function undoBulk(module, changes) {
 		const requests = undoRequests(changes)
-		const saved = await sendBulk(module, requests)
-		if (saved < requests.length) {
-			const failure = t('mcp', 'Could not undo the whole change. The table was reloaded with the saved values.')
-			notifyError(failure)
-			showNotice(failure, null)
-		} else {
-			showNotice(t('mcp', 'Change undone.'), null)
+		setBulkBusy(true)
+		try {
+			const saved = await sendBulk(module, requests)
+			if (saved < requests.length) {
+				const failure = t('mcp', 'Could not undo the whole change. The table was reloaded with the saved values.')
+				notifyError(failure)
+				showNotice(failure, null)
+			} else {
+				showNotice(t('mcp', 'Change undone.'), null)
+			}
+			await load()
+		} finally {
+			setBulkBusy(false)
 		}
-		await load()
 	}
 
 	serviceBox.addEventListener('change', async () => {
