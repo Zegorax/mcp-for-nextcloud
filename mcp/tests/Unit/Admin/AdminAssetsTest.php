@@ -217,6 +217,7 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString('window.history.replaceState(', $script);
         $this->assertStringContainsString('noticeText.focus({ preventScroll: true })', $script);
         $this->assertStringContainsString('function setBulkBusy(on)', $script);
+        $this->assertStringContainsString('if (!bulkBusy && !notice.matches(\':hover\')', $script, 'the undo countdown waits for the lock');
         $this->assertSame(2, preg_match_all('/setBulkBusy\(true\)\s+try \{/', $script), 'bulk and undo both run under the lock');
         $this->assertSame(2, preg_match_all('/\} finally \{\s+setBulkBusy\(false\)/', $script), 'the lock is released on failure too');
         $this->assertStringContainsString('id="mcp-bulk-notice-text" tabindex="-1"', (string)file_get_contents($app . '/templates/admin.php'));

@@ -578,6 +578,13 @@
 			button.setAttribute('aria-disabled', on ? 'true' : 'false')
 			button.title = reason
 		}
+		// The undo window only runs while its button can be used: it stops during the lock and
+		// starts again, in full, once the lock is released.
+		if (on) {
+			clearTimeout(noticeTimer)
+		} else if (notice.classList.contains('mcp-notice-on')) {
+			armNotice()
+		}
 	}
 
 	/** Clears the notice and forgets the undo it offered. */
@@ -589,10 +596,10 @@
 		undoButton.hidden = true
 	}
 
-	/** Starts the countdown, unless the admin is on the notice. */
+	/** Starts the countdown, unless the admin is on the notice or a bulk change is still running. */
 	function armNotice() {
 		clearTimeout(noticeTimer)
-		if (!notice.matches(':hover') && !notice.contains(document.activeElement)) {
+		if (!bulkBusy && !notice.matches(':hover') && !notice.contains(document.activeElement)) {
 			noticeTimer = setTimeout(hideNotice, UNDO_SECONDS * 1000)
 		}
 	}
