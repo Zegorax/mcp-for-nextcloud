@@ -94,7 +94,7 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
                 'type' => 'array',
                 'maxItems' => TaskData::MAX_CATEGORIES,
                 'items' => ['type' => 'string', 'maxLength' => 1024],
-                'description' => 'Free-text task categories, as in the Tasks app (1-255 characters each). '
+                'description' => 'Free-text task categories, as in the Tasks app: 1-255 characters each after trimming spaces. '
                     . 'The list replaces all existing categories; [] clears them; omit to preserve them.',
             ],
         ];

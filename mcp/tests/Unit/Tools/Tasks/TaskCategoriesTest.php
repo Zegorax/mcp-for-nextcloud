@@ -102,6 +102,24 @@ final class TaskCategoriesTest extends TestCase {
         self::assertSame($expected, $listed[0]['categories']);
     }
 
+    public function testNamesThatDifferOnlyByUnicodeCaseAreOneCategory(): void {
+        $this->tasks['t1'] = $this->task('t1', 'Work', "CATEGORIES:ΟΣ,οσ,Σ,ς\r\n");
+        self::assertSame(['ΟΣ', 'Σ'], $this->read('t1')['categories']);
+        $plan = $this->module->preview('tasks_create_task', ['calendar' => self::PATH, 'summary' => 'New', 'categories' => ['Σ', 'ς', 'σ']], 'alice');
+        self::assertSame(['Σ'], $plan['after']['categories']);
+    }
+
+    public function testTheFilterFoldsUnicodeCase(): void {
+        $this->tasks = [
+            't1' => $this->task('t1', 'Sigma', "CATEGORIES:Σ\r\n"),
+            't2' => $this->task('t2', 'Word', "CATEGORIES:ΟΣ\r\n"),
+            't3' => $this->task('t3', 'Other', "CATEGORIES:Ο\r\n"),
+        ];
+        self::assertSame(['t1'], array_column($this->list(['category' => 'ς'])['tasks'], 'uid'));
+        self::assertSame(['t2'], array_column($this->list(['category' => 'οσ'])['tasks'], 'uid'));
+        self::assertSame(['t2'], array_column($this->list(['category' => 'ος'])['tasks'], 'uid'));
+    }
+
     public function testCreateWritesOneMultiValueLineThatReadsBackIntact(): void {
         $args = ['calendar' => self::PATH, 'summary' => 'Shop', 'categories' => [' Errands ', 'Health, Fitness', 'errands']];
         $plan = $this->module->preview('tasks_create_task', $args, 'alice');

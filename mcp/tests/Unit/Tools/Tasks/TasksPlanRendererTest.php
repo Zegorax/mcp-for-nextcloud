@@ -200,14 +200,14 @@ final class TasksPlanRendererTest extends TestCase {
         $this->data = str_replace("SUMMARY:", "CATEGORIES:Home,Errands\r\nSUMMARY:", $this->data);
         $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['Errands', 'Health, Fitness']]);
         self::assertIsString($body);
-        self::assertStringContainsString('- Categorias: Home, Errands → Errands, Health, Fitness', $body);
+        self::assertStringContainsString('- Categorias: “Home”, “Errands” → “Errands”, “Health, Fitness”', $body);
     }
 
     public function testClearingTheCategoriesShowsThemBecomingEmpty(): void {
         $this->data = str_replace("SUMMARY:", "CATEGORIES:Home\r\nCATEGORIES:Errands\r\nSUMMARY:", $this->data);
         $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => []]);
         self::assertIsString($body);
-        self::assertStringContainsString('- Categories: Home, Errands → empty', $body);
+        self::assertStringContainsString('- Categories: “Home”, “Errands” → empty', $body);
     }
 
     public function testCategoriesOnlyAppearWhenTheyChangeOrAreSet(): void {
@@ -217,7 +217,27 @@ final class TasksPlanRendererTest extends TestCase {
         self::assertStringNotContainsString('Categories', $unchanged);
         $created = $this->render('tasks_create_task', ['calendar' => self::PATH, 'summary' => 'Buy milk', 'categories' => ['Errands', 'Home']]);
         self::assertIsString($created);
-        self::assertStringContainsString('- Categories: Errands, Home', $created);
+        self::assertStringContainsString('- Categories: “Errands”, “Home”', $created);
+    }
+
+    public function testACommaInsideANameReadsApartFromTwoNames(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:A\\, B\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['A', 'B']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: “A, B” → “A”, “B”', $body);
+    }
+
+    public function testAChangeAfterALongCategoryIsNotHiddenByACut(): void {
+        $long = str_repeat('a', 201);
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:$long,old\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => [$long, 'new']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: “' . $long . '”, “old” → “' . $long . '”, “new”', $body);
+        $longer = str_repeat('b', 254);
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:{$longer}x\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => [$longer . 'y']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('“' . $longer . 'y”', $body, 'a name of 255 characters is shown whole');
     }
 
     public function testEveryWriteToolHasAReadablePlan(): void {

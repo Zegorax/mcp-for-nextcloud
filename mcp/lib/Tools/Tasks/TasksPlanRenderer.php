@@ -190,7 +190,11 @@ final class TasksPlanRenderer {
         foreach (self::FIELDS as $field) {
             $from = $this->value($before[$field] ?? null, $field, $zone);
             $to = $this->value($after[$field] ?? null, $field, $zone);
-            if ($from === $to) {
+            // Categories are compared as lists: two different lists may read alike once joined.
+            $same = $field === 'categories'
+                ? $this->names($before[$field] ?? null) === $this->names($after[$field] ?? null)
+                : $from === $to;
+            if ($same) {
                 continue;
             }
             $lines[] = '- ' . $this->label($field) . ': ' . ($from ?? Translator::t('empty'))
@@ -303,13 +307,27 @@ final class TasksPlanRenderer {
     /**
      * The categories of the task as one line, in the order the task keeps them.
      *
+     * Each name is quoted on its own and never cut, so "A, B" reads apart from "A" and "B" and a change
+     * at the end of a long name stays visible.
+     *
      * @param mixed $value raw plan value of the categories field
-     * @return string|null the categories separated by commas, or null when the task has none
+     * @return string|null the quoted categories separated by commas, or null when the task has none
      */
     private function categories(mixed $value): ?string {
-        $names = array_values(array_filter(array_map($this->text(...), is_array($value) ? $value : []), static fn (string $name) => $name !== ''));
+        $names = array_map(
+            static fn (string $name) => '“' . PlanText::inline($name, TaskData::MAX_CATEGORY_LENGTH) . '”',
+            $this->names($value)
+        );
 
-        return $names === [] ? null : PlanText::inline(implode(', ', $names), self::EXCERPT);
+        return $names === [] ? null : implode(', ', $names);
+    }
+
+    /**
+     * @param mixed $value raw plan value of the categories field
+     * @return list<string> the non-empty category names, in order
+     */
+    private function names(mixed $value): array {
+        return array_values(array_filter(array_map($this->text(...), is_array($value) ? $value : []), static fn (string $name) => $name !== ''));
     }
 
     /** @param int $priority iCalendar priority, 0 undefined and 1 the highest */

@@ -310,7 +310,7 @@ class TaskData {
      *
      * @param mixed $value supplied categories argument
      * @return list<string> normalized categories; an empty list clears them
-     * @throws InvalidArgumentException when the value is not a bounded list of short, printable texts
+     * @throws InvalidArgumentException when the value is not a bounded list of short texts without control characters
      */
     public function validCategories(mixed $value): array {
         if (!is_array($value) || !array_is_list($value) || count($value) > self::MAX_CATEGORIES) {
@@ -334,7 +334,7 @@ class TaskData {
     }
 
     /**
-     * Tells whether a task item carries a category, ignoring case, as the Tasks app groups them.
+     * Tells whether a task item carries a category, comparing the case-folded names.
      *
      * @param array<string, mixed> $item task fields returned by item()
      * @param string $category category to look for
@@ -372,12 +372,13 @@ class TaskData {
     }
 
     /**
-     * Folds a category to the form two names are compared in.
+     * Folds a category to the Unicode case-folded form two names are compared in.
      *
      * @param string $category trimmed category
      * @return string
      */
     private function foldCategory(string $category): string {
-        return mb_strtolower($category, 'UTF-8');
+        // Full case folding, unlike lowercasing, makes "Σ", "σ" and the final "ς" one name.
+        return mb_convert_case($category, MB_CASE_FOLD, 'UTF-8');
     }
 }
