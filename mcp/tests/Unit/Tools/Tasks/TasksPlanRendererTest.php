@@ -266,6 +266,18 @@ final class TasksPlanRendererTest extends TestCase {
         self::assertStringContainsString('- Categorias: "a\\\\u0020\\\\u0020b" → vazio', $body);
     }
 
+    public function testAnImportedDelControlCannotHideACategoryChange(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:a\x7fb\r\nSUMMARY:", $this->data);
+        $module = $this->module();
+        $plan = $module->preview('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['ab']], 'alice');
+        self::assertSame(["a\x7fb"], $plan['before']['categories']);
+        self::assertSame(['ab'], $plan['after']['categories']);
+        $body = $module->renderPlan('tasks_edit_task', $plan);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "a\\\\u007fb" → "ab"', $body);
+        self::assertStringNotContainsString("\x7f", $body);
+    }
+
     public function testEveryWriteToolHasAReadablePlan(): void {
         $module = $this->module();
         $this->assertEveryWriteToolHasAReadablePlan($module, [

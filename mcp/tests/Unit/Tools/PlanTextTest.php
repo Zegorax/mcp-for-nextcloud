@@ -147,4 +147,29 @@ final class PlanTextTest extends TestCase {
         self::assertStringNotContainsString('…', $out);
         self::assertSame($name, json_decode(str_replace('\\\\', '\\', $out), true, 512, JSON_THROW_ON_ERROR));
     }
+
+    public function testQuotedDelAndC1ControlsAreVisibleAndReversible(): void {
+        foreach ([
+            '007f' => "a\x7fb",
+            '0085' => "a\u{85}b",
+            '009b' => "a\u{9b}b",
+        ] as $unit => $name) {
+            $out = PlanText::quoted($name);
+            self::assertSame('"a\\\\u' . $unit . 'b"', $out);
+            self::assertSame(0, preg_match('/\p{Cc}/u', $out), 'no control character remains in the plan');
+            self::assertSame($name, json_decode(str_replace('\\\\', '\\', $out), true, 512, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function testQuotedC0ControlsAreNotEscapedTwiceAndSupplementaryFormatCharactersStayReversible(): void {
+        foreach (range(0, 31) as $control) {
+            $name = 'a' . chr($control) . 'b';
+            $json = str_replace('\\\\', '\\', PlanText::quoted($name));
+            self::assertSame($name, json_decode($json, true, 512, JSON_THROW_ON_ERROR));
+        }
+        $name = "a\u{e0001}b";
+        $out = PlanText::quoted($name);
+        self::assertSame('"a\\\\udb40\\\\udc01b"', $out, 'a supplementary code point uses a JSON surrogate pair');
+        self::assertSame($name, json_decode(str_replace('\\\\', '\\', $out), true, 512, JSON_THROW_ON_ERROR));
+    }
 }
