@@ -858,12 +858,17 @@
 			}
 			const readers = options.filter((option) => groups.includes(option.id))
 			const names = readers.map((option) => option.label).join(', ')
-			summary.textContent = readers.length === 0
-				? t('mcp', 'Who may read the log: administrators only. Each of them also needs the “Server log” permission in the “Access and permissions” tab.')
-				: n('mcp',
-					'Who may read the log: administrators and the members of %n group ({names}). Each of them also needs the “Server log” permission in the “Access and permissions” tab.',
-					'Who may read the log: administrators and the members of %n groups ({names}). Each of them also needs the “Server log” permission in the “Access and permissions” tab.',
-					readers.length, { names }, { escape: false })
+			try {
+				summary.textContent = readers.length === 0
+					? t('mcp', 'Who may read the log: administrators only. Each of them also needs the “Server log” permission in the “Access and permissions” tab.')
+					: n('mcp',
+						'Who may read the log: administrators and the members of %n group ({names}). Each of them also needs the “Server log” permission in the “Access and permissions” tab.',
+						'Who may read the log: administrators and the members of %n groups ({names}). Each of them also needs the “Server log” permission in the “Access and permissions” tab.',
+						readers.length, { names }, { escape: false })
+			} catch {
+				// Optional explanatory text must never prevent managing the actual groups.
+				summary.textContent = ''
+			}
 		}
 
 		/** Loads the list again, after a conflict or a failure. */
