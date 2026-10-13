@@ -84,6 +84,14 @@ final class L10nTest extends TestCase {
         $this->assertSame($fromJson, $fromJs, 'l10n/' . self::LANGUAGE . '.js and .json must list the same keys');
     }
 
+    /** Plural extraction uses the same separator as Nextcloud's translation registry. */
+    public function testPluralKeysUseTheNextcloudRegistrySeparator(): void {
+        $this->assertSame(['_One group_::_Many groups_'],
+            $this->literalKeys("n('mcp', 'One group', 'Many groups', 2)", 'admin.js'));
+        $this->assertSame(['_One group_::_Many groups_'],
+            $this->literalKeys("\$l->n('One group', 'Many groups', 2)", 'admin.php'));
+    }
+
     /**
      * Collects the translation keys referenced by templates/ and js/.
      *
@@ -173,7 +181,7 @@ final class L10nTest extends TestCase {
             foreach (["/\\\$l->n\\s*\\(\\s*'((?:[^'\\\\]|\\\\.)*)'\\s*,\\s*'((?:[^'\\\\]|\\\\.)*)'/s", '/\$l->n\s*\(\s*"((?:[^"\\\\]|\\\\.)*)"\s*,\s*"((?:[^"\\\\]|\\\\.)*)"/s'] as $pattern) {
                 preg_match_all($pattern, $source, $matches);
                 foreach ($matches[1] as $i => $singular) {
-                    $keys[] = '_' . $this->unescape($singular) . '_::' . $this->unescape($matches[2][$i]) . '_';
+                    $keys[] = '_' . $this->unescape($singular) . '_::_' . $this->unescape($matches[2][$i]) . '_';
                 }
             }
             return $keys;
@@ -186,7 +194,7 @@ final class L10nTest extends TestCase {
         foreach (["/(?<![A-Za-z0-9_\$.])n\\s*\\(\\s*'mcp'\\s*,\\s*'((?:[^'\\\\]|\\\\.)*)'\\s*,\\s*'((?:[^'\\\\]|\\\\.)*)'/s", '/(?<![A-Za-z0-9_$.])n\s*\(\s*"mcp"\s*,\s*"((?:[^"\\\\]|\\\\.)*)"\s*,\s*"((?:[^"\\\\]|\\\\.)*)"/s'] as $pattern) {
             preg_match_all($pattern, $source, $matches);
             foreach ($matches[1] as $i => $singular) {
-                $keys[] = '_' . $this->unescape($singular) . '_::' . $this->unescape($matches[2][$i]) . '_';
+                $keys[] = '_' . $this->unescape($singular) . '_::_' . $this->unescape($matches[2][$i]) . '_';
             }
         }
         return $keys;

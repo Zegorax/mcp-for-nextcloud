@@ -608,7 +608,7 @@
 				repair.addEventListener('click', async () => {
 					repair.disabled = true
 					try {
-						await picker.commit()
+						await picker.commit({ force: true })
 					} finally {
 						repair.disabled = false
 					}
@@ -757,6 +757,7 @@
 		const detail = document.getElementById('mcp-logs-privacy-detail')
 		if (more && detail) {
 			detail.hidden = true
+			more.hidden = false
 			more.addEventListener('click', () => {
 				detail.hidden = !detail.hidden
 				more.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true')
@@ -809,7 +810,7 @@
 			version = data.version
 			const options = data.allGroups.map((group) => ({ id: group.id, label: group.displayName }))
 			for (const id of data.missing) {
-				options.push({ id: id, label: t('mcp', '{group} (group removed)', { group: id }) })
+				options.push({ id: id, label: t('mcp', '{group} (group removed)', { group: id }, undefined, { escape: false }) })
 			}
 			if (!picker) {
 				picker = window.McpAdminPicker.create({
@@ -842,7 +843,7 @@
 			} else {
 				picker.setOptions(options, data.groups)
 			}
-			paintSummary(data.groups, options)
+			paintSummary(data.groups, data.allGroups.map((group) => ({ id: group.id, label: group.displayName })))
 		}
 
 		/**
@@ -855,10 +856,14 @@
 			if (!summary) {
 				return
 			}
-			const names = groups.map((id) => (options.find((option) => option.id === id) || { label: id }).label).join(', ')
-			summary.textContent = groups.length === 0
-				? t('mcp', 'Log access: administrators only. Each member still needs the “Server log” permission in the “Access and permissions” tab.')
-				: t('mcp', 'Log access: administrators + {count} groups ({names}). Each member still needs the “Server log” permission in the “Access and permissions” tab.', { count: groups.length, names: names })
+			const readers = options.filter((option) => groups.includes(option.id))
+			const names = readers.map((option) => option.label).join(', ')
+			summary.textContent = readers.length === 0
+				? t('mcp', 'Who may read the log: administrators only. Each of them also needs the “Server log” permission in the “Access and permissions” tab.')
+				: n('mcp',
+					'Who may read the log: administrators and the members of %n group ({names}). Each of them also needs the “Server log” permission in the “Access and permissions” tab.',
+					'Who may read the log: administrators and the members of %n groups ({names}). Each of them also needs the “Server log” permission in the “Access and permissions” tab.',
+					readers.length, { names }, { escape: false })
 		}
 
 		/** Loads the list again, after a conflict or a failure. */

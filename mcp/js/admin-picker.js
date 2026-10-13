@@ -148,6 +148,7 @@
 
 		/** Rebuilds the option items and keeps the current filter applied. */
 		function renderList() {
+			const activeId = visibleItems()[activeIndex]?.dataset.optionId
 			list.replaceChildren()
 			options.forEach((option, index) => {
 				const item = el('li', {
@@ -168,6 +169,13 @@
 			})
 			list.append(noMatch)
 			applyFilter()
+			const items = visibleItems()
+			const restoredIndex = items.findIndex((item) => item.dataset.optionId === activeId)
+			if (restoredIndex >= 0 && !list.hidden) {
+				activeIndex = restoredIndex
+				items[activeIndex].classList.add('mcp-picker-active')
+				input.setAttribute('aria-activedescendant', items[activeIndex].id)
+			}
 		}
 
 		/** Filters with a plain substring on the labels; typing never creates an option. */
@@ -205,7 +213,7 @@
 				const remove = el('button', {
 					type: 'button',
 					className: 'mcp-picker-remove',
-					'aria-label': t('mcp', 'Remove {name}', { name: option.label }),
+					'aria-label': t('mcp', 'Remove {name}', { name: option.label }, undefined, { escape: false }),
 				}, ['×'])
 				remove.addEventListener('click', () => toggle(option.id))
 				chip.append(remove)
@@ -245,14 +253,17 @@
 		 * previous state on failure and reports through the status element and the onError hook.
 		 *
 		 * @param {Set<string>} next the intended selection
+		 * @param {boolean} force permits an explicit save while the options show a fallback
 		 */
-		async function commit(next) {
-			if (busy || fallbackText !== null) {
+		async function commit(next, force = false) {
+			if (busy || (fallbackText !== null && !force)) {
 				return
 			}
 			if (spec.confirmSave && !(await spec.confirmSave(Array.from(next)))) {
 				return
 			}
+			// Rebuilding chips and disabling the input can send keyboard focus to the body.
+			const restoreFocus = document.activeElement === input || chips.contains(document.activeElement)
 			const before = selected
 			selected = new Set(next)
 			paint()
@@ -280,6 +291,10 @@
 				await spec.onError?.(error)
 			} finally {
 				setBusy(false)
+				if (restoreFocus && !box.hidden
+					&& (document.activeElement === document.body || document.activeElement === input)) {
+					input.focus()
+				}
 			}
 		}
 
@@ -374,9 +389,9 @@
 				}
 				paint()
 			},
-			/** Saves the current selection again, for example the repair button of an unreadable setting. */
-			commit() {
-				return commit(new Set(selected))
+			/** Saves again; force bypasses the fallback message, keeping confirmation and locking. */
+			commit({ force = false } = {}) {
+				return commit(new Set(selected), force)
 			},
 			/** Shows a plain message instead of the control, for a load failure or an empty option list. */
 			showFallback(text) {

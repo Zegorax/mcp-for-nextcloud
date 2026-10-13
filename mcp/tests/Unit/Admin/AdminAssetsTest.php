@@ -261,24 +261,40 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString("t('mcp', '{group} (group removed)'", $logs);
         // One save at a time, with the control locked, is the picker's contract.
         $picker = (string)file_get_contents($app . '/js/admin-picker.js');
-        $this->assertMatchesRegularExpression('/if \(busy \|\| fallbackText !== null\) \{\s*return/', $picker);
+        $this->assertMatchesRegularExpression('/if \(busy \|\| \(fallbackText !== null && !force\)\) \{\s*return/', $picker);
         $this->assertStringContainsString("setAttribute('aria-busy', locked ? 'true' : 'false')", $picker);
     }
 
     /**
-     * The log privacy switch keeps its input, id and saving, the "Learn more" button starts
-     * collapsed and the detail ships visible, so without JavaScript nothing of the page is lost.
+     * Log privacy keeps its native checkbox, id and saving; the "Learn more" button ships
+     * hidden and the detail ships visible, so without JavaScript nothing of the page is lost.
      */
     public function testLogPrivacyHasItsOwnBlockWithAWiredSwitchAndLearnMore(): void {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
         $this->assertSame(1, substr_count($template, 'id="mcp-block-logs-privacy"'));
-        $this->assertSame(1, substr_count($template, 'class="checkbox mcp-switch" id="mcp-logs-hide-file-names"'), 'the same input, only restyled');
-        $this->assertSame(1, preg_match('/<button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail">/', $template));
+        $this->assertSame(1, substr_count($template, 'class="checkbox" id="mcp-logs-hide-file-names"'), 'the native Nextcloud checkbox');
+        $this->assertSame(1, preg_match('/<button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail" hidden>/', $template));
         $this->assertSame(1, substr_count($template, 'id="mcp-logs-privacy-detail" class="mcp-learn-more-box"'), 'the detail ships visible for the no-JS page');
         $this->assertSame(1, substr_count($template, 'class="mcp-picker-summary mcp-hint" id="mcp-logs-summary"'));
         $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString("more.hidden = false", $script);
         $this->assertStringContainsString("more.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true')", $script);
+    }
+
+    /** The empty-tags repair bypasses only fallback, retaining confirmation, locking and saving. */
+    public function testUnreadableTagsCanBeRepairedWithoutAnySystemTags(): void {
+        $app = dirname(__DIR__, 3);
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $picker = (string)file_get_contents($app . '/js/admin-picker.js');
+        $this->assertStringContainsString('await picker.commit({ force: true })', $script);
+        $this->assertStringContainsString('commit({ force = false } = {})', $picker);
+        $this->assertStringContainsString('return commit(new Set(selected), force)', $picker);
+        $this->assertStringContainsString('if (busy || (fallbackText !== null && !force))', $picker);
+        $this->assertMatchesRegularExpression('/if \(spec.confirmSave && !\(await spec.confirmSave\(Array.from\(next\)\)\)\) \{\s*return/', $picker);
+        $this->assertStringContainsString("confirmSave: (nextIds) => nextIds.length > 0", $script);
+        $this->assertStringContainsString("await api('PUT', '/api/admin/tags', { tagIds })", $script);
+        $this->assertStringContainsString('setInvalidState(false)', $script);
     }
 
     /**

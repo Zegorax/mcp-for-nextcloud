@@ -222,12 +222,12 @@
     <div class="section mcp-block" id="mcp-block-logs-privacy">
         <h2><?php p($l->t('Log privacy')); ?></h2>
         <p>
-            <input type="checkbox" class="checkbox mcp-switch" id="mcp-logs-hide-file-names">
+            <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
             <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
             <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
         </p>
         <p>
-            <button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail"><?php p($l->t('Learn more')); ?></button>
+            <button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail" hidden><?php p($l->t('Learn more')); ?></button>
         </p>
         <div id="mcp-logs-privacy-detail" class="mcp-learn-more-box">
             <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while exclusion tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the exclusion by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
