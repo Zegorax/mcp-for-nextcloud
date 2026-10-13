@@ -212,6 +212,12 @@ final class AdminAssetsTest extends TestCase {
         $this->assertSame(1, substr_count($script, "api('POST', '/api/grants/bulk'"), 'bulk and undo share one request');
         $this->assertStringContainsString('async function undoBulk(', $script);
         $this->assertStringNotContainsString('innerHTML', $script);
+        $this->assertStringContainsString('const FIXED_COLUMNS = 3', $script);
+        $this->assertDoesNotMatchRegularExpression('/\\b3 \\+ |cells\\.length \\+ 3/', $script, 'fixed columns come from the constant');
+        $this->assertStringContainsString('window.history.replaceState(', $script);
+        $this->assertStringContainsString('noticeText.focus({ preventScroll: true })', $script);
+        $this->assertStringContainsString('id="mcp-bulk-notice-text" tabindex="-1"', (string)file_get_contents($app . '/templates/admin.php'));
+        $this->assertStringNotContainsString('mcp-legend', (string)file_get_contents($app . '/templates/admin.php'));
         $template = (string)file_get_contents($app . '/templates/admin.php');
         $this->assertStringContainsString('id="mcp-bulk-notice" role="status" aria-live="polite"', $template);
         $this->assertStringContainsString('id="mcp-bulk-undo" hidden', $template);

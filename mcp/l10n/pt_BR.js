@@ -549,6 +549,7 @@ OC.L10N.register(
     "Part of the change was saved." : "Parte da alteração foi salva.",
     "Could not undo the whole change. The table was reloaded with the saved values." : "Não foi possível desfazer toda a alteração. A tabela foi recarregada com os valores salvos.",
     "Change undone." : "Alteração desfeita.",
+    "The previous undo is no longer available." : "O desfazer anterior não está mais disponível.",
     "Undo" : "Desfazer",
     "In the table, a checked box means allowed, an empty box means denied and ⊘ means unavailable; point at ⊘ to see why." : "Na tabela, caixa marcada significa permitido, caixa vazia significa negado e ⊘ significa indisponível; aponte para ⊘ para ver o motivo.",
     "_%n user with this permission unavailable is left out._::_%n users with this permission unavailable are left out._" : ["%n usuário com esta permissão indisponível fica de fora.", "%n usuários com esta permissão indisponível ficam de fora.", "%n usuários com esta permissão indisponível ficam de fora."],

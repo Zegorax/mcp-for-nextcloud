@@ -17,6 +17,8 @@
 		return
 	}
 
+	/** Columns the matrix always shows besides the permissions: user, "Can connect" and "Connected". */
+	const FIXED_COLUMNS = 3
 	const state = { search: '', group: '', filter: '', page: 1, app: '', data: null, groupsLoaded: false }
 	const table = document.getElementById('mcp-matrix')
 	const searchInput = document.getElementById('mcp-search')
@@ -175,7 +177,7 @@
 	/** Replaces the body with an error row and a retry button, keeping the last header. */
 	function renderError() {
 		const retry = el('button', { type: 'button', textContent: t('mcp', 'Retry'), onclick: load })
-		const cell = el('td', { colSpan: table.tHead.rows[1] ? table.tHead.rows[1].cells.length + 3 : 1, className: 'mcp-empty mcp-load-error' },
+		const cell = el('td', { colSpan: table.tHead.rows[1] ? table.tHead.rows[1].cells.length + FIXED_COLUMNS : 1, className: 'mcp-empty mcp-load-error' },
 			[t('mcp', 'Could not load the users.'), ' ', retry])
 		table.tBodies[0].replaceChildren(el('tr', {}, [cell]))
 		applyAppFilter()
@@ -197,7 +199,12 @@
 		const labels = moduleLabels()
 		const modules = Object.keys(state.data.catalog)
 		if (!modules.includes(state.app)) {
+			const stale = state.app !== ''
 			state.app = ''
+			if (stale) {
+				// An address naming an unknown app is corrected in place, without a new history entry.
+				writeAppToHash(true)
+			}
 		}
 		appSelect.replaceChildren(el('option', { value: '', textContent: t('mcp', 'All apps') }),
 			...modules.map((module) => el('option', { value: module, textContent: labels[module] || module })))
@@ -215,7 +222,7 @@
 				}
 			}
 		}
-		const columns = 3 + Object.entries(state.data?.catalog || {})
+		const columns = FIXED_COLUMNS + Object.entries(state.data?.catalog || {})
 			.filter(([module]) => state.app === '' || module === state.app)
 			.reduce((sum, [, operations]) => sum + operations.length, 0)
 		for (const cell of table.querySelectorAll('td.mcp-empty')) {
@@ -237,17 +244,37 @@
 		}
 	}
 
-	appSelect.addEventListener('change', () => {
-		state.app = appSelect.value
-		applyAppFilter()
-		const params = new URLSearchParams(window.location.hash.split('?')[1] || '')
+	/**
+	 * Writes the chosen app into the address (#access?app=<module>, no parameter for all apps).
+	 *
+	 * @param {boolean} replace correct the current entry instead of adding a history entry
+	 */
+	function writeAppToHash(replace) {
+		const [tab, query = ''] = window.location.hash.slice(1).split('?')
+		if (tab !== 'access') {
+			return
+		}
+		const params = new URLSearchParams(query)
 		if (state.app === '') {
 			params.delete('app')
 		} else {
 			params.set('app', state.app)
 		}
-		const query = params.toString()
-		window.location.hash = 'access' + (query ? '?' + query : '')
+		const next = '#access' + (params.toString() ? '?' + params.toString() : '')
+		if (next === window.location.hash) {
+			return
+		}
+		if (replace) {
+			window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + next)
+		} else {
+			window.location.hash = next
+		}
+	}
+
+	appSelect.addEventListener('change', () => {
+		state.app = appSelect.value
+		applyAppFilter()
+		writeAppToHash(false)
 	})
 	window.addEventListener('hashchange', readAppFromHash)
 	readAppFromHash()
@@ -365,7 +392,7 @@
 
 		const rows = data.users.map(renderRow)
 		if (rows.length === 0) {
-			const columns = 3 + Object.values(data.catalog).reduce((sum, ops) => sum + ops.length, 0)
+			const columns = FIXED_COLUMNS + Object.values(data.catalog).reduce((sum, ops) => sum + ops.length, 0)
 			rows.push(el('tr', {}, [el('td', { colSpan: columns, className: 'mcp-empty', textContent: t('mcp', 'No users found.') })]))
 		}
 		table.tBodies[0].replaceChildren(...rows)
@@ -556,8 +583,10 @@
 	 * @param {Function|null} undo restores the previous values
 	 */
 	function showNotice(message, undo) {
+		// A newer notice takes the single undo slot; say so instead of dropping the older undo silently.
+		const replaced = pendingUndo !== null && pendingUndo !== undo
 		pendingUndo = undo
-		noticeText.textContent = message
+		noticeText.textContent = replaced ? message + ' ' + t('mcp', 'The previous undo is no longer available.') : message
 		undoButton.hidden = undo === null
 		notice.classList.add('mcp-notice-on')
 		if (undo !== null) {
@@ -577,10 +606,16 @@
 	})
 	undoButton.addEventListener('click', () => {
 		const undo = pendingUndo
-		hideNotice()
-		if (undo) {
-			undo()
+		if (!undo) {
+			return
 		}
+		// The button disappears, so the focus moves to the notice text, which announces the outcome
+		// and stays on screen while it has the focus.
+		pendingUndo = null
+		clearTimeout(noticeTimer)
+		undoButton.hidden = true
+		noticeText.focus({ preventScroll: true })
+		undo()
 	})
 
 	/**
@@ -706,6 +741,8 @@
 
 	/**
 	 * Puts back the values a bulk change replaced; a failure part way is reported and the matrix reloaded.
+	 * It restores what the bulk saw, so a change someone else made in between is overwritten (last write
+	 * wins): grants have no versioning yet, which is left for 1.1.0.
 	 *
 	 * @param {string|null} module module id, null for eligibility
 	 * @param {Array<{operation: string, previous: Map<string, boolean>}>} changes changes that were saved
@@ -714,7 +751,9 @@
 		const requests = undoRequests(changes)
 		const saved = await sendBulk(module, requests)
 		if (saved < requests.length) {
-			notifyError(t('mcp', 'Could not undo the whole change. The table was reloaded with the saved values.'))
+			const failure = t('mcp', 'Could not undo the whole change. The table was reloaded with the saved values.')
+			notifyError(failure)
+			showNotice(failure, null)
 		} else {
 			showNotice(t('mcp', 'Change undone.'), null)
 		}

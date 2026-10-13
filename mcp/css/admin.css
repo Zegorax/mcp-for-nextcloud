@@ -285,7 +285,8 @@
 	font-weight: bold;
 }
 
-/* Header menus must paint above the second header row and the sticky corner. */
+/* Header menus must paint above the second header row and the sticky corner. A browser without :has()
+   is a progressive-enhancement case: the open menu then paints under the second header row. */
 #mcp-admin .mcp-matrix thead th:has(.mcp-bulk-menu[open]) {
 	z-index: 4;
 }
