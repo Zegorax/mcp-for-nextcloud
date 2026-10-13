@@ -307,17 +307,14 @@ final class TasksPlanRenderer {
     /**
      * The categories of the task as one line, in the order the task keeps them.
      *
-     * Each name is quoted on its own and never cut, so "A, B" reads apart from "A" and "B" and a change
-     * at the end of a long name stays visible.
+     * Each name is a complete quoted literal, so delimiters and whitespace cannot make two states read alike
+     * and a change at the end of a long name stays visible.
      *
      * @param mixed $value raw plan value of the categories field
      * @return string|null the quoted categories separated by commas, or null when the task has none
      */
     private function categories(mixed $value): ?string {
-        $names = array_map(
-            static fn (string $name) => '“' . PlanText::inline($name, TaskData::MAX_CATEGORY_LENGTH) . '”',
-            $this->names($value)
-        );
+        $names = array_map(PlanText::quoted(...), $this->names($value));
 
         return $names === [] ? null : implode(', ', $names);
     }

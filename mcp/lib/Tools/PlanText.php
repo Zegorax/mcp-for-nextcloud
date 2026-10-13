@@ -59,6 +59,29 @@ final class PlanText {
     }
 
     /**
+     * A complete JSON string made inert as Markdown, with ambiguous whitespace and format characters visible.
+     *
+     * Quotes and backslashes distinguish a name from its delimiters; repeated spaces and Unicode separators
+     * use JSON escapes so a renderer cannot collapse them. Ordinary single spaces stay readable. No text is
+     * collapsed or cut. Valid UTF-8 remains reversible after removing the Markdown escaping and decoding JSON.
+     *
+     * @param string $text name to show exactly; invalid UTF-8 is replaced as in the other text helpers
+     * @return string quoted text safe to put inside a line of the plan
+     */
+    public static function quoted(string $text): string {
+        $json = json_encode($text, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+        $visible = preg_replace_callback(
+            '/ {2,}|(?! )[\p{Z}\p{Cf}]/u',
+            static fn (array $match) => $match[0][0] === ' '
+                ? str_repeat('\\u0020', strlen($match[0]))
+                : substr(json_encode($match[0], JSON_THROW_ON_ERROR), 1, -1),
+            $json
+        );
+
+        return self::escape($visible ?? $json);
+    }
+
+    /**
      * @param string $text user, model or third-party text
      * @param int $max characters kept before escaping
      * @return string the text in bold, or an empty string when nothing is left of it
