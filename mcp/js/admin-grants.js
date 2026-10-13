@@ -498,7 +498,7 @@
 			// An empty list turns the protection off; from an invalid setting that goes from hiding everything to
 			// hiding nothing, so it is never saved without the administrator saying so.
 			if (selectedSet.size === 0
-				&& !window.confirm(t('mcp', 'Saving with no hidden tags turns the protection off: every file becomes visible to the MCP tools again. Continue?'))) {
+				&& !window.confirm(t('mcp', 'Saving with no exclusion tags turns the protection off: every file becomes visible to the MCP tools again. Continue?'))) {
 				throw new Error('cancelled')
 			}
 			try {
@@ -506,8 +506,8 @@
 			} catch (e) {
 				// 503: the system tags could not be checked and the server kept the previous setting.
 				notifyError(e.message === '503'
-					? t('mcp', 'Could not check the system tags, so the hidden tags were not changed. Try again later.')
-					: t('mcp', 'Could not update hidden tags.'))
+					? t('mcp', 'Could not check the system tags, so the exclusion tags were not changed. Try again later.')
+					: t('mcp', 'Could not update exclusion tags.'))
 				throw e
 			}
 			if (invalid) {

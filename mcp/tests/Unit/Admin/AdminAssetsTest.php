@@ -86,7 +86,7 @@ final class AdminAssetsTest extends TestCase {
         foreach (array_unique($used[1]) as $id) {
             $this->assertSame(1, substr_count($template, 'id="' . $id . '"'), "id $id must appear exactly once");
         }
-        $this->assertSame(1, substr_count($template, "t('Hidden files & tags')"));
+        $this->assertSame(1, substr_count($template, "t('Excluded from MCP access')"));
         $this->assertSame(preg_match_all('/<div\b/', $template), preg_match_all('/<\/div>/', $template), 'div tags must balance');
     }
 
@@ -99,7 +99,7 @@ final class AdminAssetsTest extends TestCase {
         $template = (string)file_get_contents($app . '/templates/admin.php');
         $status = strpos($template, "t('Status')");
         $oauth = strpos($template, "t('OAuth clients')");
-        $tags = strpos($template, "t('Hidden files & tags')");
+        $tags = strpos($template, "t('Excluded from MCP access')");
         $ocr = strpos($template, "t('OCR')");
         $toolbar = strpos($template, 'class="mcp-toolbar"');
         $this->assertTrue($status < $oauth && $oauth < $tags && $tags < $ocr && $ocr < $toolbar);
@@ -127,7 +127,7 @@ final class AdminAssetsTest extends TestCase {
         $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
         preg_match_all('/<div class="section mcp-block" id="([^"]+)"[^>]*>\s*<h2><\?php p\(\$l->t\(\'([^\']+)\'\)\); \?><\/h2>/', $template, $blocks);
         $this->assertSame(['mcp-block-status', 'mcp-block-oauth', 'mcp-block-tags', 'mcp-block-ocr', 'mcp-block-matrix', 'mcp-block-logs', 'mcp-connections'], $blocks[1]);
-        $this->assertSame(['Status', 'OAuth clients', 'Hidden files & tags', 'OCR', 'Permissions', 'Server log', 'Active connections'], $blocks[2]);
+        $this->assertSame(['Status', 'OAuth clients', 'Excluded from MCP access', 'OCR', 'Permissions', 'Server log', 'Active connections'], $blocks[2]);
         $this->assertStringContainsString('data-scope="admin"', $template);
     }
 
