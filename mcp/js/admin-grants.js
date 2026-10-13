@@ -19,7 +19,7 @@
 
 	/** Columns the matrix always shows besides the permissions: user, "Can connect" and "Connected". */
 	const FIXED_COLUMNS = 3
-	const state = { search: '', group: '', filter: '', page: 1, app: '', data: null, groupsLoaded: false }
+	const state = { search: '', group: '', filter: 'eligible', page: 1, app: '', data: null, groupsLoaded: false }
 	const table = document.getElementById('mcp-matrix')
 	const searchInput = document.getElementById('mcp-search')
 	const groupSelect = document.getElementById('mcp-group')
@@ -222,11 +222,12 @@
 				}
 			}
 		}
-		const columns = FIXED_COLUMNS + Object.entries(state.data?.catalog || {})
-			.filter(([module]) => state.app === '' || module === state.app)
-			.reduce((sum, [, operations]) => sum + operations.length, 0)
+		const permissions = visiblePermissionColumns()
 		for (const cell of table.querySelectorAll('td.mcp-empty')) {
-			cell.colSpan = columns
+			cell.colSpan = FIXED_COLUMNS + permissions
+		}
+		for (const cell of table.querySelectorAll('td.mcp-row-unavailable')) {
+			cell.colSpan = permissions
 		}
 		stickSecondHeaderRow()
 	}
@@ -440,6 +441,15 @@
 		}
 		row.append(name)
 		row.append(permissionCell(user, null, user.eligible, t('mcp', 'Can connect'), { eligible: null }))
+		const rowReason = rowUnavailableReason(user)
+		if (rowReason !== null) {
+			// One notice instead of a mark in every column; the saved permissions come back with "Can connect".
+			const notice = el('td', { className: 'mcp-cell mcp-row-unavailable', colSpan: visiblePermissionColumns(), textContent: rowReason })
+			notice.title = t('mcp', 'The saved permissions are kept and shown again when “Can connect” is on.')
+			row.append(notice)
+			row.append(el('td', { className: 'mcp-connected', textContent: user.connected ? t('mcp', 'yes') : t('mcp', 'no') }))
+			return row
+		}
 		Object.entries(state.data.catalog).forEach(([module, ops], index) => {
 			ops.forEach((operation, i) => {
 				const cell = permissionCell(user, module, user.grants[module][operation], module + ':' + operation, { module, operation, granted: null })
@@ -454,6 +464,30 @@
 		})
 		row.append(el('td', { className: 'mcp-connected', textContent: user.connected ? t('mcp', 'yes') : t('mcp', 'no') }))
 		return row
+	}
+
+	/**
+	 * Why none of a user's permissions can be changed: a disabled account or "Can connect" off. The
+	 * row then shows this one notice across the permission columns instead of a mark in each of them.
+	 *
+	 * @param {object} user row from the API
+	 * @return {string|null} short notice, or null when the permissions are shown cell by cell
+	 */
+	function rowUnavailableReason(user) {
+		if (!user.enabled) {
+			return t('mcp', 'Account disabled: no MCP access.')
+		}
+		if (!user.eligible) {
+			return t('mcp', 'No MCP access: turn on “Can connect”.')
+		}
+		return null
+	}
+
+	/** @return {number} permission columns shown with the current app filter */
+	function visiblePermissionColumns() {
+		return Object.entries(state.data?.catalog || {})
+			.filter(([module]) => state.app === '' || module === state.app)
+			.reduce((sum, [, operations]) => sum + operations.length, 0)
 	}
 
 	/**
@@ -834,6 +868,8 @@
 		state.page = 1
 		load()
 	})
+	// The matrix opens on the users who can connect; "Everyone" stays one choice away.
+	filterSelect.value = state.filter
 	filterSelect.addEventListener('change', () => {
 		state.filter = filterSelect.value
 		state.page = 1

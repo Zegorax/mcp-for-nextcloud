@@ -88,8 +88,7 @@
     <div role="tabpanel" id="mcp-panel-access" aria-labelledby="mcp-tab-access" class="mcp-tab-panel" tabindex="0">
     <div class="section mcp-block" id="mcp-block-matrix">
         <h2><?php p($l->t('Permissions')); ?></h2>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Users need “Can connect” and must activate the connection in their personal settings. Read permissions start allowed, except the server log; write, delete and transfer start denied. Nextcloud permissions and shares still apply.')); ?></p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Each change is saved at once. The “All” menus in the header allow or deny a permission for every user on the current page.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Users need “Can connect” and must turn the connection on in their personal settings. Reading starts allowed except the server log; writing, deleting and transferring start denied; Nextcloud permissions still apply. Changes save at once, and “All” applies to the current page.')); ?></p>
         <?php foreach ($_['unsupportedApps'] as $app) { ?>
             <p class="mcp-unsupported-app"><?php p($l->t('%1$s %2$s is installed, but MCP for Nextcloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.', [$app['name'], $app['installed'], $app['required']])); ?></p>
         <?php } ?>
@@ -100,7 +99,7 @@
             </select>
             <select id="mcp-filter" aria-label="<?php p($l->t('Show')); ?>">
                 <option value=""><?php p($l->t('Everyone')); ?></option>
-                <option value="eligible"><?php p($l->t('Only users who can connect')); ?></option>
+                <option value="eligible" selected><?php p($l->t('Only users who can connect')); ?></option>
                 <option value="connected"><?php p($l->t('Only connected users')); ?></option>
             </select>
             <label for="mcp-app"><?php p($l->t('Show apps')); ?></label>
@@ -118,18 +117,23 @@
                 <button type="button" id="mcp-next"><?php p($l->t('Next')); ?></button>
             </span>
         </div>
-        <p class="settings-hint mcp-hint"><?php p($l->t('In the table, a checked box means allowed, an empty box means denied and ⊘ means unavailable; point at ⊘ to see why.')); ?></p>
-        <div class="mcp-bulk-notice" id="mcp-bulk-notice" role="status" aria-live="polite">
-            <span id="mcp-bulk-notice-text" tabindex="-1"></span>
-            <button type="button" id="mcp-bulk-undo" hidden><?php p($l->t('Undo')); ?></button>
-        </div>
         <div class="mcp-matrix-wrap">
             <table class="mcp-matrix" id="mcp-matrix" aria-busy="true">
                 <thead></thead>
                 <tbody><tr><td class="mcp-empty"><?php p($l->t('Loading…')); ?></td></tr></tbody>
             </table>
         </div>
+        <div class="mcp-bulk-notice" id="mcp-bulk-notice" role="status" aria-live="polite">
+            <span id="mcp-bulk-notice-text" tabindex="-1"></span>
+            <button type="button" id="mcp-bulk-undo" hidden><?php p($l->t('Undo')); ?></button>
+        </div>
         <div class="mcp-toolbar mcp-toolbar-bottom">
+            <p class="mcp-legend">
+                <span class="mcp-legend-item"><input type="checkbox" checked disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Allowed')); ?></span>
+                <span class="mcp-legend-item"><input type="checkbox" disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Denied')); ?></span>
+                <span class="mcp-legend-item"><span class="mcp-state-mark" aria-hidden="true">⊘</span> <?php p($l->t('Unavailable')); ?></span>
+                <span><?php p($l->t('Point at ⊘ for the reason.')); ?></span>
+            </p>
             <span class="mcp-pager">
                 <button type="button" id="mcp-prev-bottom"><?php p($l->t('Previous')); ?></button>
                 <span id="mcp-page-info-bottom"></span>
