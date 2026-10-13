@@ -53,6 +53,173 @@
 	display: none;
 }
 
+/* Searchable multi-select picker (js/admin-picker.js): chips of the selected options on top, a
+   search field that filters the existing options and a collapsed listbox. Theme variables only. */
+#mcp-admin .mcp-picker-box {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	padding: 6px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-main-background);
+}
+
+#mcp-admin .mcp-picker-box:focus-within {
+	border-color: var(--color-primary-element);
+}
+
+#mcp-admin .mcp-picker-busy {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+#mcp-admin .mcp-picker-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+
+#mcp-admin .mcp-picker-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 8px;
+	background-color: var(--color-background-dark);
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-pill, var(--border-radius));
+	font-size: 0.9em;
+	user-select: none;
+}
+
+#mcp-admin .mcp-picker-remove {
+	background: none;
+	border: none;
+	padding: 0 2px;
+	color: var(--color-text-maxcontrast);
+	font-weight: bold;
+	cursor: pointer;
+}
+
+#mcp-admin .mcp-picker-remove:hover {
+	color: var(--color-main-text);
+}
+
+#mcp-admin .mcp-picker-search {
+	flex: 1;
+	min-width: 160px;
+	padding: 4px;
+	border: none;
+	background: none;
+}
+
+#mcp-admin .mcp-picker-list {
+	max-height: 220px;
+	overflow-y: auto;
+	margin: 4px 0 0;
+	padding: 4px;
+	list-style: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-main-background);
+}
+
+#mcp-admin .mcp-picker-option {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 10px;
+	border-radius: var(--border-radius);
+	cursor: pointer;
+	user-select: none;
+}
+
+#mcp-admin .mcp-picker-option:hover,
+#mcp-admin .mcp-picker-option.mcp-picker-active {
+	background-color: var(--color-background-hover);
+}
+
+#mcp-admin .mcp-picker-option[aria-selected="true"] {
+	background-color: var(--color-primary-element-light);
+	color: var(--color-primary-element-light-text, var(--color-main-text));
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-picker-no-match {
+	padding: 6px 10px;
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-picker-summary {
+	margin: 8px 0;
+}
+
+/* The log privacy switch: the same checkbox (#mcp-logs-hide-file-names), drawn as a toggle. */
+#mcp-admin .mcp-switch {
+	appearance: none;
+	width: 44px;
+	height: 24px;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--color-border);
+	border-radius: 24px;
+	background-color: var(--color-background-dark);
+	position: relative;
+	cursor: pointer;
+	vertical-align: middle;
+}
+
+#mcp-admin .mcp-switch::before {
+	content: '';
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background-color: var(--color-main-background);
+	border: 1px solid var(--color-border);
+	transition: transform 0.15s;
+	box-sizing: border-box;
+}
+
+#mcp-admin .mcp-switch:checked {
+	background-color: var(--color-primary-element);
+	border-color: var(--color-primary-element);
+}
+
+#mcp-admin .mcp-switch:checked::before {
+	transform: translateX(20px);
+}
+
+#mcp-admin .mcp-switch:focus-visible {
+	outline: 2px solid var(--color-primary-element);
+	outline-offset: 1px;
+}
+
+/* The "Learn more" expansion of the log privacy block. */
+#mcp-admin .mcp-learn-more {
+	background: none;
+	border: none;
+	padding: 0;
+	color: var(--color-primary-element);
+	font-size: var(--default-font-size);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+#mcp-admin .mcp-learn-more-box {
+	margin: 8px 0;
+	padding: 8px 12px;
+	max-width: 900px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius);
+	background-color: var(--color-background-hover);
+}
+
 #mcp-admin .mcp-endpoint code {
 	padding: 2px 6px;
 	border-radius: var(--border-radius);

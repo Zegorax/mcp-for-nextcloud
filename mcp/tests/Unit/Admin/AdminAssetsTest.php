@@ -64,7 +64,7 @@ final class AdminAssetsTest extends TestCase {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
         preg_match_all("/Util::add(Script|Style)\\(\\s*'mcp'\\s*,\\s*'([^']+)'/", $template, $matches, PREG_SET_ORDER);
-        $this->assertCount(4, $matches);
+        $this->assertCount(5, $matches);
         foreach ($matches as [, $kind, $name]) {
             $file = $kind === 'Script' ? "$app/js/$name.js" : "$app/css/$name.css";
             $this->assertFileExists($file);
@@ -80,7 +80,7 @@ final class AdminAssetsTest extends TestCase {
     public function testAdminTemplateHasUniqueIdsAndBalancedDivs(): void {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
-        $script = (string)file_get_contents($app . '/js/admin-grants.js') . file_get_contents($app . '/js/connections.js') . file_get_contents($app . '/js/admin-tabs.js');
+        $script = (string)file_get_contents($app . '/js/admin-grants.js') . file_get_contents($app . '/js/connections.js') . file_get_contents($app . '/js/admin-tabs.js') . file_get_contents($app . '/js/admin-picker.js');
         preg_match_all("/getElementById\\('([^']+)'\\)/", $script, $used);
         $this->assertNotEmpty($used[1]);
         foreach (array_unique($used[1]) as $id) {
@@ -162,7 +162,7 @@ final class AdminAssetsTest extends TestCase {
             'id="mcp-panel-access"', 'id="mcp-block-matrix"',
             'id="mcp-panel-clients"', 'id="mcp-block-oauth"', 'id="mcp-connections"',
             'id="mcp-panel-protection"', 'id="mcp-block-tags"',
-            'id="mcp-panel-advanced"', 'id="mcp-block-logs"', 'id="mcp-block-ocr"',
+            'id="mcp-panel-advanced"', 'id="mcp-block-logs"', 'id="mcp-block-logs-privacy"', 'id="mcp-block-ocr"',
             'class="mcp-attribution"',
         ];
         $positions = array_map(static fn (string $needle) => strpos($template, $needle), $ordered);
@@ -172,12 +172,12 @@ final class AdminAssetsTest extends TestCase {
         $this->assertSame($sorted, $positions, 'tabs, panels and blocks must appear in the tab order');
     }
 
-    /** Seven blocks, each a core settings section with its own heading, in the tab order. */
-    public function testAdminPageHasSevenSectionBlocks(): void {
+    /** Eight blocks, each a core settings section with its own heading, in the tab order. */
+    public function testAdminPageHasEightSectionBlocks(): void {
         $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
         preg_match_all('/<div class="section mcp-block" id="([^"]+)"[^>]*>\s*<h2><\?php p\(\$l->t\(\'([^\']+)\'\)\); \?><\/h2>/', $template, $blocks);
-        $this->assertSame(['mcp-block-status', 'mcp-block-matrix', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-ocr'], $blocks[1]);
-        $this->assertSame(['Status', 'Permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'OCR'], $blocks[2]);
+        $this->assertSame(['mcp-block-status', 'mcp-block-matrix', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'], $blocks[1]);
+        $this->assertSame(['Status', 'Permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'Log privacy', 'OCR'], $blocks[2]);
         $this->assertStringContainsString('data-scope="admin"', $template);
     }
 
@@ -246,20 +246,38 @@ final class AdminAssetsTest extends TestCase {
     }
 
     /**
-     * The groups that may read the server log are saved one change at a time: every box is locked while a save runs,
-     * the save carries the list it changed, a 409 reloads the list and says so, and a deleted group is shown so it
-     * can be removed.
+     * The groups that may read the server log are saved one change at a time: the picker is locked
+     * while a save runs, the save carries the list it changed, a 409 reloads the list and says so,
+     * and a deleted group is shown so it can be removed.
      */
     public function testTheLogGroupsAreSavedOneAtATimeWithTheListTheyChanged(): void {
-        $script = (string)file_get_contents(dirname(__DIR__, 3) . '/js/admin-grants.js');
+        $app = dirname(__DIR__, 3);
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
         $logs = substr($script, (int)strpos($script, 'async function initLogsAccess'));
-        $this->assertStringContainsString("previous: Array.from(selected)", $logs);
-        $this->assertStringContainsString("version: version", $logs);
+        $this->assertStringContainsString('groups: nextIds, previous: previousIds, version: version', $logs);
         $this->assertStringContainsString("version = data.version", $logs);
-        $this->assertStringContainsString('setLocked(true)', $logs);
         $this->assertStringContainsString("e.message === '409'", $logs);
         $this->assertStringContainsString("t('mcp', 'The groups were changed in another window or by another administrator; the current list was loaded.')", $logs);
         $this->assertStringContainsString("t('mcp', '{group} (group removed)'", $logs);
-        $this->assertMatchesRegularExpression('/if \(saving\) \{\s*return/', $logs);
+        // One save at a time, with the control locked, is the picker's contract.
+        $picker = (string)file_get_contents($app . '/js/admin-picker.js');
+        $this->assertMatchesRegularExpression('/if \(busy \|\| fallbackText !== null\) \{\s*return/', $picker);
+        $this->assertStringContainsString("setAttribute('aria-busy', locked ? 'true' : 'false')", $picker);
+    }
+
+    /**
+     * The log privacy switch keeps its input, id and saving, the "Learn more" button starts
+     * collapsed and the detail ships visible, so without JavaScript nothing of the page is lost.
+     */
+    public function testLogPrivacyHasItsOwnBlockWithAWiredSwitchAndLearnMore(): void {
+        $app = dirname(__DIR__, 3);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertSame(1, substr_count($template, 'id="mcp-block-logs-privacy"'));
+        $this->assertSame(1, substr_count($template, 'class="checkbox mcp-switch" id="mcp-logs-hide-file-names"'), 'the same input, only restyled');
+        $this->assertSame(1, preg_match('/<button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail">/', $template));
+        $this->assertSame(1, substr_count($template, 'id="mcp-logs-privacy-detail" class="mcp-learn-more-box"'), 'the detail ships visible for the no-JS page');
+        $this->assertSame(1, substr_count($template, 'class="mcp-picker-summary mcp-hint" id="mcp-logs-summary"'));
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString("more.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true')", $script);
     }
 }

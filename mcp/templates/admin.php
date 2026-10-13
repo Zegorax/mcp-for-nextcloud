@@ -7,14 +7,16 @@
  * Admin page of the "MCP for Nextcloud" settings section: five WAI-ARIA tabs, each with one
  * `role="tabpanel"` holding the core `.section` blocks of its area — overview (status), access and
  * permissions (the users × permissions matrix), clients and connections (OAuth clients and active
- * connections), data protection (exclusion tags) and advanced (server log, OCR). js/admin-tabs.js
- * provides the tab behavior and the URL hash mapping; the matrix, OAuth clients, tags and log groups
- * are filled by js/admin-grants.js, the connections by js/connections.js. Without JavaScript every
- * panel stays visible and the tab bar stays hidden.
+ * connections), data protection (exclusion tags) and advanced (server log, log privacy, OCR).
+ * js/admin-tabs.js provides the tab behavior and the URL hash mapping; js/admin-picker.js is the
+ * readable-search multi-select of the log groups and the exclusion tags; the matrix, OAuth clients,
+ * tags and log groups are filled by js/admin-grants.js, the connections by js/connections.js. Without
+ * JavaScript every panel stays visible, the tab bar stays hidden and the log privacy detail stays open.
  *
  * @var array{endpoint:string, serviceEnabled:bool, ocrActive:bool, ocrUrl:string, version:string, eligibleUsers:int, connectedUsers:int, activeConnections:int, unsupportedApps:list<array{name:string, installed:string, required:string}>, logsAvailable:bool, logType:string} $_
  * @var \OCP\IL10N $l
  */
+\OCP\Util::addScript('mcp', 'admin-picker');
 \OCP\Util::addScript('mcp', 'admin-grants');
 \OCP\Util::addScript('mcp', 'connections');
 \OCP\Util::addScript('mcp', 'admin-tabs');
@@ -210,13 +212,23 @@
         <div id="mcp-logs-groups" class="mcp-logs-groups" aria-busy="true">
             <span class="mcp-tags-loading"><?php p($l->t('Loading groups…')); ?></span>
         </div>
+        <p class="mcp-picker-summary mcp-hint" id="mcp-logs-summary"></p>
         <span class="mcp-status" id="mcp-logs-status" aria-live="polite"></span>
+    </div>
+
+    <div class="section mcp-block" id="mcp-block-logs-privacy">
+        <h2><?php p($l->t('Log privacy')); ?></h2>
         <p>
-            <input type="checkbox" class="checkbox" id="mcp-logs-hide-file-names">
+            <input type="checkbox" class="checkbox mcp-switch" id="mcp-logs-hide-file-names">
             <label for="mcp-logs-hide-file-names"><?php p($l->t('Hide the text of log messages')); ?></label>
             <span class="mcp-status" id="mcp-logs-hide-file-names-status" aria-live="polite"></span>
         </p>
-        <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while exclusion tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the exclusion by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
+        <p>
+            <button type="button" class="mcp-learn-more" id="mcp-logs-privacy-more" aria-expanded="false" aria-controls="mcp-logs-privacy-detail"><?php p($l->t('Learn more')); ?></button>
+        </p>
+        <div id="mcp-logs-privacy-detail" class="mcp-learn-more-box">
+            <p class="settings-hint mcp-hint"><?php p($l->t('On (default): while exclusion tags are configured, the text of log messages and the identification of the client (user agent) are hidden; the date, level, app, user, error type and route stay. Off: the full messages and clients are shown for diagnosis, and the exclusion by tags is not respected. The option exists because some IT teams need the names to track problems.')); ?></p>
+        </div>
     </div>
 
     <div class="section mcp-block" id="mcp-block-ocr">

@@ -485,24 +485,46 @@
 		const status = document.getElementById('mcp-tags-status')
 		const invalid = document.getElementById('mcp-tags-invalid')
 		const repair = document.getElementById('mcp-tags-repair')
-		if (!container) {
+		if (!container || !window.McpAdminPicker) {
 			return
 		}
 
+		let allTags = []
+
 		/**
-		 * Saves the selection; on success the stored setting is readable again.
+		 * The type badge of a tag option, with its explanation in the title.
 		 *
-		 * @param {Set<string>} selectedSet tag ids to hide
+		 * @param {string} type collaborative, restricted or invisible
+		 * @return {{text: string, title: string, className: string}}
 		 */
-		async function saveTags(selectedSet) {
-			// An empty list turns the protection off; from an invalid setting that goes from hiding everything to
-			// hiding nothing, so it is never saved without the administrator saying so.
-			if (selectedSet.size === 0
-				&& !window.confirm(t('mcp', 'Saving with no exclusion tags turns the protection off: every file becomes visible to the MCP tools again. Continue?'))) {
-				throw new Error('cancelled')
+		function tagBadge(type) {
+			if (type === 'invisible') {
+				return { text: t('mcp', 'Invisible'), title: t('mcp', 'Visible and assignable only by administrators'), className: 'mcp-tag-type-invisible' }
 			}
+			if (type === 'restricted') {
+				return { text: t('mcp', 'Restricted'), title: t('mcp', 'Visible to users, assignable only by administrators and the groups they allow'), className: 'mcp-tag-type-restricted' }
+			}
+			return { text: t('mcp', 'Collaborative'), title: t('mcp', 'Users can assign and remove this tag'), className: 'mcp-tag-type-collaborative' }
+		}
+
+		/** @param {string[]} selectedIds warns when a collaborative tag, removable by editors, is selected */
+		function updateWarning(selectedIds) {
+			if (!warning) {
+				return
+			}
+			const hasCollab = allTags.some((tag) => tag.type === 'collaborative' && selectedIds.includes(String(tag.id)))
+			warning.style.display = hasCollab ? 'block' : 'none'
+		}
+
+		/**
+		 * PUT /api/admin/tags with the same payload as before. A failure is explained here and rethrown,
+		 * so the picker rolls the selection back; on success the invalid-setting block goes away.
+		 *
+		 * @param {string[]} tagIds the ids to save
+		 */
+		async function saveTags(tagIds) {
 			try {
-				await api('PUT', '/api/admin/tags', { tagIds: Array.from(selectedSet) })
+				await api('PUT', '/api/admin/tags', { tagIds })
 			} catch (e) {
 				// 503: the system tags could not be checked and the server kept the previous setting.
 				notifyError(e.message === '503'
@@ -517,10 +539,26 @@
 
 		try {
 			const res = await api('GET', '/api/admin/tags')
-			container.innerHTML = ''
-			container.setAttribute('aria-busy', 'false')
+			allTags = res.tags || []
 
-			const selectedSet = new Set((res.selected || []).map(String))
+			const picker = window.McpAdminPicker.create({
+				container,
+				status,
+				options: allTags.map((tag) => ({ id: String(tag.id), label: tag.name, badge: tagBadge(tag.type) })),
+				selectedIds: (res.selected || []).map(String),
+				searchLabel: t('mcp', 'Search tags'),
+				listLabel: t('mcp', 'Exclusion tags'),
+				emptyOptionsText: t('mcp', 'No system tags found. Create tags in Files settings.'),
+				noMatchText: t('mcp', 'No match.'),
+				// An empty list turns the protection off; from an invalid setting that goes from hiding
+				// everything to hiding nothing, so it is never saved without the administrator saying so.
+				confirmSave: (nextIds) => nextIds.length > 0
+					|| window.confirm(t('mcp', 'Saving with no exclusion tags turns the protection off: every file becomes visible to the MCP tools again. Continue?')),
+				save: saveTags,
+				onChange: updateWarning,
+				clearSavedAfterMs: 2000,
+				errorStatus: '',
+			})
 
 			if (invalid && res.invalid) {
 				invalid.style.display = 'block'
@@ -528,9 +566,7 @@
 					repair.addEventListener('click', async () => {
 						repair.disabled = true
 						try {
-							await saveTags(selectedSet)
-						} catch {
-							// saveTags already told the admin, or the admin cancelled the empty save
+							await picker.commit()
 						} finally {
 							repair.disabled = false
 						}
@@ -538,91 +574,10 @@
 				}
 			}
 
-			if (!res.tags || res.tags.length === 0) {
-				container.appendChild(el('p', { className: 'mcp-empty' }, [t('mcp', 'No system tags found. Create tags in Files settings.')]))
-				return
-			}
-
-			function updateWarning() {
-				if (!warning) {
-					return
-				}
-				const hasCollab = res.tags.some(tag => tag.type === 'collaborative' && selectedSet.has(String(tag.id)))
-				warning.style.display = hasCollab ? 'block' : 'none'
-			}
-
-			updateWarning()
-
-			for (const tag of res.tags) {
-				const tagId = String(tag.id)
-				const isChecked = selectedSet.has(tagId)
-
-				const checkbox = el('input', {
-					type: 'checkbox',
-					className: 'checkbox',
-					id: 'mcp-tag-' + tagId,
-					value: tagId,
-					checked: isChecked,
-				})
-
-				const typeBadge = el('span', {
-					className: 'mcp-tag-type mcp-tag-type-' + tag.type,
-					title: tag.type === 'invisible'
-						? t('mcp', 'Visible and assignable only by administrators')
-						: (tag.type === 'restricted'
-							? t('mcp', 'Visible to users, assignable only by administrators and the groups they allow')
-							: t('mcp', 'Users can assign and remove this tag')),
-				}, [
-					tag.type === 'invisible' ? t('mcp', 'Invisible') : (tag.type === 'restricted' ? t('mcp', 'Restricted') : t('mcp', 'Collaborative'))
-				])
-
-				const label = el('label', { htmlFor: 'mcp-tag-' + tagId, className: 'mcp-tag-item' }, [
-					checkbox,
-					tag.name,
-					typeBadge,
-				])
-
-				checkbox.addEventListener('change', async () => {
-					if (checkbox.checked) {
-						selectedSet.add(tagId)
-					} else {
-						selectedSet.delete(tagId)
-					}
-					updateWarning()
-
-					checkbox.disabled = true
-					if (status) {
-						status.textContent = t('mcp', 'Saving…')
-					}
-
-					try {
-						await saveTags(selectedSet)
-						if (status) {
-							status.textContent = t('mcp', 'Saved')
-							setTimeout(() => { if (status.textContent === t('mcp', 'Saved')) status.textContent = '' }, 2000)
-						}
-					} catch {
-						if (status) {
-							status.textContent = ''
-						}
-						if (checkbox.checked) {
-							selectedSet.delete(tagId)
-						} else {
-							selectedSet.add(tagId)
-						}
-						checkbox.checked = selectedSet.has(tagId)
-						updateWarning()
-					} finally {
-						checkbox.disabled = false
-					}
-				})
-
-				container.appendChild(label)
-			}
+			updateWarning(picker.getSelected())
 		} catch {
-			container.innerHTML = ''
 			container.setAttribute('aria-busy', 'false')
-			container.appendChild(el('p', { className: 'mcp-empty' }, [t('mcp', 'Could not load system tags.')]))
+			container.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not load system tags.') }))
 		}
 	}
 
@@ -756,6 +711,16 @@
 		if (!box) {
 			return
 		}
+		// The "Learn more" button opens the explanation that ships in the template; without JS it stays open.
+		const more = document.getElementById('mcp-logs-privacy-more')
+		const detail = document.getElementById('mcp-logs-privacy-detail')
+		if (more && detail) {
+			detail.hidden = true
+			more.addEventListener('click', () => {
+				detail.hidden = !detail.hidden
+				more.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true')
+			})
+		}
 		try {
 			box.checked = (await api('GET', '/api/logs-privacy')).hideFileNames
 		} catch (e) {
@@ -783,50 +748,76 @@
 
 	/**
 	 * Server log section: the groups whose members may read the log besides the administrators, through
-	 * GET and PUT /apps/mcp/api/logs-access. Saves run one at a time: every box is locked while one runs, and each
-	 * save carries the list it changed (`previous`), so the server answers 409 when another window or administrator
-	 * saved first and a removed group is never put back. A listed group that was deleted is shown, to be removed.
+	 * GET and PUT /apps/mcp/api/logs-access. The picker locks while a save runs and each save carries
+	 * the list it changed (`previous`), so the server answers 409 when another window or administrator
+	 * saved first and a removed group is never put back. A listed group that was deleted shows as an
+	 * option marked "(group removed)", to be removed.
 	 */
 	async function initLogsAccess() {
 		const container = document.getElementById('mcp-logs-groups')
 		const status = document.getElementById('mcp-logs-status')
-		if (!container) {
+		const summary = document.getElementById('mcp-logs-summary')
+		if (!container || !window.McpAdminPicker) {
 			return
 		}
-		let selected = new Set()
 		let version = 0
-		let saving = false
-
-		/** @param {boolean} locked whether every box is locked while a save runs */
-		function setLocked(locked) {
-			container.setAttribute('aria-busy', locked ? 'true' : 'false')
-			for (const box of container.querySelectorAll('input[type="checkbox"]')) {
-				box.disabled = locked
-			}
-		}
-
-		/**
-		 * @param {string} id group id
-		 * @param {string} label text of the checkbox
-		 * @return {HTMLLabelElement}
-		 */
-		function groupBox(id, label) {
-			const box = el('input', { type: 'checkbox', className: 'checkbox', id: 'mcp-logs-group-' + id, checked: selected.has(id) })
-			box.addEventListener('change', () => save(box, id))
-			return el('label', { htmlFor: box.id, className: 'mcp-tag-item' }, [box, label])
-		}
+		let picker = null
 
 		/** @param {object} data state returned by the API */
 		function show(data) {
-			selected = new Set(data.groups)
 			version = data.version
-			container.setAttribute('aria-busy', 'false')
-			const missing = data.missing.map((id) => groupBox(id, t('mcp', '{group} (group removed)', { group: id })))
-			if (data.allGroups.length === 0 && missing.length === 0) {
-				container.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'No groups found; only administrators can read the log.') }))
+			const options = data.allGroups.map((group) => ({ id: group.id, label: group.displayName }))
+			for (const id of data.missing) {
+				options.push({ id: id, label: t('mcp', '{group} (group removed)', { group: id }) })
+			}
+			if (!picker) {
+				picker = window.McpAdminPicker.create({
+					container,
+					status,
+					options,
+					selectedIds: data.groups,
+					searchLabel: t('mcp', 'Search groups'),
+					listLabel: t('mcp', 'Server log groups'),
+					emptyOptionsText: t('mcp', 'No groups found; only administrators can read the log.'),
+					noMatchText: t('mcp', 'No match.'),
+					save: async (nextIds, previousIds) => {
+						return api('PUT', '/api/logs-access', { groups: nextIds, previous: previousIds, version: version })
+					},
+					onSaved: async (data) => {
+						show(data)
+						// The matrix shows the log column per user from the same gate, so it is reloaded.
+						load()
+					},
+					onError: async (e) => {
+						if (e.message === '409') {
+							notifyError(t('mcp', 'The groups were changed in another window or by another administrator; the current list was loaded.'))
+							load()
+						} else {
+							notifyError(t('mcp', 'Could not save the groups that may read the server log.'))
+						}
+						await reload()
+					},
+				})
+			} else {
+				picker.setOptions(options, data.groups)
+			}
+			paintSummary(data.groups, options)
+		}
+
+		/**
+		 * The effective readers, as one line: groups are a gate on top of the per-user grant of the matrix.
+		 *
+		 * @param {string[]} groups the saved group ids
+		 * @param {Array<{id: string, label: string}>} options the known groups, for their display names
+		 */
+		function paintSummary(groups, options) {
+			if (!summary) {
 				return
 			}
-			container.replaceChildren(...data.allGroups.map((group) => groupBox(group.id, group.displayName)), ...missing)
+			const names = groups.map((id) => (options.find((option) => option.id === id) || { label: id }).label).join(', ')
+			summary.textContent = groups.length === 0
+				? t('mcp', 'Log access: administrators only. Each member still needs the “Server log” permission in the “Access and permissions” tab.')
+				: t('mcp', 'Log access: administrators + {count} groups ({names}). Each member still needs the “Server log” permission in the “Access and permissions” tab.', { count: groups.length, names: names })
 		}
 
 		/** Loads the list again, after a conflict or a failure. */
@@ -834,45 +825,12 @@
 			try {
 				show(await api('GET', '/api/logs-access'))
 			} catch (e) {
-				container.setAttribute('aria-busy', 'false')
-				container.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the groups.') }))
-			}
-		}
-
-		/**
-		 * @param {HTMLInputElement} box checkbox that changed
-		 * @param {string} gid group id of the checkbox
-		 */
-		async function save(box, gid) {
-			if (saving) {
-				return
-			}
-			saving = true
-			const next = new Set(selected)
-			if (box.checked) {
-				next.add(gid)
-			} else {
-				next.delete(gid)
-			}
-			setLocked(true)
-			status.textContent = t('mcp', 'Saving…')
-			try {
-				show(await api('PUT', '/api/logs-access', { groups: Array.from(next), previous: Array.from(selected), version: version }))
-				status.textContent = t('mcp', 'Saved')
-				// The matrix shows the log column per user from the same gate, so it is reloaded.
-				load()
-			} catch (e) {
-				status.textContent = t('mcp', 'Not saved')
-				if (e.message === '409') {
-					notifyError(t('mcp', 'The groups were changed in another window or by another administrator; the current list was loaded.'))
-					load()
+				if (picker) {
+					picker.showFallback(t('mcp', 'Could not load the groups.'))
 				} else {
-					notifyError(t('mcp', 'Could not save the groups that may read the server log.'))
+					container.setAttribute('aria-busy', 'false')
+					container.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the groups.') }))
 				}
-				await reload()
-			} finally {
-				saving = false
-				setLocked(false)
 			}
 		}
 
