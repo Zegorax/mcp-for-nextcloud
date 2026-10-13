@@ -949,6 +949,9 @@
     "Could not load the log privacy setting." : "Não foi possível carregar a configuração de privacidade do log.",
     "Could not change the log privacy setting." : "Não foi possível alterar a configuração de privacidade do log.",
     "{group} (group removed)" : "{group} (grupo removido)",
-    "The groups were changed in another window or by another administrator; the current list was loaded." : "Os grupos foram alterados em outra janela ou por outro administrador; a lista atual foi carregada."
+    "The groups were changed in another window or by another administrator; the current list was loaded." : "Os grupos foram alterados em outra janela ou por outro administrador; a lista atual foi carregada.",
+    "Task categories must be a list of at most %s texts." : "As categorias da tarefa devem ser uma lista de no máximo %s textos.",
+    "Each task category must have 1 to %s characters and no control characters." : "Cada categoria da tarefa deve ter de 1 a %s caracteres e nenhum caractere de controle.",
+    "Categories" : "Categorias"
 },"pluralForm" :"nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

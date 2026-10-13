@@ -112,4 +112,64 @@ final class PlanTextTest extends TestCase {
         self::assertSame("`a'b *c* [d](e)`", PlanText::code("a`b\n*c* [d](e)"));
         self::assertSame('', PlanText::code(" \n "));
     }
+
+    public function testQuotedNamesKeepSimpleTextReadableAndEscapeTheirDelimiters(): void {
+        self::assertSame('"Work"', PlanText::quoted('Work'));
+        self::assertSame('"Health, Fitness"', PlanText::quoted('Health, Fitness'));
+        self::assertSame('"Saúde"', PlanText::quoted('Saúde'));
+        self::assertSame('"A”, “B"', PlanText::quoted('A”, “B'));
+        foreach (['A", "B', 'back\\slash', 'literal\\u0020', "a  b", "a\u{00a0}b", "a\u{200b}b"] as $name) {
+            $json = str_replace('\\\\', '\\', PlanText::quoted($name));
+            self::assertSame($name, json_decode($json, true, 512, JSON_THROW_ON_ERROR), 'the displayed JSON string retains the exact name');
+        }
+    }
+
+    public function testQuotedWhitespaceAndFormatCharactersAreVisible(): void {
+        self::assertSame('"a\\\\u0020\\\\u0020b"', PlanText::quoted('a  b'));
+        self::assertSame('"a\\\\u00a0b"', PlanText::quoted("a\u{00a0}b"));
+        self::assertSame('"a\\\\u2028b"', PlanText::quoted("a\u{2028}b"));
+        self::assertSame('"a\\\\u200bb"', PlanText::quoted("a\u{200b}b"));
+        self::assertSame('"a\\\\u202eb"', PlanText::quoted("a\u{202e}b"));
+        self::assertSame('"a\\\\nb"', PlanText::quoted("a\nb"));
+        self::assertNotSame(PlanText::quoted('a  b'), PlanText::quoted('a b'));
+        self::assertNotSame(PlanText::quoted("a\u{00a0}b"), PlanText::quoted('a\\u00a0b'));
+    }
+
+    public function testQuotedNamesRemainInertMarkdownAndAreNeverCutAfterExpansion(): void {
+        $out = PlanText::quoted('* _ ` [x](https://evil.example) <b> & www.evil.example');
+        self::assertStringContainsString('\\* \\_ \\` \\[x\\]\\(', $out);
+        self::assertStringNotContainsString('https://', $out);
+        self::assertStringNotContainsString('www.', $out);
+        self::assertStringNotContainsString('<b>', $out);
+        $name = 'a' . str_repeat(' ', 253) . '"';
+        $out = PlanText::quoted($name);
+        self::assertGreaterThan(255, mb_strlen($out));
+        self::assertStringNotContainsString('…', $out);
+        self::assertSame($name, json_decode(str_replace('\\\\', '\\', $out), true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    public function testQuotedDelAndC1ControlsAreVisibleAndReversible(): void {
+        foreach ([
+            '007f' => "a\x7fb",
+            '0085' => "a\u{85}b",
+            '009b' => "a\u{9b}b",
+        ] as $unit => $name) {
+            $out = PlanText::quoted($name);
+            self::assertSame('"a\\\\u' . $unit . 'b"', $out);
+            self::assertSame(0, preg_match('/\p{Cc}/u', $out), 'no control character remains in the plan');
+            self::assertSame($name, json_decode(str_replace('\\\\', '\\', $out), true, 512, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function testQuotedC0ControlsAreNotEscapedTwiceAndSupplementaryFormatCharactersStayReversible(): void {
+        foreach (range(0, 31) as $control) {
+            $name = 'a' . chr($control) . 'b';
+            $json = str_replace('\\\\', '\\', PlanText::quoted($name));
+            self::assertSame($name, json_decode($json, true, 512, JSON_THROW_ON_ERROR));
+        }
+        $name = "a\u{e0001}b";
+        $out = PlanText::quoted($name);
+        self::assertSame('"a\\\\udb40\\\\udc01b"', $out, 'a supplementary code point uses a JSON surrogate pair');
+        self::assertSame($name, json_decode(str_replace('\\\\', '\\', $out), true, 512, JSON_THROW_ON_ERROR));
+    }
 }

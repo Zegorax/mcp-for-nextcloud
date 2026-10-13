@@ -195,6 +195,89 @@ final class TasksPlanRendererTest extends TestCase {
     }
 
     /** Every write tool of the module renders a plan of its own: none falls back to the generic field list. */
+    public function testEditShowsTheCategoriesBeforeAndAfter(): void {
+        Translator::use(new JsonL10n('pt_BR'));
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:Home,Errands\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['Errands', 'Health, Fitness']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categorias: "Home", "Errands" → "Errands", "Health, Fitness"', $body);
+    }
+
+    public function testClearingTheCategoriesShowsThemBecomingEmpty(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:Home\r\nCATEGORIES:Errands\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => []]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "Home", "Errands" → empty', $body);
+    }
+
+    public function testCategoriesOnlyAppearWhenTheyChangeOrAreSet(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:Home\r\nSUMMARY:", $this->data);
+        $unchanged = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'summary' => 'Buy bread']);
+        self::assertIsString($unchanged);
+        self::assertStringNotContainsString('Categories', $unchanged);
+        $created = $this->render('tasks_create_task', ['calendar' => self::PATH, 'summary' => 'Buy milk', 'categories' => ['Errands', 'Home']]);
+        self::assertIsString($created);
+        self::assertStringContainsString('- Categories: "Errands", "Home"', $created);
+    }
+
+    public function testACommaInsideANameReadsApartFromTwoNames(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:A\\, B\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['A', 'B']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "A, B" → "A", "B"', $body);
+    }
+
+    public function testAChangeAfterALongCategoryIsNotHiddenByACut(): void {
+        $long = str_repeat('a', 201);
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:$long,old\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => [$long, 'new']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "' . $long . '", "old" → "' . $long . '", "new"', $body);
+        $longer = str_repeat('b', 254);
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:{$longer}x\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => [$longer . 'y']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('"' . $longer . 'y"', $body, 'a name of 255 characters is shown whole');
+    }
+
+    public function testQuotesInsideACategoryCannotImitateTwoCategories(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:A”\\, “B\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['A', 'B']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "A”, “B" → "A", "B"', $body);
+        $this->data = str_replace('CATEGORIES:A”\\, “B', 'CATEGORIES:A"\\, "B', $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['A', 'B']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "A\\\\", \\\\"B" → "A", "B"', $body);
+    }
+
+    public function testRepeatedSpacesStayVisibleWithoutChangingTheStoredNames(): void {
+        Translator::use(new JsonL10n('pt_BR'));
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:a  b\r\nSUMMARY:", $this->data);
+        $module = $this->module();
+        $plan = $module->preview('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['a b']], 'alice');
+        self::assertSame(['a  b'], $plan['before']['categories']);
+        self::assertSame(['a b'], $plan['after']['categories']);
+        $body = $module->renderPlan('tasks_edit_task', $plan);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categorias: "a\\\\u0020\\\\u0020b" → "a b"', $body);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => []]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categorias: "a\\\\u0020\\\\u0020b" → vazio', $body);
+    }
+
+    public function testAnImportedDelControlCannotHideACategoryChange(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:a\x7fb\r\nSUMMARY:", $this->data);
+        $module = $this->module();
+        $plan = $module->preview('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['ab']], 'alice');
+        self::assertSame(["a\x7fb"], $plan['before']['categories']);
+        self::assertSame(['ab'], $plan['after']['categories']);
+        $body = $module->renderPlan('tasks_edit_task', $plan);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: "a\\\\u007fb" → "ab"', $body);
+        self::assertStringNotContainsString("\x7f", $body);
+    }
+
     public function testEveryWriteToolHasAReadablePlan(): void {
         $module = $this->module();
         $this->assertEveryWriteToolHasAReadablePlan($module, [
