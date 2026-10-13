@@ -26,7 +26,7 @@ AI assistants are most useful when they can reach the tools a team already uses.
 - **Sign in with Nextcloud.** Clients such as claude.ai use OAuth ("Sign in"): the user logs into their own Nextcloud and clicks **Allow**. App passwords (HTTP Basic) still work for other clients.
 - **Admin in control.** Service on/off switch, per-user eligibility and a **user × permission matrix**. Reading is on by default for eligible users; every write, move, delete, transfer, restore or share is **off until the admin grants it**, sharing a file and creating a public link being two separate grants.
 - **Nextcloud ACLs always apply.** The app never widens what a user can already do in Nextcloud.
-- **Exclude sensitive files from MCP access by system tag.** Administrators can configure system tags (recommended: restricted or invisible) to make tagged files and folders completely invisible to the tools and resources of this MCP connector, including everything below a tagged folder. It fails closed: if a tag lookup errors, the item stays hidden. Backups taken by the app inherit the tag before they receive any content.
+- **Exclude sensitive files from MCP access by system tag.** Administrators can configure system tags (recommended: restricted or invisible) to make tagged files and folders completely invisible to the tools and resources of this MCP connector, including everything below a tagged folder (the server log tools only while "Hide the text of log messages" is on). It fails closed: if a tag lookup errors, the item stays hidden. Backups taken by the app inherit the tag before they receive any content.
 
 ## What's new in 1.0
 

@@ -570,7 +570,7 @@
 					title: tag.type === 'invisible'
 						? t('mcp', 'Visible and assignable only by administrators')
 						: (tag.type === 'restricted'
-							? t('mcp', 'Visible to users, assignable only by administrators')
+							? t('mcp', 'Visible to users, assignable only by administrators and the groups they allow')
 							: t('mcp', 'Users can assign and remove this tag')),
 				}, [
 					tag.type === 'invisible' ? t('mcp', 'Invisible') : (tag.type === 'restricted' ? t('mcp', 'Restricted') : t('mcp', 'Collaborative'))

@@ -93,7 +93,8 @@
 
     <div class="section mcp-block" id="mcp-block-tags">
         <h2><?php p($l->t('Excluded from MCP access')); ?></h2>
-        <p class="settings-hint mcp-hint"><?php p($l->t('Files and folders tagged with a selected tag, and everything inside those folders, are completely hidden from the tools of this MCP connector. The protection applies only to this connector: it does not cover other AI tools or connectors, and nothing stops someone from sending a file to an AI by hand. Recommended: restricted tags, which only administrators can assign, and invisible tags; users with edit access can remove collaborative tags.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('Files and folders tagged with a selected tag, and everything inside those folders, are completely hidden from the tools of this MCP connector. The server log tools respect this only while “Hide the text of log messages” is on.')); ?></p>
+        <p class="settings-hint mcp-hint"><?php p($l->t('The protection applies only to this connector: it does not cover other AI tools or connectors, and nothing stops someone from sending a file to an AI by hand. Only the tags selected here exclude files; any other tag is an ordinary label. Recommended: invisible tags, which only administrators can assign or remove, or restricted tags, which only administrators and the groups they allow can assign or remove; users with edit access can remove collaborative tags.')); ?></p>
         <div id="mcp-hidden-tags-section" class="mcp-hidden-tags">
             <div id="mcp-tags-list" class="mcp-tags-container" aria-busy="true">
                 <span class="mcp-tags-loading"><?php p($l->t('Loading tags…')); ?></span>
