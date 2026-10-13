@@ -103,6 +103,10 @@
                 <option value="eligible"><?php p($l->t('Only users who can connect')); ?></option>
                 <option value="connected"><?php p($l->t('Only connected users')); ?></option>
             </select>
+            <label for="mcp-app"><?php p($l->t('Show apps')); ?></label>
+            <select id="mcp-app" disabled>
+                <option value=""><?php p($l->t('All apps')); ?></option>
+            </select>
             <span>
                 <input type="checkbox" class="checkbox" id="mcp-compact">
                 <label for="mcp-compact"><?php p($l->t('Compact rows')); ?></label>
@@ -113,6 +117,11 @@
                 <span id="mcp-page-info"></span>
                 <button type="button" id="mcp-next"><?php p($l->t('Next')); ?></button>
             </span>
+        </div>
+        <p class="settings-hint mcp-hint mcp-legend"><?php p($l->t('In the table, a checked box means allowed, an empty box means denied and ⊘ means unavailable; point at ⊘ to see why.')); ?></p>
+        <div class="mcp-bulk-notice" id="mcp-bulk-notice" role="status" aria-live="polite">
+            <span id="mcp-bulk-notice-text"></span>
+            <button type="button" id="mcp-bulk-undo" hidden><?php p($l->t('Undo')); ?></button>
         </div>
         <div class="mcp-matrix-wrap">
             <table class="mcp-matrix" id="mcp-matrix" aria-busy="true">

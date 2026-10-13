@@ -181,6 +181,56 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString('data-scope="admin"', $template);
     }
 
+    /** The catalog-driven app selector is labelled and does not alter server-side user filters. */
+    public function testMatrixAppFilterIsLabelledAndOnlyFiltersColumns(): void {
+        $app = dirname(__DIR__, 3);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertStringContainsString('<label for="mcp-app">', $template);
+        $this->assertStringContainsString('<select id="mcp-app" disabled>', $template);
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString('Object.keys(state.data.catalog)', $script);
+        $this->assertStringContainsString('header.dataset.module = module', $script);
+        $this->assertStringContainsString('cell.dataset.module = module', $script);
+        $this->assertStringContainsString("params.set('app', state.app)", $script);
+        $this->assertStringContainsString("new URLSearchParams({ search: state.search, group: state.group, filter: state.filter, page: String(state.page) })", $script);
+        $this->assertStringContainsString("{ module, operation, granted: null }", $script);
+        $tabs = (string)file_get_contents($app . '/js/admin-tabs.js');
+        $this->assertStringContainsString("const hash = fragment.split('?')[0]", $tabs);
+        $this->assertStringContainsString('tabQueries.set(hash, fragment.slice(hash.length))', $tabs);
+    }
+
+    /** The three permission states are drawn in one place and the bulk actions confirm, report and undo with the same endpoint. */
+    public function testMatrixStatesAndBulkUndoStayInTheExistingEndpoints(): void {
+        $app = dirname(__DIR__, 3);
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString('const PERMISSION_STATES = {', $script);
+        foreach (['allowed', 'denied', 'unavailable'] as $state) {
+            $this->assertStringContainsString("$state: { className: 'mcp-state-$state'", $script);
+        }
+        $this->assertStringContainsString("textContent: '⊘'", $script);
+        $this->assertStringContainsString("mark.setAttribute('aria-hidden', 'true')", $script);
+        $this->assertSame(1, substr_count($script, "api('POST', '/api/grants/bulk'"), 'bulk and undo share one request');
+        $this->assertStringContainsString('async function undoBulk(', $script);
+        $this->assertStringNotContainsString('innerHTML', $script);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertStringContainsString('id="mcp-bulk-notice" role="status" aria-live="polite"', $template);
+        $this->assertStringContainsString('id="mcp-bulk-undo" hidden', $template);
+        $css = (string)file_get_contents($app . '/css/admin.css');
+        $this->assertStringContainsString('.mcp-state-unavailable', $css);
+        $this->assertDoesNotMatchRegularExpression('/#mcp-admin \.mcp-(state|bulk-notice|sr-only)[^{]*\{[^}]*#[0-9a-fA-F]{3,6}\b/', $css);
+    }
+
+    /** Names, header rows and their corner have separate stacking layers; desktop legacy has no gap. */
+    public function testMatrixStickyLayersAndToggleClearanceAreScoped(): void {
+        $css = (string)file_get_contents(dirname(__DIR__, 3) . '/css/admin.css');
+        $this->assertMatchesRegularExpression('/\.mcp-matrix \.mcp-user-col \{[^}]*position: sticky;[^}]*inset-inline-start: 0;[^}]*z-index: 1;/s', $css);
+        $this->assertMatchesRegularExpression('/\.mcp-matrix thead th \{[^}]*position: sticky;[^}]*top: 0;[^}]*z-index: 2;/s', $css);
+        $this->assertMatchesRegularExpression('/\.mcp-matrix thead \.mcp-user-col \{[^}]*z-index: 3;/s', $css);
+        $this->assertStringContainsString('#app-content-vue #mcp-admin .mcp-tab-bar', $css);
+        $this->assertStringContainsString('#app-content-vue .settings-content #mcp-admin .mcp-tab-bar', $css);
+        $this->assertMatchesRegularExpression('/@media \(max-width: 1024px\) \{\s*#app-content #mcp-admin \.mcp-tab-bar/', $css);
+    }
+
     /** The personal page loads the shared connections script, and every id that script looks up appears once. */
     public function testPersonalTemplateCarriesTheConnectionsBlock(): void {
         $app = dirname(__DIR__, 3);

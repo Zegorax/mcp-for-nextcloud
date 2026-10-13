@@ -15,15 +15,26 @@
 	flex-wrap: nowrap;
 	gap: 4px;
 	margin-bottom: 16px;
-	/* Legacy settings have no wrapper reserving the navigation toggle's space. */
-	padding-block-start: calc(var(--default-clickable-area) + 2 * var(--app-navigation-padding, calc(2 * var(--default-grid-baseline))));
+	padding-block-start: 0;
 	overflow-x: auto;
 	border-bottom: 1px solid var(--color-border);
 }
 
+/* Vue settings have a navigation toggle at every viewport size (NC 34+). */
+#app-content-vue #mcp-admin .mcp-tab-bar {
+	padding-block-start: calc(var(--default-clickable-area) + 2 * var(--app-navigation-padding, calc(2 * var(--default-grid-baseline))));
+}
+
+/* Legacy settings show their toggle only on mobile (NC 32/33). */
+@media (max-width: 1024px) {
+	#app-content #mcp-admin .mcp-tab-bar {
+		padding-block-start: calc(var(--default-clickable-area) + 2 * var(--app-navigation-padding, calc(2 * var(--default-grid-baseline))));
+	}
+}
+
 /* NC 35 SettingsContentWrapper already reserves the toggle clearance, minus the
    seven grid units normally supplied by the first settings section. */
-.settings-content #mcp-admin .mcp-tab-bar {
+#app-content-vue .settings-content #mcp-admin .mcp-tab-bar {
 	padding-block-start: calc(7 * var(--default-grid-baseline));
 }
 
@@ -274,6 +285,11 @@
 	font-weight: bold;
 }
 
+/* Header menus must paint above the second header row and the sticky corner. */
+#mcp-admin .mcp-matrix thead th:has(.mcp-bulk-menu[open]) {
+	z-index: 4;
+}
+
 #mcp-admin .mcp-matrix thead th[title] {
 	cursor: help;
 }
@@ -317,6 +333,7 @@
 	border-inline-start: 1px solid var(--color-border);
 }
 
+/* Body names sit above scrolling cells (1); headers above names (2); corner above both (3). */
 #mcp-admin .mcp-matrix .mcp-user-col {
 	position: sticky;
 	inset-inline-start: 0;
@@ -354,8 +371,43 @@
 	color: var(--color-text-maxcontrast);
 }
 
-#mcp-admin .mcp-dim {
-	opacity: 0.55;
+/* The three states of a permission cell, none by colour alone: a checked box, an empty box, a "no entry" mark. */
+#mcp-admin .mcp-state-unavailable {
+	background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--color-border) 6px 7px);
+	color: var(--color-text-maxcontrast);
+	cursor: help;
+}
+
+#mcp-admin .mcp-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+#mcp-admin .mcp-state-mark {
+	display: inline-block;
+	font-size: 1.25em;
+	line-height: 1;
+}
+
+#mcp-admin .mcp-bulk-notice {
+	display: none;
+	align-items: center;
+	gap: 12px;
+	margin: 8px 0;
+	padding: 6px 12px;
+	border: 1px solid var(--color-border-dark);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-background-dark);
+	color: var(--color-main-text);
+}
+
+#mcp-admin .mcp-bulk-notice.mcp-notice-on {
+	display: flex;
 }
 
 #mcp-admin .mcp-badge-connected {
