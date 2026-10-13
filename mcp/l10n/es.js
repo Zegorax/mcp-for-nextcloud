@@ -931,6 +931,9 @@ OC.L10N.register(
     "Could not load the log privacy setting." : "No se pudo cargar la configuración de privacidad del registro.",
     "Could not change the log privacy setting." : "No se pudo cambiar la configuración de privacidad del registro.",
     "{group} (group removed)" : "{group} (grupo eliminado)",
-    "The groups were changed in another window or by another administrator; the current list was loaded." : "Los grupos se cambiaron en otra ventana o por otro administrador; se cargó la lista actual."
+    "The groups were changed in another window or by another administrator; the current list was loaded." : "Los grupos se cambiaron en otra ventana o por otro administrador; se cargó la lista actual.",
+    "Task categories must be a list of at most %s texts." : "Las categorías de la tarea deben ser una lista de como máximo %s textos.",
+    "Each task category must have 1 to %s characters and no control characters." : "Cada categoría de la tarea debe tener de 1 a %s caracteres y ningún carácter de control.",
+    "Categories" : "Categorías"
 },
 "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;");

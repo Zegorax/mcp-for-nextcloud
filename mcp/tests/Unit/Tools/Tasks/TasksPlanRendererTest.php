@@ -195,6 +195,31 @@ final class TasksPlanRendererTest extends TestCase {
     }
 
     /** Every write tool of the module renders a plan of its own: none falls back to the generic field list. */
+    public function testEditShowsTheCategoriesBeforeAndAfter(): void {
+        Translator::use(new JsonL10n('pt_BR'));
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:Home,Errands\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => ['Errands', 'Health, Fitness']]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categorias: Home, Errands → Errands, Health, Fitness', $body);
+    }
+
+    public function testClearingTheCategoriesShowsThemBecomingEmpty(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:Home\r\nCATEGORIES:Errands\r\nSUMMARY:", $this->data);
+        $body = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'categories' => []]);
+        self::assertIsString($body);
+        self::assertStringContainsString('- Categories: Home, Errands → empty', $body);
+    }
+
+    public function testCategoriesOnlyAppearWhenTheyChangeOrAreSet(): void {
+        $this->data = str_replace("SUMMARY:", "CATEGORIES:Home\r\nSUMMARY:", $this->data);
+        $unchanged = $this->render('tasks_edit_task', ['calendar' => self::PATH, 'uid' => 't1', 'summary' => 'Buy bread']);
+        self::assertIsString($unchanged);
+        self::assertStringNotContainsString('Categories', $unchanged);
+        $created = $this->render('tasks_create_task', ['calendar' => self::PATH, 'summary' => 'Buy milk', 'categories' => ['Errands', 'Home']]);
+        self::assertIsString($created);
+        self::assertStringContainsString('- Categories: Errands, Home', $created);
+    }
+
     public function testEveryWriteToolHasAReadablePlan(): void {
         $module = $this->module();
         $this->assertEveryWriteToolHasAReadablePlan($module, [

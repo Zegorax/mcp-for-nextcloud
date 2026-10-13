@@ -90,6 +90,13 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
                 'maximum' => 100,
                 'description' => 'Progress percentage. 100 completes the task; a lower value reopens it.',
             ],
+            'categories' => [
+                'type' => 'array',
+                'maxItems' => TaskData::MAX_CATEGORIES,
+                'items' => ['type' => 'string', 'maxLength' => 1024],
+                'description' => 'Free-text task categories, as in the Tasks app (1-255 characters each). '
+                    . 'The list replaces all existing categories; [] clears them; omit to preserve them.',
+            ],
         ];
         $definitions = [
             [
@@ -101,7 +108,7 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
             ],
             [
                 'tasks_list_tasks',
-                'List tasks, including undated tasks, in one visible task calendar.',
+                'List tasks, including undated tasks, in one visible task calendar, optionally only those with a category.',
                 'read',
                 [
                     'calendar' => $calendar,
@@ -110,6 +117,11 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
                         'default' => false,
                         'description' => 'Include completed tasks.',
                     ],
+                    'category' => Schema::text(
+                        'Only list tasks with this category, compared exactly but ignoring case.',
+                        1,
+                        TaskData::MAX_CATEGORY_LENGTH
+                    ),
                     'limit' => Schema::limit(),
                     'offset' => Schema::offset(),
                 ],
@@ -166,6 +178,9 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
             'Undated tasks are included. Completed tasks are hidden by default in listings. '
                 . 'Recurring tasks can be read; changing recurring tasks or tasks with participants is '
                 . 'refused to protect their series and scheduling.',
+            'Task categories are free text, as in the Tasks app. On create and edit, a categories list '
+                . 'replaces all existing categories, [] clears them and omitting the field preserves them. '
+                . 'tasks_list_tasks can filter by one category, ignoring case.',
             'Private and confidential tasks in shared calendars are hidden. Writable shares '
                 . 'require confirm_shared=true after showing the owner notice.',
             'Every write starts with a before/after plan. Wait for explicit approval before '
@@ -245,6 +260,10 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
                         continue;
                     }
                     if (!($arguments['include_completed'] ?? false) && $item['status'] === 'COMPLETED') {
+                        continue;
+                    }
+                    // Filter before counting the offset, so pages are taken from the matching tasks only.
+                    if (isset($arguments['category']) && !$this->data->hasCategory($item, $arguments['category'])) {
                         continue;
                     }
                     if ($matched++ < $offset) {
@@ -335,7 +354,7 @@ final class TasksModule implements ToolModule, PreviewsWrites, ToolGuideNotes, R
         }
         if ($name === 'tasks_edit_task' && array_intersect(
             array_keys($arguments),
-            ['summary', 'description', 'priority', 'start', 'due', 'percentComplete']
+            ['summary', 'description', 'priority', 'start', 'due', 'percentComplete', 'categories']
         ) === []) {
             throw new InvalidArgumentException(Translator::t('Provide at least one field to change.'));
         }
