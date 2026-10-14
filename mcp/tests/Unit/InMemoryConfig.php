@@ -31,8 +31,8 @@ final class InMemoryConfig {
      * A GrantPolicy over an IConfig mock of this class and the IUserConfig double that goes with it
      * (the policy lists flagged users through IUserConfig::searchUsersByValueString).
      */
-    public static function policy(IConfig $config, \OCA\Mcp\OAuth\OAuthStore $store): \OCA\Mcp\Service\GrantPolicy {
-        return new \OCA\Mcp\Service\GrantPolicy($config, $store, self::$userConfigs[$config]);
+    public static function policy(IConfig $config, \OCA\Mcp\OAuth\OAuthStore $store, ?\OCA\Mcp\Service\GroupGrants $groups = null): \OCA\Mcp\Service\GrantPolicy {
+        return new \OCA\Mcp\Service\GrantPolicy($config, $store, self::$userConfigs[$config], $groups);
     }
 
     public function mock(TestCase $test): IConfig {
@@ -85,6 +85,10 @@ final class InMemoryConfig {
         $config->method('setUserValue')->willReturnCallback(function ($uid, $app, $key, $value): void {
             $this->accessed[] = ['user', $app, $key];
             $this->user[$uid][$app][$key] = $value;
+        });
+        $config->method('deleteUserValue')->willReturnCallback(function ($uid, $app, $key): void {
+            $this->accessed[] = ['user', $app, $key];
+            unset($this->user[$uid][$app][$key]);
         });
         return $config;
     }

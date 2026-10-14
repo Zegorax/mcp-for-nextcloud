@@ -57,7 +57,9 @@ class GrantsController extends Controller {
     }
 
     /**
-     * Body {eligible: bool} or {module, operation, granted: bool}, never both.
+     * Body {eligible: bool} or {module, operation, granted: bool}, never both; or the same with
+     * state: "allow" | "deny" | "inherit" instead of the boolean, where "inherit" removes the individual value so
+     * the user's groups (or the default) decide.
      *
      * @param string $uid existing Nextcloud user id
      * @return JSONResponse the user's updated row, or 400
@@ -66,12 +68,25 @@ class GrantsController extends Controller {
         return $this->guard(function () use ($uid): array {
             $user = $this->user($uid);
             $eligible = $this->request->getParam('eligible');
-            $hasGrant = $this->request->getParam('module') !== null || $this->request->getParam('operation') !== null || $this->request->getParam('granted') !== null;
-            if ($eligible !== null && !$hasGrant) {
+            $state = $this->request->getParam('state');
+            $granted = $this->request->getParam('granted');
+            $hasGrant = $this->request->getParam('module') !== null || $this->request->getParam('operation') !== null;
+            if ($state !== null) {
+                if ($eligible !== null || $granted !== null) {
+                    throw new InvalidArgumentException('Invalid request');
+                }
+                $value = self::state($state);
+                if ($hasGrant) {
+                    [$module, $operation] = self::grant($this->request->getParam('module'), $this->request->getParam('operation'));
+                    $this->policy->setGrantOverride($uid, $module, $operation, $value);
+                } else {
+                    $this->policy->setEligibleOverride($uid, $value);
+                }
+            } elseif ($eligible !== null && !$hasGrant && $granted === null) {
                 $this->policy->setEligible($uid, self::bool($eligible));
-            } elseif ($eligible === null && $hasGrant) {
+            } elseif ($eligible === null && ($hasGrant || $granted !== null)) {
                 [$module, $operation] = self::grant($this->request->getParam('module'), $this->request->getParam('operation'));
-                $this->policy->setGrant($uid, $module, $operation, self::bool($this->request->getParam('granted')));
+                $this->policy->setGrant($uid, $module, $operation, self::bool($granted));
             } else {
                 throw new InvalidArgumentException('Invalid request');
             }
@@ -80,8 +95,9 @@ class GrantsController extends Controller {
     }
 
     /**
-     * Body {uids: list<string> (1..PAGE_SIZE), module: string|null, operation: string, granted: bool}; operation
-     * "eligible" with module null toggles eligibility. Every uid is validated before anything is written.
+     * Body {uids: list<string> (1..PAGE_SIZE), module: string|null, operation: string, granted: bool}, or state
+     * "allow" | "deny" | "inherit" instead of granted; operation "eligible" with module null changes eligibility.
+     * Every uid is validated before anything is written.
      *
      * @return JSONResponse {updated: int}, or 400
      */
@@ -93,14 +109,18 @@ class GrantsController extends Controller {
             }
             $module = $this->request->getParam('module');
             $operation = $this->request->getParam('operation');
-            $granted = self::bool($this->request->getParam('granted'));
+            $state = $this->request->getParam('state');
+            if ($state !== null && $this->request->getParam('granted') !== null) {
+                throw new InvalidArgumentException('Invalid request');
+            }
+            $granted = $state !== null ? self::state($state) : self::bool($this->request->getParam('granted'));
             $eligibility = $operation === self::ELIGIBLE && $module === null;
             if (!$eligibility) {
                 [$module, $operation] = self::grant($module, $operation);
             }
             $uids = array_values(array_unique(array_map(fn ($uid) => $this->user(is_string($uid) ? $uid : '')->getUID(), $uids)));
             foreach ($uids as $uid) {
-                $eligibility ? $this->policy->setEligible($uid, $granted) : $this->policy->setGrant($uid, $module, $operation, $granted);
+                $eligibility ? $this->policy->setEligibleOverride($uid, $granted) : $this->policy->setGrantOverride($uid, $module, $operation, $granted);
             }
             return ['updated' => count($uids)];
         });
@@ -278,6 +298,20 @@ class GrantsController extends Controller {
             throw new InvalidArgumentException('Invalid request');
         }
         return [$module, $operation];
+    }
+
+    /**
+     * @param mixed $value request value: "allow", "deny" or "inherit"
+     * @return bool|null true allow, false deny, null inherit
+     * @throws InvalidArgumentException for anything else
+     */
+    private static function state(mixed $value): ?bool {
+        return match ($value) {
+            'allow' => true,
+            'deny' => false,
+            'inherit' => null,
+            default => throw new InvalidArgumentException('Invalid request'),
+        };
     }
 
     /**

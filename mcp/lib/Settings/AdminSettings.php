@@ -38,7 +38,7 @@ class AdminSettings implements ISettings {
 
     /** @return TemplateResponse the rendered settings section */
     public function getForm(): TemplateResponse {
-        $eligible = $this->policy->flaggedUsers(GrantPolicy::ELIGIBLE_KEY);
+        $eligible = $this->policy->eligibleUsers();
         return new TemplateResponse('mcp', 'admin', [
             'endpoint' => $this->urlGenerator->linkToRouteAbsolute('mcp.mcp.post'),
             'serviceEnabled' => $this->policy->globalEnabled(),
