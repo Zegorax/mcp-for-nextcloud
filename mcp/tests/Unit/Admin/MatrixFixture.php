@@ -80,8 +80,8 @@ final class MatrixFixture {
 
     /** @return list<string> uids whose uid, name or e-mail contain the pattern, ordered by name */
     public function matching(string $pattern): array {
-        $uids = array_keys(array_filter($this->users, fn ($u, $uid) => $pattern === ''
-            || stripos($uid, $pattern) !== false || stripos($u['name'], $pattern) !== false || stripos($u['email'], $pattern) !== false, ARRAY_FILTER_USE_BOTH));
+        $uids = array_map('strval', array_keys(array_filter($this->users, fn ($u, $uid) => $pattern === ''
+            || stripos((string)$uid, $pattern) !== false || stripos($u['name'], $pattern) !== false || stripos($u['email'], $pattern) !== false, ARRAY_FILTER_USE_BOTH)));
         usort($uids, fn ($a, $b) => strcasecmp($this->users[$a]['name'], $this->users[$b]['name']));
         return $uids;
     }
@@ -91,6 +91,7 @@ final class MatrixFixture {
         $manager->method('get')->willReturnCallback(fn (string $gid) => isset($this->groups[$gid]) ? $this->group($gid) : null);
         $manager->method('search')->willReturnCallback(fn () => array_map(fn ($gid) => $this->group($gid), array_keys($this->groups)));
         $manager->method('isInGroup')->willReturnCallback(fn (string $uid, string $gid) => in_array($uid, $this->groups[$gid] ?? [], true));
+        $manager->method('getUserGroupIds')->willReturnCallback(fn (IUser $user) => array_keys(array_filter($this->groups, fn (array $members) => in_array($user->getUID(), $members, true))));
         $manager->method('isAdmin')->willReturnCallback(fn (string $uid) => in_array($uid, $this->groups['admin'], true));
         $manager->method('displayNamesInGroup')->willReturnCallback(function ($gid, $search = '', $limit = -1, $offset = 0): array {
             $uids = array_values(array_intersect($this->matching($search), $this->groups[$gid] ?? []));

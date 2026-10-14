@@ -24,7 +24,7 @@ AI assistants are most useful when they can reach the tools a team already uses.
 
 - **One URL per instance.** `https://cloud.example.com/apps/mcp/`. No subdomain, no extra service, no Node/Docker/AppAPI.
 - **Sign in with Nextcloud.** Clients such as claude.ai use OAuth ("Sign in"): the user logs into their own Nextcloud and clicks **Allow**. App passwords (HTTP Basic) still work for other clients.
-- **Admin in control.** Service on/off switch, per-user eligibility and a **user × permission matrix**. Reading is on by default for eligible users; every write, move, delete, transfer, restore or share is **off until the admin grants it**, sharing a file and creating a public link being two separate grants.
+- **Admin in control.** Service on/off switch, eligibility and permissions **per group or per user** (a **user × permission matrix** plus group rules, with a view that explains each user's effective access). Reading is on by default for eligible users; every write, move, delete, transfer, restore or share is **off until the admin grants it**, sharing a file and creating a public link being two separate grants.
 - **Nextcloud ACLs always apply.** The app never widens what a user can already do in Nextcloud.
 - **Exclude sensitive files from MCP access by system tag.** Administrators can configure system tags (recommended: restricted or invisible) to make tagged files and folders completely invisible to the tools and resources of this MCP connector, including everything below a tagged folder (the server log tools only while "Hide the text of log messages" is on). It fails closed: if a tag lookup errors, the item stays hidden. Backups taken by the app inherit the tag before they receive any content.
 
@@ -47,6 +47,7 @@ From 1.0.0 on the app is published in the [Nextcloud App Store](https://apps.nex
   - **Admin page:** five tabs with their own address, searchable pickers for the server log groups and the exclusion tags, and a permission matrix that can show one app at a time and keeps the names in view. Each cell says Allowed, Denied or Unavailable (with the reason), the "All" menu asks for confirmation that counts who changes, and "Undo" brings the values back for 10 seconds ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
   - **Excluded from MCP access:** the tag section says what it does and what it does not: it hides files from this connector only, who can assign each tag type, and that the server log tools respect it only while "Hide the text of log messages" is on ([#4](https://github.com/sintax-tech/mcp-for-nextcloud/issues/4)).
 - **1.0.8: new name.** The app is now called **MCP for Cloud**: the Nextcloud App Store rules do not allow the Nextcloud name in the name of an app. Nothing changes for you: the app ID, the settings, the permissions and the connections are the same, and there is nothing to do.
+- **1.1.0: group permissions.** A Nextcloud group can now allow or deny "Can connect" and each permission for its members, so access follows your existing groups. Each decision follows one documented order: an individual deny, an individual allow, the groups (a deny in any of a user's groups wins), then the default. Before saving, the group editor shows how many members gain or lose each permission. Clicking a user in the matrix explains their effective access and what blocks it, and every user sees their own access on their personal page. A membership change applies to the next request. Upgrading changes nobody's access: the values you set per user are kept as individual settings, which a group rule does not override ([#3](https://github.com/sintax-tech/mcp-for-nextcloud/issues/3)).
 
 Upgrading from 0.7.0 or later runs the schema migrations by itself (tables `mcp_file_batches`, `mcp_oauth_spent` and `mcp_logs_groups`): no manual step, no `occ`, and nothing changes in `config.php`.
 
@@ -119,7 +120,7 @@ Task deletion uses native calendar trash and is refused when `dav/calendarRetent
 
    Adjust paths and the web server user to your setup. With Docker, run `occ` inside the container.
 
-Then, **configure** in *Administration settings → MCP for Cloud* (the app has its own entry with an icon in the settings menu): turn the service on, mark who may connect, grant write permissions where needed, and select the system tags that exclude sensitive files from MCP access. The page has five tabs, each with its own address: **Overview** (endpoint to copy, service switch, app version, eligible/connected users, active connections and the editable checkout upload limit in MiB, shown next to PHP's `post_max_size` ceiling), **Access and permissions** (the users × permissions matrix, with search, group, "who can connect / connected" and app filters, a fixed column of names, Allowed, Denied or Unavailable in every cell, an "All" menu per module for the users on the page that asks for confirmation and offers "Undo" for 10 seconds, and pagers on top and bottom), **Clients and connections** (OAuth clients and active connections), **Data protection** (**Excluded from MCP access**, the system tags that exclude files) and **Advanced** (**Server log**: the groups whose members may read it besides the administrators, **Log privacy**: the switch that hides the text of log messages while files are excluded by tags, and **OCR**).
+Then, **configure** in *Administration settings → MCP for Cloud* (the app has its own entry with an icon in the settings menu): turn the service on, mark who may connect, grant write permissions where needed, and select the system tags that exclude sensitive files from MCP access. The page has five tabs, each with its own address: **Overview** (endpoint to copy, service switch, app version, eligible/connected users and active connections, each counter a link to the matching list, and **How access works**, which explains "Can connect", the user's personal activation, app permissions, OAuth connections and the order in which individual settings, groups and defaults decide), **Access and permissions**, in three views kept in the address (a **Users** list by default — name, user ID, "Can connect" and where it comes from, personal activation, a short access summary and **Edit**, which opens that user's access grouped by app: for "Can connect" and each operation the result, why, and Allow / Deny / Inherit, each saved at once with "Saved" next to it, also reachable as `#access?user=<uid>`; **Groups**, where a group allows, denies or inherits each permission with a preview of what saving changes; and the users × permissions **Matrix (advanced)**, with search, group, "who can connect / connected" and app filters, a fixed column of names, Allowed, Denied or Unavailable in every cell, an "All" menu per module that applies to the users on the page or, chosen explicitly, to every filtered user on every page, always with a confirmation that counts who changes and "Undo" for 10 seconds, and pagers on top and bottom), **Clients and connections** (OAuth clients, with the allowed client hosts and the self-hosted client's redirect URIs as lists of entries, and active connections), **Data protection** (**Excluded from MCP access**, the system tags that exclude files) and **Advanced** (**Server log**: the groups whose members may read it besides the administrators, **Log privacy**: the switch that hides the text of log messages while files are excluded by tags, **Uploads**: the checkout upload limit in MiB, shown next to PHP's `post_max_size` ceiling, and **OCR**). Every block says under its heading whether its changes save at once or need its Save button.
 
 Server log access groups are stored in the app's own versioned table, created automatically by its native migration. Existing appconfig groups are imported on first read. The admin API returns `version` with GET and requires it on PUT; stale saves get 409. The database compare-and-swap still protects revocations with `filelocking.enabled=false`, when the extra Nextcloud lock becomes Noop.
 
@@ -132,6 +133,7 @@ Every client talks to the same URL, `https://cloud.example.com/apps/mcp/`, and a
 | **Claude** — claude.ai, Claude Desktop, Cowork, Claude Code | OAuth **Sign in**, Claude's published identity (CIMD) | Nothing: `claude.ai` is allowed by default |
 | **ChatGPT** | OAuth **Sign in**, OpenAI's published identity (CIMD) | Nothing: `chatgpt.com` is allowed by default |
 | **Gemini CLI** | OAuth with the app's built-in native client | Tick **Allow local programs** and copy the `client_id` |
+| **Self-hosted harness** that takes a `client_id` and returns to its own domain | OAuth with the app's built-in self-hosted client | Tick **Allow self-hosted clients**, list the harness's redirect URI and copy the `client_id` |
 | **Any other MCP client** | App password (HTTP Basic) | Nothing |
 
 ### Claude (claude.ai, Claude Desktop, Cowork and Claude Code — recommended)
@@ -180,14 +182,29 @@ Two steps, one from the administrator and one from the user, with no terminal on
 
 Why a built-in client: Gemini CLI has no published client identity document, so the app ships one fixed public client for local programs. Its id is the same for everyone on the instance, and that is safe because it grants nothing by itself — the login, the eligibility, the personal connection, the administrator's grants, the consent screen and PKCE all still apply. Turning the switch off also stops the client from exchanging an authorization code and from refreshing a token.
 
+### Self-hosted harnesses (custom redirect URI)
+
+For an MCP harness you run yourself (on your own domain) that supports OAuth and lets you type a `client_id`, but publishes no client identity document of its own. A harness that does publish one only needs its host added to **Allowed client hosts**.
+
+**Administrator** — *Administration settings → MCP for Cloud → OAuth clients*:
+
+1. Tick **Allow self-hosted clients (custom redirect URIs)**. It is off by default.
+2. In **Accepted redirect URIs**, enter the harness's callback URL, one per line, exactly as the harness sends it (for example `https://harness.example.com/oauth/callback`), and click **Save**. Each one must be an absolute `https` URI without user name, `*` or `#fragment`; plain `http` is accepted only for loopback addresses. At most 20.
+3. Copy the `client_id` shown there — `nextcloud-mcp-custom`.
+
+**In the harness**: add an MCP server with the URL `https://cloud.example.com/apps/mcp/`, choose OAuth, and set the client id to `nextcloud-mcp-custom` with no client secret (it is a public client with PKCE). Connecting opens your Nextcloud: log in and click **Allow**; the consent screen names the host it returns to.
+
+The redirect URI has to match one of the listed URIs character for character — a different path, query, port or trailing slash is refused before the login page. Unticking the option, or removing a URI from the list, signs out every connection made with this client at once. Like the native client, the id is shared by everyone on the instance and grants nothing by itself: the login, eligibility, personal connection, administrator grants, consent and PKCE all still apply.
+
 ### Administrators: OAuth clients
 
 *Administration settings → MCP for Cloud → OAuth clients* decides which clients may connect, without any terminal step:
 
-- **Allowed client hosts** — the hosts whose published client identity document the app is willing to download, separated by commas; `claude.ai` and `chatgpt.com` by default. Exact host names only: no `https://`, no port, no path, no `*`, and at least one host has to stay. The host is the one in the URL the client uses as its `client_id`. Saving replaces the whole list, and removing a host refuses that client immediately, even when its document is already cached.
+- **Allowed client hosts** — the hosts whose published client identity document the app is willing to download, one entry per host (add or remove entries, then Save); `claude.ai` and `chatgpt.com` by default. Exact host names only: no `https://`, no port, no path, no `*`, and at least one host has to stay. The host is the one in the URL the client uses as its `client_id`. Saving replaces the whole list, and removing a host refuses that client immediately, even when its document is already cached.
 - **Allow local programs (native client)** — enables the `nextcloud-mcp-native` client described above and shows the `client_id` and the accepted redirect URIs to copy.
+- **Allow self-hosted clients (custom redirect URIs)** — enables the `nextcloud-mcp-custom` client described above, with the exact redirect URIs it may return to.
 
-Both controls are administrator-only and CSRF-protected, and they report a refused save. A configuration you set yourself is not overwritten by the defaults: an `oauth_client_hosts` value saved before 0.8.0 keeps being used as it is.
+These controls are administrator-only and CSRF-protected, and they report a refused save. A configuration you set yourself is not overwritten by the defaults: an `oauth_client_hosts` value saved before 0.8.0 keeps being used as it is.
 
 ### Other MCP clients (app password)
 

@@ -18,10 +18,17 @@ return ['routes' => [
     ['name' => 'grants#index', 'url' => '/api/grants', 'verb' => 'GET'],
     // POST keeps "bulk" from colliding with a user whose uid is "bulk" on PUT /api/grants/{uid}.
     ['name' => 'grants#bulk', 'url' => '/api/grants/bulk', 'verb' => 'POST'],
+    // A uid cannot hold a slash, so this never collides with /api/grants/{uid}.
+    ['name' => 'grants#bulkFiltered', 'url' => '/api/grants/bulk/filtered', 'verb' => 'POST'],
     ['name' => 'grants#update', 'url' => '/api/grants/{uid}', 'verb' => 'PUT'],
     ['name' => 'grants#service', 'url' => '/api/service', 'verb' => 'PUT'],
     ['name' => 'grants#oauthClients', 'url' => '/api/oauth-clients', 'verb' => 'GET'],
     ['name' => 'grants#updateOauthClients', 'url' => '/api/oauth-clients', 'verb' => 'PUT'],
+    ['name' => 'group_grants#index', 'url' => '/api/group-grants', 'verb' => 'GET'],
+    ['name' => 'group_grants#preview', 'url' => '/api/group-grants/preview', 'verb' => 'POST'],
+    ['name' => 'group_grants#update', 'url' => '/api/group-grants', 'verb' => 'PUT'],
+    ['name' => 'group_grants#effective', 'url' => '/api/effective/{uid}', 'verb' => 'GET'],
+    ['name' => 'group_grants#myAccess', 'url' => '/api/my/access', 'verb' => 'GET'],
     ['name' => 'grants#logsAccess', 'url' => '/api/logs-access', 'verb' => 'GET'],
     ['name' => 'grants#updateLogsAccess', 'url' => '/api/logs-access', 'verb' => 'PUT'],
     ['name' => 'logs_privacy#show', 'url' => '/api/logs-privacy', 'verb' => 'GET'],

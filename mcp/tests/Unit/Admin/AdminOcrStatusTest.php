@@ -41,12 +41,12 @@ final class AdminOcrStatusTest extends TestCase {
         $this->assertSame('https://apps.nextcloud.com/apps/workflow_ocr', $inactive['ocrUrl']);
     }
 
-    /** The status block counts eligible users and, among them, those who activated their connection. */
+    /** The status block counts users who may connect (groups included) and, among them, those who connected. */
     public function testStatusSummaryCountsEligibleAndConnectedUsers(): void {
         $apps = $this->createMock(IAppManager::class);
         $apps->method('getAppVersion')->with('mcp')->willReturn('0.8.0');
         $policy = $this->createMock(GrantPolicy::class);
-        $policy->method('flaggedUsers')->with(GrantPolicy::ELIGIBLE_KEY)->willReturn(['ana', 'bob', 'carl']);
+        $policy->method('eligibleUsers')->willReturn(['ana', 'bob', 'carl']);
         $policy->method('connectedUsers')->willReturn(['bob']);
         $urls = $this->createMock(IURLGenerator::class);
         $urls->method('linkToRouteAbsolute')->willReturn('https://cloud.test/mcp');

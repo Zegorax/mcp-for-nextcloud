@@ -9,6 +9,7 @@ namespace OCA\Mcp\Tests\Unit\Admin;
 
 use OCA\Mcp\Controller\GrantsController;
 use OCA\Mcp\OAuth\ClientMetadataFetcher;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
@@ -38,7 +39,7 @@ final class GrantsControllerTest extends TestCase {
     }
 
     public function testEveryEndpointIsAdminOnlyAndCsrfProtected(): void {
-        foreach (['index', 'update', 'bulk', 'service', 'oauthClients', 'updateOauthClients', 'logsAccess', 'updateLogsAccess'] as $method) {
+        foreach (['index', 'update', 'bulk', 'bulkFiltered', 'service', 'oauthClients', 'updateOauthClients', 'logsAccess', 'updateLogsAccess'] as $method) {
             $this->assertSame([], (new \ReflectionMethod(GrantsController::class, $method))->getAttributes(), $method);
         }
     }
@@ -126,6 +127,130 @@ final class GrantsControllerTest extends TestCase {
         $this->assertCount(1, $this->fx->oauth->tokens);
     }
 
+    public function testStateSetsAndClearsIndividualValues(): void {
+        $row = $this->controller(['module' => 'files', 'operation' => 'edit', 'state' => 'allow'])->update('ana')->getData();
+        $this->assertTrue($row['grants']['files']['edit']);
+        $this->assertTrue($row['overrides']['grants']['files']['edit']);
+        $this->assertSame('override', $row['sources']['grants']['files']['edit']);
+        $row = $this->controller(['module' => 'files', 'operation' => 'edit', 'state' => 'inherit'])->update('ana')->getData();
+        $this->assertNull($row['overrides']['grants']['files']['edit']);
+        $this->assertSame('default', $row['sources']['grants']['files']['edit']);
+        $this->assertArrayNotHasKey('grant_files_edit', $this->fx->config->user['ana']['mcp'] ?? []);
+
+        $this->fx->oauth->insertToken(['user_id' => 'ana'], 0);
+        $row = $this->controller(['state' => 'allow'])->update('ana')->getData();
+        $this->assertTrue($row['eligible']);
+        $this->assertCount(1, $this->fx->oauth->tokens);
+        $row = $this->controller(['state' => 'inherit'])->update('ana')->getData();
+        $this->assertFalse($row['eligible'], 'without a group, inherit falls back to the default');
+        $this->assertSame([], $this->fx->oauth->tokens, 'losing eligibility signs the user out');
+    }
+
+    public function testStateIsValidatedAndNeverMixedWithTheBooleanForms(): void {
+        foreach ([
+            ['state' => 'yes'],
+            ['state' => true],
+            ['state' => 'allow', 'eligible' => true],
+            ['module' => 'files', 'operation' => 'edit', 'state' => 'allow', 'granted' => true],
+            ['module' => 'files', 'operation' => 'delete', 'state' => 'allow'],
+        ] as $body) {
+            self::assertBad($this->controller($body)->update('ana'));
+        }
+        self::assertBad($this->controller(['uids' => ['ana'], 'module' => 'files', 'operation' => 'edit', 'state' => 'allow', 'granted' => true])->bulk());
+        self::assertBad($this->controller(['uids' => ['ana'], 'module' => 'files', 'operation' => 'edit', 'state' => 'maybe'])->bulk());
+        $this->assertArrayNotHasKey('ana', $this->fx->config->user);
+    }
+
+    public function testBulkInheritClearsTheValuesOfThePage(): void {
+        $this->controller(['uids' => ['ana', 'bob'], 'module' => 'files', 'operation' => 'edit', 'granted' => false])->bulk();
+        $this->assertSame('0', $this->fx->config->user['bob']['mcp']['grant_files_edit']);
+        $this->assertSame(['updated' => 2], $this->controller(['uids' => ['ana', 'bob'], 'module' => 'files', 'operation' => 'edit', 'state' => 'inherit'])->bulk()->getData());
+        $this->assertArrayNotHasKey('grant_files_edit', $this->fx->config->user['bob']['mcp']);
+        $this->controller(['uids' => ['ana'], 'module' => null, 'operation' => 'eligible', 'state' => 'allow'])->bulk();
+        $this->assertTrue($this->fx->policy->eligible('ana'));
+    }
+
+    /** @param array<string, mixed> $body */
+    private function filtered(array $body): JSONResponse {
+        return $this->controller($body + ['search' => '', 'group' => '', 'filter' => ''])->bulkFiltered();
+    }
+
+    public function testBulkFilteredDryRunCountsWithoutWriting(): void {
+        $this->fx->policy->setEligible('ana', true);
+        $this->fx->policy->setEligible('bob', true);
+        $this->fx->policy->setGrant('bob', 'notes', 'edit', true);
+        $data = $this->filtered(['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow', 'dryRun' => true])->getData();
+        // carl is disabled, bob already has it, ana changes.
+        $this->assertSame(['matched' => 3, 'change' => 1, 'unavailable' => 1, 'unchanged' => 1, 'gain' => 1, 'lose' => 0, 'tooMany' => false, 'limit' => 5000], $data);
+        $this->assertFalse($this->fx->policy->granted('ana', 'notes', 'edit'));
+    }
+
+    public function testBulkFilteredWritesEveryPageAndReturnsThePreviousSettings(): void {
+        for ($i = 0; $i < 120; $i++) {
+            $this->fx->addUser(sprintf('u%03d', $i), sprintf('User %03d', $i), '', true, ['sales']);
+        }
+        $body = ['group' => 'sales', 'module' => null, 'operations' => ['eligible'], 'state' => 'allow'];
+        $dry = $this->filtered($body + ['dryRun' => true])->getData();
+        $this->assertSame([120, 120, 0], [$dry['change'], $dry['gain'], $dry['lose']]);
+        $response = $this->filtered($body + ['expected' => 120]);
+        $this->assertSame(200, $response->getStatus());
+        $this->assertSame(120, $response->getData()['updated']);
+        $this->assertSame(['uid' => 'u000', 'operation' => 'eligible', 'state' => 'inherit'], $response->getData()['previous'][0]);
+        $this->assertTrue($this->fx->policy->eligible('u119'), 'past the first page');
+        $this->assertFalse($this->fx->policy->eligible('ana'), 'outside the group');
+
+        $data = $this->filtered(['group' => 'sales', 'filter' => 'eligible', 'module' => 'notes', 'operations' => ['create', 'edit'], 'state' => 'allow', 'expected' => 120])->getData();
+        $this->assertSame(120, $data['updated']);
+        $this->assertCount(240, $data['previous']);
+        $this->assertTrue($this->fx->policy->granted('u050', 'notes', 'edit'));
+
+        // Inherit removes the individual settings again; without group rules the default decides.
+        $dry = $this->filtered(['group' => 'sales', 'module' => 'notes', 'operations' => ['edit'], 'state' => 'inherit', 'dryRun' => true])->getData();
+        $this->assertSame([120, 0, 120], [$dry['change'], $dry['gain'], $dry['lose']]);
+        $data = $this->filtered(['group' => 'sales', 'module' => 'notes', 'operations' => ['edit'], 'state' => 'inherit', 'expected' => 120])->getData();
+        $this->assertSame(['uid' => 'u000', 'operation' => 'edit', 'state' => 'allow'], $data['previous'][0]);
+        $this->assertFalse($this->fx->policy->granted('u050', 'notes', 'edit'));
+        $this->assertNull($this->fx->policy->forUsers(['u050'])['u050']['overrides']['grants']['notes']['edit'], 'no individual setting left');
+    }
+
+    public function testBulkFilteredRefusesAStalePreview(): void {
+        $this->fx->policy->setEligible('ana', true);
+        $this->fx->policy->setEligible('bob', true);
+        $response = $this->filtered(['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow', 'expected' => 1]);
+        $this->assertSame(409, $response->getStatus());
+        $this->assertSame(2, $response->getData()['change']);
+        $this->assertFalse($this->fx->policy->granted('ana', 'notes', 'edit'));
+        self::assertBad($this->filtered(['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow']));
+    }
+
+    public function testBulkFilteredRefusesASelectionOverTheLimit(): void {
+        for ($i = 0; $i <= \OCA\Mcp\Service\GrantMatrix::MAX_BULK; $i++) {
+            $this->fx->users['x' . $i] = ['name' => 'X' . $i, 'email' => '', 'enabled' => true];
+        }
+        $dry = $this->filtered(['module' => null, 'operations' => ['eligible'], 'state' => 'allow', 'dryRun' => true])->getData();
+        $this->assertTrue($dry['tooMany']);
+        $response = $this->filtered(['module' => null, 'operations' => ['eligible'], 'state' => 'allow', 'expected' => 0]);
+        $this->assertSame([400, ['error' => 'Too many users', 'limit' => 5000]], [$response->getStatus(), $response->getData()]);
+        $this->assertFalse($this->fx->policy->eligible('x1'));
+    }
+
+    public function testBulkFilteredValidatesInput(): void {
+        foreach ([
+            ['module' => null, 'operations' => ['edit'], 'state' => 'allow', 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['eligible'], 'state' => 'allow', 'dryRun' => true],
+            ['module' => 'notes', 'operations' => [], 'state' => 'allow', 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit', 'edit'], 'state' => 'allow', 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit'], 'state' => 'maybe', 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow', 'dryRun' => 1],
+            ['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow', 'dryRun' => true, 'group' => 'nope'],
+            ['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow', 'dryRun' => true, 'filter' => 'all'],
+            ['module' => 'notes', 'operations' => ['edit'], 'state' => 'allow', 'expected' => '1'],
+        ] as $body) {
+            self::assertBad($this->controller($body + ['search' => '', 'group' => '', 'filter' => ''])->bulkFiltered());
+        }
+    }
+
     public function testServiceUsesItsOwnKey(): void {
         $this->assertSame(['enabled' => true], $this->controller(['enabled' => true])->service()->getData());
         $this->assertSame('1', $this->fx->config->app['mcp']['service_enabled']);
@@ -186,6 +311,9 @@ final class GrantsControllerTest extends TestCase {
             'nativeClientEnabled' => false,
             'nativeClientId' => NativeClient::CLIENT_ID,
             'nativeRedirectUris' => NativeClient::REDIRECT_URIS,
+            'customClientEnabled' => false,
+            'customClientId' => CustomClient::CLIENT_ID,
+            'customRedirectUris' => [],
         ], $data);
     }
 
@@ -232,6 +360,47 @@ final class GrantsControllerTest extends TestCase {
         $this->assertSame([], $this->fx->oauth->codes);
     }
 
+    public function testUpdateOauthClientsStoresTheCustomClientAndItsRedirectUris(): void {
+        $uris = ['https://harness.example.com/oauth/callback', 'https://other.example.org/cb?tenant=a'];
+        $data = $this->controller(['customClientEnabled' => true, 'customRedirectUris' => [' ' . $uris[0], $uris[1], $uris[0]]])->updateOauthClients()->getData();
+        $this->assertSame('1', $this->fx->config->app['mcp'][CustomClient::ENABLED_KEY]);
+        $this->assertSame(json_encode($uris, JSON_UNESCAPED_SLASHES), $this->fx->config->app['mcp'][CustomClient::REDIRECTS_KEY]);
+        $this->assertTrue($data['customClientEnabled']);
+        $this->assertSame($uris, $data['customRedirectUris']);
+        $this->assertSame(CustomClient::CLIENT_ID, $data['customClientId']);
+        $this->assertFalse($data['nativeClientEnabled']);
+
+        $data = $this->controller(['customRedirectUris' => []])->updateOauthClients()->getData();
+        $this->assertArrayNotHasKey(CustomClient::REDIRECTS_KEY, $this->fx->config->app['mcp']);
+        $this->assertSame([], $data['customRedirectUris']);
+        $this->assertTrue($data['customClientEnabled']);
+    }
+
+    public function testDisablingTheCustomClientDeletesOnlyItsGrants(): void {
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => CustomClient::CLIENT_ID], 0);
+        $this->fx->oauth->insertCode(['user_id' => 'bob', 'client_id' => CustomClient::CLIENT_ID], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => NativeClient::CLIENT_ID], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => 'https://claude.ai/x'], 0);
+        $this->controller(['customClientEnabled' => true])->updateOauthClients();
+        $this->assertCount(3, $this->fx->oauth->tokens);
+        $this->controller(['customClientEnabled' => false])->updateOauthClients();
+        $this->assertSame([NativeClient::CLIENT_ID, 'https://claude.ai/x'], array_values(array_column($this->fx->oauth->tokens, 'client_id')));
+        $this->assertSame([], $this->fx->oauth->codes);
+    }
+
+    public function testRemovingACustomRedirectUriRevokesTheCustomClientButAddingOneDoesNot(): void {
+        $a = 'https://harness.example.com/oauth/callback';
+        $b = 'https://other.example.org/cb';
+        $this->controller(['customClientEnabled' => true, 'customRedirectUris' => [$a]])->updateOauthClients();
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => CustomClient::CLIENT_ID], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => 'https://claude.ai/x'], 0);
+        $this->controller(['customRedirectUris' => [$a, $b]])->updateOauthClients();
+        $this->controller(['customRedirectUris' => [$b, $a]])->updateOauthClients();
+        $this->assertCount(2, $this->fx->oauth->tokens);
+        $this->controller(['customRedirectUris' => [$b]])->updateOauthClients();
+        $this->assertSame(['https://claude.ai/x'], array_values(array_column($this->fx->oauth->tokens, 'client_id')));
+    }
+
     public function testSendingTheDefaultHostsDeletesTheKeyAndAnotherListStoresIt(): void {
         $this->fx->config->app['mcp']['oauth_client_hosts'] = 'claude.ai,example.org';
         $data = $this->controller(['hosts' => ['chatgpt.com', 'claude.ai']])->updateOauthClients()->getData();
@@ -264,10 +433,19 @@ final class GrantsControllerTest extends TestCase {
             ['hosts' => [42]],
             ['hosts' => ['claude.ai'], 'nativeClientEnabled' => 'yes'],
             ['nativeClientEnabled' => 1],
+            ['customClientEnabled' => 'true'],
+            ['customRedirectUris' => 'https://harness.example.com/cb'],
+            ['customRedirectUris' => ['http://harness.example.com/cb']],
+            ['customRedirectUris' => ['https://harness.example.com/cb#x']],
+            ['customRedirectUris' => ['https://*.example.com/cb']],
+            ['customRedirectUris' => ['https://harness.example.com/cb'], 'customClientEnabled' => 1],
+            ['customClientEnabled' => true, 'customRedirectUris' => [42]],
+            ['hosts' => ['claude.ai'], 'customRedirectUris' => ['https://u@harness.example.com/cb']],
         ] as $body) {
             self::assertBad($this->controller($body)->updateOauthClients());
         }
-        $this->assertSame([], array_intersect_key($this->fx->config->app['mcp'] ?? [], ['oauth_client_hosts' => 1, 'oauth_native_client_enabled' => 1]));
+        $this->assertSame([], array_intersect_key($this->fx->config->app['mcp'] ?? [], ['oauth_client_hosts' => 1, 'oauth_native_client_enabled' => 1,
+            CustomClient::ENABLED_KEY => 1, CustomClient::REDIRECTS_KEY => 1]));
     }
 
     /** The groups that may read the server log: none by default (administrators only), every group offered. */

@@ -146,10 +146,12 @@ final class RoutesTest extends TestCase {
             // Logged-in users, session and CSRF token intact.
             'settings#personal' => ['NoAdminRequired'],
             'my_connections#index' => ['NoAdminRequired'], 'my_connections#destroy' => ['NoAdminRequired'],
+            'group_grants#myAccess' => ['NoAdminRequired'],
             // No attribute at all is what makes a Nextcloud route admin-only.
-            'grants#index' => [], 'grants#bulk' => [], 'grants#update' => [], 'grants#service' => [],
+            'grants#index' => [], 'grants#bulk' => [], 'grants#bulkFiltered' => [], 'grants#update' => [], 'grants#service' => [],
             'grants#oauthClients' => [], 'grants#updateOauthClients' => [],
             'grants#logsAccess' => [], 'grants#updateLogsAccess' => [],
+            'group_grants#index' => [], 'group_grants#preview' => [], 'group_grants#update' => [], 'group_grants#effective' => [],
             'logs_privacy#show' => [], 'logs_privacy#update' => [],
             'connections#index' => [], 'connections#revokeUser' => [], 'connections#destroy' => [],
             'checkout_limit#show' => [], 'checkout_limit#update' => [],

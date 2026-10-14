@@ -67,7 +67,7 @@ final class GrantMatrixTest extends TestCase {
         $json = json_encode($page);
         $this->assertStringNotContainsString('@', $json);
         $this->assertStringNotContainsString('corp.example', $json);
-        $this->assertSame(['uid', 'displayName', 'enabled', 'appsEnabled', 'eligible', 'connected', 'grants'], array_keys($page['users'][0]));
+        $this->assertSame(['uid', 'displayName', 'enabled', 'appsEnabled', 'eligible', 'connected', 'grants', 'overrides', 'sources', 'groupRules'], array_keys($page['users'][0]));
     }
 
     public function testGroupFilterUsesGroupMembersAndGroupSize(): void {

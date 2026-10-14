@@ -10,10 +10,12 @@ namespace OCA\Mcp\Controller;
 use InvalidArgumentException;
 use OCA\Mcp\OAuth\ClientMetadataFetcher;
 use OCA\Mcp\OAuth\ClientResolver;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthStore;
 use OCA\Mcp\Service\GrantMatrix;
 use OCA\Mcp\Service\GrantPolicy;
+use OCA\Mcp\Service\GroupGrants;
 use OCA\Mcp\Service\LogsAccess;
 use OCA\Mcp\Service\LogsGroupsConflict;
 use OCP\AppFramework\Controller;
@@ -57,7 +59,9 @@ class GrantsController extends Controller {
     }
 
     /**
-     * Body {eligible: bool} or {module, operation, granted: bool}, never both.
+     * Body {eligible: bool} or {module, operation, granted: bool}, never both; or the same with
+     * state: "allow" | "deny" | "inherit" instead of the boolean, where "inherit" removes the individual value so
+     * the user's groups (or the default) decide.
      *
      * @param string $uid existing Nextcloud user id
      * @return JSONResponse the user's updated row, or 400
@@ -66,12 +70,25 @@ class GrantsController extends Controller {
         return $this->guard(function () use ($uid): array {
             $user = $this->user($uid);
             $eligible = $this->request->getParam('eligible');
-            $hasGrant = $this->request->getParam('module') !== null || $this->request->getParam('operation') !== null || $this->request->getParam('granted') !== null;
-            if ($eligible !== null && !$hasGrant) {
+            $state = $this->request->getParam('state');
+            $granted = $this->request->getParam('granted');
+            $hasGrant = $this->request->getParam('module') !== null || $this->request->getParam('operation') !== null;
+            if ($state !== null) {
+                if ($eligible !== null || $granted !== null) {
+                    throw new InvalidArgumentException('Invalid request');
+                }
+                $value = self::state($state);
+                if ($hasGrant) {
+                    [$module, $operation] = self::grant($this->request->getParam('module'), $this->request->getParam('operation'));
+                    $this->policy->setGrantOverride($uid, $module, $operation, $value);
+                } else {
+                    $this->policy->setEligibleOverride($uid, $value);
+                }
+            } elseif ($eligible !== null && !$hasGrant && $granted === null) {
                 $this->policy->setEligible($uid, self::bool($eligible));
-            } elseif ($eligible === null && $hasGrant) {
+            } elseif ($eligible === null && ($hasGrant || $granted !== null)) {
                 [$module, $operation] = self::grant($this->request->getParam('module'), $this->request->getParam('operation'));
-                $this->policy->setGrant($uid, $module, $operation, self::bool($this->request->getParam('granted')));
+                $this->policy->setGrant($uid, $module, $operation, self::bool($granted));
             } else {
                 throw new InvalidArgumentException('Invalid request');
             }
@@ -80,8 +97,9 @@ class GrantsController extends Controller {
     }
 
     /**
-     * Body {uids: list<string> (1..PAGE_SIZE), module: string|null, operation: string, granted: bool}; operation
-     * "eligible" with module null toggles eligibility. Every uid is validated before anything is written.
+     * Body {uids: list<string> (1..PAGE_SIZE), module: string|null, operation: string, granted: bool}, or state
+     * "allow" | "deny" | "inherit" instead of granted; operation "eligible" with module null changes eligibility.
+     * Every uid is validated before anything is written.
      *
      * @return JSONResponse {updated: int}, or 400
      */
@@ -93,17 +111,153 @@ class GrantsController extends Controller {
             }
             $module = $this->request->getParam('module');
             $operation = $this->request->getParam('operation');
-            $granted = self::bool($this->request->getParam('granted'));
+            $state = $this->request->getParam('state');
+            if ($state !== null && $this->request->getParam('granted') !== null) {
+                throw new InvalidArgumentException('Invalid request');
+            }
+            $granted = $state !== null ? self::state($state) : self::bool($this->request->getParam('granted'));
             $eligibility = $operation === self::ELIGIBLE && $module === null;
             if (!$eligibility) {
                 [$module, $operation] = self::grant($module, $operation);
             }
             $uids = array_values(array_unique(array_map(fn ($uid) => $this->user(is_string($uid) ? $uid : '')->getUID(), $uids)));
             foreach ($uids as $uid) {
-                $eligibility ? $this->policy->setEligible($uid, $granted) : $this->policy->setGrant($uid, $module, $operation, $granted);
+                $eligibility ? $this->policy->setEligibleOverride($uid, $granted) : $this->policy->setGrantOverride($uid, $module, $operation, $granted);
             }
             return ['updated' => count($uids)];
         });
+    }
+
+    /**
+     * Applies one change to every user the matrix filters select, across all pages, never to more than
+     * GrantMatrix::MAX_BULK users.
+     *
+     * Body {search: string, group: string, filter: string, module: string|null, operations: list<string>,
+     * state: "allow" | "deny" | "inherit", dryRun: bool, expected?: int}; module null with operations ["eligible"]
+     * changes "Can connect". Users for whom the permission is unavailable (a disabled account, "Can connect" denied,
+     * the app unavailable to them) are left out, like the "All" menu of one page. Allow and deny change the users
+     * whose result differs; inherit changes the users who have an individual setting. A dry run only counts, and also
+     * says how many users gain or lose access once the groups and the default decide. The real run must send
+     * `expected`, the `change` count of its dry run: when the selection changed in between it answers 409 with the
+     * new counts and writes nothing.
+     *
+     * @return JSONResponse a dry run {matched, change, unavailable, unchanged, gain, lose, tooMany, limit}; a real run
+     *     {updated, previous: list<{uid, operation, state}>} with the individual settings it replaced, so the page can
+     *     undo it; 400 for an invalid body or a selection over the limit; 409 when `expected` no longer matches
+     */
+    public function bulkFiltered(): JSONResponse {
+        try {
+            $search = $this->request->getParam('search', '');
+            $group = $this->request->getParam('group', '');
+            $filter = $this->request->getParam('filter', '');
+            $module = $this->request->getParam('module');
+            $operations = $this->request->getParam('operations');
+            $target = $this->request->getParam('state');
+            self::state($target);
+            $dryRun = self::bool($this->request->getParam('dryRun', false));
+            if (!is_string($search) || !is_string($group) || !is_string($filter) || !is_array($operations) || $operations === [] || !array_is_list($operations)) {
+                throw new InvalidArgumentException('Invalid request');
+            }
+            $eligibility = $module === null && $operations === [self::ELIGIBLE];
+            if (!$eligibility) {
+                foreach ($operations as $operation) {
+                    self::grant($module, $operation);
+                }
+                if (count(array_unique($operations)) !== count($operations)) {
+                    throw new InvalidArgumentException('Invalid request');
+                }
+            }
+            $users = $this->matrix->matching($search, $group, $filter, GrantMatrix::MAX_BULK);
+        } catch (InvalidArgumentException) {
+            return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
+        }
+        $tooMany = count($users) > GrantMatrix::MAX_BULK;
+        if ($tooMany && !$dryRun) {
+            return new JSONResponse(['error' => 'Too many users', 'limit' => GrantMatrix::MAX_BULK], Http::STATUS_BAD_REQUEST);
+        }
+        $plan = $this->bulkPlan($tooMany ? [] : $users, $module, $operations, $target);
+        $counts = ['matched' => min(count($users), GrantMatrix::MAX_BULK), 'change' => count($plan['changes']),
+            'unavailable' => $plan['unavailable'], 'unchanged' => $plan['unchanged'], 'gain' => $plan['gain'], 'lose' => $plan['lose'],
+            'tooMany' => $tooMany, 'limit' => GrantMatrix::MAX_BULK];
+        if ($dryRun) {
+            return new JSONResponse($counts);
+        }
+        $expected = $this->request->getParam('expected');
+        if (!is_int($expected)) {
+            return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
+        }
+        if ($expected !== $counts['change']) {
+            return new JSONResponse(['error' => 'Conflict'] + $counts, Http::STATUS_CONFLICT);
+        }
+        $value = self::state($target);
+        $previous = [];
+        foreach ($plan['changes'] as $uid => $values) {
+            // A numeric uid became an integer array key; the policy and the answer take it as the string it is.
+            $uid = (string)$uid;
+            foreach ($values as $operation => $before) {
+                $eligibility ? $this->policy->setEligibleOverride($uid, $value) : $this->policy->setGrantOverride($uid, (string)$module, $operation, $value);
+                $previous[] = ['uid' => $uid, 'operation' => $operation, 'state' => $before === null ? 'inherit' : ($before ? 'allow' : 'deny')];
+            }
+        }
+        return new JSONResponse(['updated' => count($plan['changes']), 'previous' => $previous]);
+    }
+
+    /**
+     * What a change would do to each user, with the rule of the page's "All" menu.
+     *
+     * @param list<IUser> $users users to change
+     * @param string|null $module module id, null for eligibility
+     * @param list<string> $operations operation ids, or ["eligible"]
+     * @param string $target "allow", "deny" or "inherit"
+     * @return array{changes: array<array-key, array<string, bool|null>>, unavailable: int, unchanged: int, gain: int, lose: int}
+     *     per uid, the operations that change and their individual setting before (null = inherit); gain and lose
+     *     count the users whose result turns on or off for at least one operation
+     */
+    private function bulkPlan(array $users, ?string $module, array $operations, string $target): array {
+        $changes = [];
+        $unavailable = 0;
+        $unchanged = 0;
+        $gain = 0;
+        $lose = 0;
+        foreach (array_chunk($users, GrantMatrix::PAGE_SIZE) as $chunk) {
+            foreach ($this->matrix->rows($chunk) as $row) {
+                if (!$row['enabled'] || ($module !== null && (!$row['eligible'] || !($row['appsEnabled'][$module] ?? false)))) {
+                    $unavailable++;
+                    continue;
+                }
+                $values = [];
+                $gains = false;
+                $loses = false;
+                foreach ($operations as $operation) {
+                    $permission = $module === null ? GroupGrants::ELIGIBLE : $module . '.' . $operation;
+                    $current = $module === null ? $row['eligible'] : $row['grants'][$module][$operation];
+                    $override = $module === null ? $row['overrides']['eligible'] : $row['overrides']['grants'][$module][$operation];
+                    if ($target === 'inherit') {
+                        if ($override === null) {
+                            continue;
+                        }
+                        $rules = $row['groupRules'][$permission] ?? ['allow' => [], 'deny' => []];
+                        $next = $rules['deny'] === [] && ($rules['allow'] !== [] || ($module !== null && GrantPolicy::defaultGranted($module, $operation)));
+                    } else {
+                        $next = $target === 'allow';
+                        if ($current === $next) {
+                            continue;
+                        }
+                    }
+                    $values[$operation] = $override;
+                    $gains = $gains || (!$current && $next);
+                    $loses = $loses || ($current && !$next);
+                }
+                if ($values === []) {
+                    $unchanged++;
+                    continue;
+                }
+                $changes[$row['uid']] = $values;
+                $gain += $gains ? 1 : 0;
+                $lose += $loses ? 1 : 0;
+            }
+        }
+        return ['changes' => $changes, 'unavailable' => $unavailable, 'unchanged' => $unchanged, 'gain' => $gain, 'lose' => $lose];
     }
 
     /**
@@ -121,15 +275,18 @@ class GrantsController extends Controller {
     /**
      * Current OAuth client settings for the admin page.
      *
-     * @return JSONResponse {hosts, hostsDefault, nativeClientEnabled, nativeClientId, nativeRedirectUris}
+     * @return JSONResponse {hosts, hostsDefault, nativeClientEnabled, nativeClientId, nativeRedirectUris,
+     *                      customClientEnabled, customClientId, customRedirectUris}
      */
     public function oauthClients(): JSONResponse {
         return $this->guard(fn (): array => $this->oauthState());
     }
 
     /**
-     * Body {hosts?: list<string>, nativeClientEnabled?: bool}. Everything is validated before anything is written;
-     * an empty host list is rejected because at least one host must stay trusted.
+     * Body {hosts?: list<string>, nativeClientEnabled?: bool, customClientEnabled?: bool,
+     * customRedirectUris?: list<string>}. Everything is validated before anything is written; an empty host list is
+     * rejected because at least one host must stay trusted. Turning a built-in client off deletes its grants, and so
+     * does removing a redirect URI of the custom client, so nothing issued for a withdrawn URI outlives the decision.
      *
      * @return JSONResponse the same shape as oauthClients(), or 400
      */
@@ -137,7 +294,9 @@ class GrantsController extends Controller {
         return $this->guard(function (): array {
             $hosts = $this->request->getParam('hosts');
             $native = $this->request->getParam('nativeClientEnabled');
-            if ($hosts === null && $native === null) {
+            $custom = $this->request->getParam('customClientEnabled');
+            $uris = $this->request->getParam('customRedirectUris');
+            if ($hosts === null && $native === null && $custom === null && $uris === null) {
                 throw new InvalidArgumentException('Invalid request');
             }
             if ($hosts !== null) {
@@ -145,6 +304,12 @@ class GrantsController extends Controller {
             }
             if ($native !== null) {
                 $native = self::bool($native);
+            }
+            if ($custom !== null) {
+                $custom = self::bool($custom);
+            }
+            if ($uris !== null) {
+                $uris = CustomClient::validate($uris);
             }
             if ($hosts !== null) {
                 $default = explode(',', ClientMetadataFetcher::DEFAULT_HOSTS);
@@ -160,6 +325,22 @@ class GrantsController extends Controller {
                 if (!$native) {
                     $this->oauth->deleteForClient(NativeClient::CLIENT_ID);
                 }
+            }
+            $revokeCustom = false;
+            if ($uris !== null) {
+                $revokeCustom = array_diff(CustomClient::redirectUris($this->config), $uris) !== [];
+                if ($uris === []) {
+                    $this->config->deleteAppValue($this->appName, CustomClient::REDIRECTS_KEY);
+                } else {
+                    $this->config->setAppValue($this->appName, CustomClient::REDIRECTS_KEY, (string)json_encode($uris, JSON_UNESCAPED_SLASHES));
+                }
+            }
+            if ($custom !== null) {
+                $this->config->setAppValue($this->appName, CustomClient::ENABLED_KEY, $custom ? '1' : '0');
+                $revokeCustom = $revokeCustom || !$custom;
+            }
+            if ($revokeCustom) {
+                $this->oauth->deleteForClient(CustomClient::CLIENT_ID);
             }
             return $this->oauthState();
         });
@@ -213,7 +394,10 @@ class GrantsController extends Controller {
         ];
     }
 
-    /** @return array{hosts:list<string>, hostsDefault:bool, nativeClientEnabled:bool, nativeClientId:string, nativeRedirectUris:list<string>} */
+    /**
+     * @return array{hosts:list<string>, hostsDefault:bool, nativeClientEnabled:bool, nativeClientId:string,
+     *     nativeRedirectUris:list<string>, customClientEnabled:bool, customClientId:string, customRedirectUris:list<string>}
+     */
     private function oauthState(): array {
         $raw = $this->config->getAppValue($this->appName, ClientMetadataFetcher::HOSTS_KEY, '');
         $hosts = array_values(array_filter(array_map('trim', explode(',', $raw)), static fn (string $h) => $h !== ''));
@@ -224,6 +408,9 @@ class GrantsController extends Controller {
             'nativeClientEnabled' => ClientResolver::nativeEnabled($this->config),
             'nativeClientId' => NativeClient::CLIENT_ID,
             'nativeRedirectUris' => NativeClient::REDIRECT_URIS,
+            'customClientEnabled' => CustomClient::enabled($this->config),
+            'customClientId' => CustomClient::CLIENT_ID,
+            'customRedirectUris' => CustomClient::redirectUris($this->config),
         ];
     }
 
@@ -278,6 +465,20 @@ class GrantsController extends Controller {
             throw new InvalidArgumentException('Invalid request');
         }
         return [$module, $operation];
+    }
+
+    /**
+     * @param mixed $value request value: "allow", "deny" or "inherit"
+     * @return bool|null true allow, false deny, null inherit
+     * @throws InvalidArgumentException for anything else
+     */
+    private static function state(mixed $value): ?bool {
+        return match ($value) {
+            'allow' => true,
+            'deny' => false,
+            'inherit' => null,
+            default => throw new InvalidArgumentException('Invalid request'),
+        };
     }
 
     /**

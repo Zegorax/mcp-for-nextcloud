@@ -87,10 +87,13 @@
 
 	/**
 	 * @param {object} client client of a connection from the API
-	 * @return {string} what people call it: the host, or a fixed label for the native client
+	 * @return {string} what people call it: the host, or a fixed label for a built-in client
 	 */
 	function clientName(client) {
-		return client.kind === 'native' ? t('mcp', 'Local program (native client)') : client.host
+		if (client.kind === 'native') {
+			return t('mcp', 'Local program (native client)')
+		}
+		return client.kind === 'custom' ? t('mcp', 'Self-hosted client (custom redirect URIs)') : client.host
 	}
 
 	/**
