@@ -1,4 +1,4 @@
-# App MCP para Nextcloud
+# MCP for Cloud — Documentação técnica
 
 English: [README.md](README.md)
 

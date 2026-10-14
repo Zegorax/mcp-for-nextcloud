@@ -1,4 +1,4 @@
-# MCP App for Nextcloud
+# MCP for Cloud — Technical documentation
 
 Português (Brasil): [README.pt-BR.md](README.pt-BR.md)
 
