@@ -259,11 +259,15 @@ final class AdminAssetsTest extends TestCase {
     public function testGroupPermissionsAndEffectiveAccessAreWiredAndAClosedDialogIsHidden(): void {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
-        foreach (['mcp-gg-search', 'mcp-gg-group', 'mcp-gg-configured', 'mcp-gg-editor', 'mcp-gg-table', 'mcp-gg-preview', 'mcp-gg-save', 'mcp-gg-discard',
+        foreach (['mcp-gg-search', 'mcp-gg-filter', 'mcp-gg-app', 'mcp-gg-count', 'mcp-gg-table', 'mcp-gg-preview', 'mcp-gg-save', 'mcp-gg-discard',
             'mcp-gg-status', 'mcp-effective', 'mcp-effective-title', 'mcp-effective-body', 'mcp-effective-close'] as $id) {
             $this->assertSame(1, substr_count($template, 'id="' . $id . '"'), $id);
         }
         $this->assertStringContainsString('<dialog id="mcp-effective"', $template);
+        // The group permissions are a matrix like the users': same table classes, its own app filter, a legend under it.
+        $this->assertStringContainsString('<table class="mcp-matrix mcp-gg-matrix" id="mcp-gg-table"', $template);
+        $groups = substr($template, (int)strpos($template, 'id="mcp-block-groups"'));
+        $this->assertGreaterThan(strpos($groups, 'id="mcp-gg-table"'), strpos($groups, 'class="mcp-legend"'), 'the legend sits under the group table');
         $css = (string)file_get_contents($app . '/css/admin.css');
         $this->assertMatchesRegularExpression('/\.mcp-effective:not\(\[open\]\) \{\s*display: none;/', $css);
         $this->assertMatchesRegularExpression('/\.mcp-gg-actions \{[^}]*position: sticky;[^}]*bottom: 0;/s', $css);

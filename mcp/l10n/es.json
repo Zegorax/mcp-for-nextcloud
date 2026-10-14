@@ -980,7 +980,6 @@
     "Point at a cell to see where its value comes from; click a name for the full explanation." : "Señale una celda para ver de dónde viene su valor; haga clic en un nombre para la explicación completa.",
     "Group permissions" : "Permisos por grupo",
     "A group can allow or deny “Can connect” and each permission for its members. Each decision follows one order: an individual deny, an individual allow, the groups (a deny in any of a user’s groups wins), then the default. Nextcloud permissions still apply." : "Un grupo puede permitir o denegar “Puede conectarse” y cada permiso para sus miembros. Cada decisión sigue un orden: una denegación individual, un permiso individual, los grupos (una denegación en cualquiera de los grupos del usuario prevalece) y, por último, el valor predeterminado. Los permisos de Nextcloud siguen aplicándose.",
-    "Group to edit" : "Grupo que editar",
     "Save group permissions" : "Guardar permisos del grupo",
     "Discard changes" : "Descartar cambios",
     "Close" : "Cerrar",
@@ -1011,10 +1010,7 @@
     "This user cannot use MCP now:" : "Este usuario no puede usar MCP ahora:",
     "In effect" : "En vigor",
     "This app is unavailable for this user." : "Esta aplicación no está disponible para este usuario.",
-    "Choose a group…" : "Elija un grupo…",
     "No group has rules yet." : "Ningún grupo tiene reglas todavía.",
-    "Groups with rules:" : "Grupos con reglas:",
-    "(group removed)" : "(grupo eliminado)",
     "Could not compute what would change." : "No se pudo calcular qué cambiaría.",
     "No unsaved changes." : "No hay cambios sin guardar.",
     "Only the first members were counted; the group is very large." : "Solo se contaron los primeros miembros; el grupo es muy grande.",
@@ -1029,7 +1025,6 @@
     "_%n loses it_::_%n lose it_" : ["%n lo pierde", "%n lo pierden", "%n lo pierden"],
     "_%n keeps an individual setting_::_%n keep an individual setting_" : ["%n conserva un ajuste individual", "%n conservan un ajuste individual", "%n conservan un ajuste individual"],
     "_%n unchanged (another group or the default decides)_::_%n unchanged (another group or the default decides)_" : ["%n sin cambio (decide otro grupo o el valor predeterminado)", "%n sin cambio (decide otro grupo o el valor predeterminado)", "%n sin cambio (decide otro grupo o el valor predeterminado)"],
-    "_If you save, for the %n member of this group:_::_If you save, for the %n members of this group:_" : ["Si guarda, para el %n miembro de este grupo:", "Si guarda, para los %n miembros de este grupo:", "Si guarda, para los %n miembros de este grupo:"],
     "_%n member can no longer connect and is signed out of their MCP clients. Save?_::_%n members can no longer connect and are signed out of their MCP clients. Save?_" : ["%n miembro ya no podrá conectarse y se cierra su sesión en los clientes MCP. ¿Guardar?", "%n miembros ya no podrán conectarse y se cierra su sesión en los clientes MCP. ¿Guardar?", "%n miembros ya no podrán conectarse y se cierra su sesión en los clientes MCP. ¿Guardar?"],
     "Set for you by your administrator." : "Establecido para usted por su administrador.",
     "Denied for your group {groups}." : "Denegado para su grupo {groups}.",
@@ -1041,6 +1036,15 @@
     "Your connection is off; turn it on above." : "Su conexión está desactivada; actívela arriba.",
     "You can use MCP now. These permissions are in effect:" : "Puede usar MCP ahora. Estos permisos están en vigor:",
     "You cannot use MCP now:" : "No puede usar MCP ahora:",
-    "Could not load your access." : "No se pudo cargar su acceso."
+    "Could not load your access." : "No se pudo cargar su acceso.",
+    "All groups" : "Todos los grupos",
+    "Only groups with rules" : "Solo grupos con reglas",
+    "Click a cell to change it; nothing is saved until you click “Save group permissions”." : "Haga clic en una celda para cambiarla; no se guarda nada hasta que haga clic en “Guardar permisos del grupo”.",
+    "The group allows or denies its members to connect an MCP client" : "El grupo permite o deniega a sus miembros conectar un cliente MCP",
+    "group removed" : "grupo eliminado",
+    "No groups found." : "No se encontraron grupos.",
+    "(not saved)" : "(sin guardar)",
+    "If you save:" : "Si guarda:",
+    "_%n group_::_%n groups_" : ["%n grupo", "%n grupos", "%n grupos"]
 },"pluralForm" :"nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

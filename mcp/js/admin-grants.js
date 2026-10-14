@@ -316,8 +316,8 @@
 	}
 
 	/** Makes the second header row stick right below the first one, whose height depends on the density. */
-	function stickSecondHeaderRow() {
-		const [top, sub] = table.tHead.rows
+	function stickSecondHeaderRow(target = table) {
+		const [top, sub] = target.tHead.rows
 		if (!top || !sub) {
 			return
 		}
@@ -346,7 +346,7 @@
 			return
 		}
 		if (!headerObserver) {
-			headerObserver = new window.ResizeObserver(stickSecondHeaderRow)
+			headerObserver = new window.ResizeObserver(() => stickSecondHeaderRow())
 		}
 		headerObserver.disconnect()
 		observedHeaderRow = top
@@ -1496,214 +1496,296 @@
 	}
 
 	/**
-	 * Group permissions: pick a group, set each permission to Inherit, Allow or Deny, see what saving would
-	 * change for its members, then save. A save made on stale data is refused and the current rules are loaded.
+	 * Group permissions, drawn like the user matrix: one row per group, one column per permission, each cell
+	 * Inherit (–), Allow (✓) or Deny (✕). A click cycles the cell; changes are kept until "Save", and the preview
+	 * says for every changed group how many members gain or lose each permission. Each group is saved with the
+	 * version read, so a save made on stale data is refused and the current rules are loaded.
+	 *
+	 * @param {Promise} firstLoad the first load of the user matrix, which knows the apps available on the server
 	 */
-	async function initGroupGrants() {
+	async function initGroupGrants(firstLoad) {
+		const grid = document.getElementById('mcp-gg-table')
 		const search = document.getElementById('mcp-gg-search')
-		const select = document.getElementById('mcp-gg-group')
-		const configured = document.getElementById('mcp-gg-configured')
-		const editor = document.getElementById('mcp-gg-editor')
-		const table = document.getElementById('mcp-gg-table')
+		const filter = document.getElementById('mcp-gg-filter')
+		const appFilter = document.getElementById('mcp-gg-app')
+		const count = document.getElementById('mcp-gg-count')
 		const preview = document.getElementById('mcp-gg-preview')
 		const save = document.getElementById('mcp-gg-save')
 		const discard = document.getElementById('mcp-gg-discard')
 		const status = document.getElementById('mcp-gg-status')
-		if (!select) {
+		if (!grid) {
 			return
 		}
+		const STATES = ['inherit', 'allow', 'deny']
+		// The legend's "Inherit" sample: indeterminate cannot be written in HTML.
+		for (const sample of document.querySelectorAll('#mcp-block-groups .mcp-legend input[data-indeterminate]')) {
+			sample.indeterminate = true
+		}
+		const names = () => ({ inherit: t('mcp', 'Inherit'), allow: t('mcp', 'Allow'), deny: t('mcp', 'Deny') })
 		let data = null
-		let selected = ''
-		let draft = {}
+		/** @type {Map<string, Object<string, string>>} unsaved rules by group id */
+		const drafts = new Map()
 		let previewTimer = null
-		let previewed = null
+		let previews = []
 
-		/** @return {object|null} the selected group, from the search results or the configured list */
-		function group() {
-			return [...data.groups, ...data.configured].find((g) => g.id === selected) || null
+		/** @return {Object<string, string[]>} the modules shown: those of apps the server has, filtered by "Show apps" */
+		function catalog() {
+			const all = state.data?.catalog || data.catalog
+			return appFilter.value === '' ? all : Object.fromEntries(Object.entries(all).filter(([module]) => module === appFilter.value))
 		}
 
-		/** Fills the group list and the line of groups that have rules. */
-		function renderGroups() {
-			const options = [el('option', { value: '', textContent: t('mcp', 'Choose a group…') })]
+		/** @return {object[]} the rows: groups with rules first, then the search results, each group once */
+		function rows() {
 			const seen = new Set()
-			for (const g of [...data.configured, ...data.groups]) {
-				if (seen.has(g.id)) {
+			const out = []
+			for (const g of [...data.configured, ...(filter.value === 'configured' ? [] : data.groups)]) {
+				const term = search.value.trim().toLowerCase()
+				if (seen.has(g.id) || (term !== '' && !g.id.toLowerCase().includes(term) && !g.displayName.toLowerCase().includes(term))) {
 					continue
 				}
 				seen.add(g.id)
-				const count = g.members === null ? '' : ' — ' + n('mcp', '%n member', '%n members', g.members)
-				const ruled = Object.keys(g.rules).length > 0 ? ' — ' + n('mcp', '%n rule', '%n rules', Object.keys(g.rules).length) : ''
-				options.push(el('option', { value: g.id, textContent: g.displayName + count + ruled }))
+				out.push(g)
 			}
-			select.replaceChildren(...options)
-			select.value = seen.has(selected) ? selected : ''
-			configured.replaceChildren()
-			if (data.configured.length === 0) {
-				configured.append(t('mcp', 'No group has rules yet.'))
-				return
-			}
-			configured.append(t('mcp', 'Groups with rules:') + ' ')
-			data.configured.forEach((g, i) => {
-				if (i > 0) {
-					configured.append(', ')
-				}
-				configured.append(el('button', { type: 'button', className: 'mcp-link-button', textContent: g.displayName + (g.missing ? ' ' + t('mcp', '(group removed)') : ''), onclick: () => choose(g.id) }))
+			return out
+		}
+
+		/** @return {Object<string, string>} the rules shown for a group: its draft, else what is saved */
+		function rulesOf(g) {
+			return drafts.get(g.id) || g.rules
+		}
+
+		function renderApps() {
+			const all = state.data?.catalog || data.catalog
+			const modules = moduleLabels()
+			const current = appFilter.value
+			appFilter.replaceChildren(el('option', { value: '', textContent: t('mcp', 'All apps') }),
+				...Object.keys(all).map((module) => el('option', { value: module, textContent: modules[module] || module })))
+			appFilter.value = all[current] ? current : ''
+		}
+
+		function render() {
+			const modules = moduleLabels()
+			const operations = operationLabels()
+			const shown = catalog()
+			const top = el('tr')
+			const sub = el('tr')
+			top.append(el('th', { rowSpan: 2, className: 'mcp-user-col', scope: 'col', textContent: t('mcp', 'Group') }))
+			top.append(el('th', { rowSpan: 2, scope: 'col', title: t('mcp', 'The group allows or denies its members to connect an MCP client'), textContent: t('mcp', 'Can connect') }))
+			Object.entries(shown).forEach(([module, ops], index) => {
+				const band = 'mcp-band-' + (index % 2)
+				top.append(el('th', { colSpan: ops.length, scope: 'colgroup', className: 'mcp-module ' + band, textContent: modules[module] || module }))
+				ops.forEach((operation, i) => sub.append(el('th', {
+					scope: 'col',
+					className: band + (i === 0 ? ' mcp-module' : ''),
+					title: operationHint(module, operation),
+					textContent: operations[operation] || operation,
+				})))
 			})
-		}
+			grid.tHead.replaceChildren(top, sub)
+			stickSecondHeaderRow(grid)
 
-		/** @param {string} gid group to edit */
-		function choose(gid) {
-			selected = gid
-			select.value = gid
-			const g = group()
-			draft = g ? { ...g.rules } : {}
-			renderEditor()
-		}
-
-		/** Draws the table of permissions with their Inherit / Allow / Deny choice. */
-		function renderEditor() {
-			const g = group()
-			editor.hidden = g === null
-			if (g === null) {
-				return
-			}
-			const head = el('tr', {}, [
-				el('th', { scope: 'col', textContent: t('mcp', 'Permission') }),
-				el('th', { scope: 'col', textContent: t('mcp', 'Inherit') }),
-				el('th', { scope: 'col', textContent: t('mcp', 'Allow') }),
-				el('th', { scope: 'col', textContent: t('mcp', 'Deny') }),
-			])
-			table.tHead.replaceChildren(head)
-			const rows = data.permissions.filter((permission) => permission === 'eligible' || state.data === null || state.data.catalog[permission.split('.')[0]])
-			table.tBodies[0].replaceChildren(...rows.map((permission, index) => {
-				const label = permissionLabel(permission)
-				const row = el('tr', { className: index === 0 ? 'mcp-gg-eligible' : '' }, [el('th', { scope: 'row', textContent: label })])
-				for (const value of ['inherit', 'allow', 'deny']) {
-					const radio = el('input', { type: 'radio', name: 'mcp-gg-' + permission, value, checked: (draft[permission] || 'inherit') === value })
-					radio.setAttribute('aria-label', label + ': ' + { inherit: t('mcp', 'Inherit'), allow: t('mcp', 'Allow'), deny: t('mcp', 'Deny') }[value])
-					radio.addEventListener('change', () => {
-						if (value === 'inherit') {
-							delete draft[permission]
-						} else {
-							draft[permission] = value
-						}
-						schedulePreview()
-					})
-					row.append(el('td', {}, [radio]))
+			const list = rows()
+			const body = list.map((g) => {
+				const rules = rulesOf(g)
+				const name = el('th', { scope: 'row', className: 'mcp-user-col' }, [
+					el('span', { className: 'mcp-name', textContent: g.displayName }),
+					el('span', { className: 'mcp-uid', textContent: g.members === null ? g.id : g.id + ' · ' + n('mcp', '%n member', '%n members', g.members) }),
+				])
+				if (g.missing) {
+					name.append(el('span', { className: 'mcp-badge', textContent: t('mcp', 'group removed') }))
+				} else if (Object.keys(g.rules).length > 0) {
+					name.append(el('span', { className: 'mcp-badge mcp-badge-connected', textContent: n('mcp', '%n rule', '%n rules', Object.keys(g.rules).length) }))
 				}
+				const row = el('tr', {}, [name, cell(g, 'eligible', t('mcp', 'Can connect'), rules)])
+				row.dataset.gid = g.id
+				Object.entries(shown).forEach(([module, ops], index) => {
+					ops.forEach((operation, i) => {
+						const td = cell(g, module + '.' + operation, (modules[module] || module) + ': ' + (operations[operation] || operation), rules)
+						td.classList.add('mcp-band-' + (index % 2))
+						if (i === 0) {
+							td.classList.add('mcp-module')
+						}
+						row.append(td)
+					})
+				})
 				return row
-			}))
-			schedulePreview()
+			})
+			if (body.length === 0) {
+				const columns = 2 + Object.values(shown).reduce((sum, ops) => sum + ops.length, 0)
+				body.push(el('tr', {}, [el('td', { colSpan: columns, className: 'mcp-empty', textContent: filter.value === 'configured' ? t('mcp', 'No group has rules yet.') : t('mcp', 'No groups found.') })]))
+			}
+			grid.tBodies[0].replaceChildren(...body)
+			grid.setAttribute('aria-busy', 'false')
+			count.textContent = n('mcp', '%n group', '%n groups', list.length)
+		}
+
+		/**
+		 * One permission of one group, as the same checkbox as the user table: checked is Allow, empty is Deny,
+		 * and the indeterminate dash is Inherit. A click cycles Inherit, Allow, Deny.
+		 *
+		 * @param {object} g group
+		 * @param {string} permission "eligible" or "<module>.<operation>"
+		 * @param {string} label name of the permission
+		 * @param {Object<string, string>} rules the rules shown for the group
+		 * @return {HTMLTableCellElement}
+		 */
+		function cell(g, permission, label, rules) {
+			const value = rules[permission] || 'inherit'
+			const changed = value !== (g.rules[permission] || 'inherit')
+			const box = el('input', { type: 'checkbox', checked: value === 'allow', indeterminate: value === 'inherit' })
+			const text = names()[value] + (changed ? ' ' + t('mcp', '(not saved)') : '')
+			box.setAttribute('aria-label', g.displayName + ' — ' + label + ': ' + text)
+			box.addEventListener('click', (event) => {
+				// The browser would only toggle checked; the cycle sets all three states itself.
+				event.preventDefault()
+				const next = STATES[(STATES.indexOf(value) + 1) % STATES.length]
+				const draft = { ...rulesOf(g) }
+				if (next === 'inherit') {
+					delete draft[permission]
+				} else {
+					draft[permission] = next
+				}
+				const same = JSON.stringify(Object.entries(draft).sort()) === JSON.stringify(Object.entries(g.rules).sort())
+				same ? drafts.delete(g.id) : drafts.set(g.id, draft)
+				const index = [...box.closest('tr').children].indexOf(box.closest('td'))
+				// Redrawn after the click finishes, so preventDefault does not undo the new state.
+				setTimeout(() => {
+					render()
+					// The focus stays on the same cell, so the keyboard can cycle it again.
+					grid.querySelector(`tr[data-gid="${CSS.escape(g.id)}"]`)?.children[index]?.querySelector('input')?.focus()
+					schedulePreview()
+				})
+			})
+			const td = el('td', { className: 'mcp-cell mcp-gg-' + value + (changed ? ' mcp-gg-changed' : ''), title: text }, [box])
+			return td
 		}
 
 		function schedulePreview() {
 			clearTimeout(previewTimer)
-			previewTimer = setTimeout(runPreview, 250)
+			save.disabled = drafts.size === 0
+			discard.disabled = drafts.size === 0
+			// With nothing unsaved the answer is known at once; a stale preview must not stay on screen.
+			if (drafts.size === 0) {
+				runPreview()
+			} else {
+				previewTimer = setTimeout(runPreview, 250)
+			}
 		}
 
-		/** Asks the server what saving the draft would change, without saving. */
+		/** Asks the server what saving the changed groups would do, without saving. */
 		async function runPreview() {
-			const g = group()
-			if (g === null) {
+			if (drafts.size === 0) {
+				previews = []
+				preview.replaceChildren(el('p', { textContent: t('mcp', 'No unsaved changes.') }))
 				return
 			}
-			const asked = JSON.stringify(draft)
+			const asked = JSON.stringify([...drafts])
 			try {
-				const result = await api('POST', '/api/group-grants/preview', { group: g.id, rules: draft })
-				if (asked !== JSON.stringify(draft) || g.id !== selected) {
+				const results = []
+				for (const [gid, rules] of drafts) {
+					results.push(await api('POST', '/api/group-grants/preview', { group: gid, rules }))
+				}
+				if (asked !== JSON.stringify([...drafts])) {
 					return
 				}
-				previewed = result
-				paintPreview(result)
+				previews = results
+				paintPreview()
 			} catch (e) {
 				preview.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not compute what would change.') }))
 			}
 		}
 
-		/** @param {object} result answer of the preview endpoint */
-		function paintPreview(result) {
-			save.disabled = result.changes.length === 0
-			discard.disabled = result.changes.length === 0
-			if (result.changes.length === 0) {
-				preview.replaceChildren(el('p', { textContent: t('mcp', 'No unsaved changes.') }))
-				return
-			}
+		function paintPreview() {
 			const word = (value) => value === null ? t('mcp', 'Inherit') : (value ? t('mcp', 'Allow') : t('mcp', 'Deny'))
-			const items = result.changes.map((change) => {
-				const parts = [n('mcp', '%n member gains it', '%n members gain it', change.gain), n('mcp', '%n loses it', '%n lose it', change.lose)]
-				if (change.overridden > 0) {
-					parts.push(n('mcp', '%n keeps an individual setting', '%n keep an individual setting', change.overridden))
+			const out = [el('p', { textContent: t('mcp', 'If you save:') })]
+			for (const result of previews) {
+				const g = [...data.configured, ...data.groups].find((group) => group.id === result.group)
+				const items = result.changes.map((change) => {
+					const parts = [n('mcp', '%n member gains it', '%n members gain it', change.gain), n('mcp', '%n loses it', '%n lose it', change.lose)]
+					if (change.overridden > 0) {
+						parts.push(n('mcp', '%n keeps an individual setting', '%n keep an individual setting', change.overridden))
+					}
+					if (change.unchanged > 0) {
+						parts.push(n('mcp', '%n unchanged (another group or the default decides)', '%n unchanged (another group or the default decides)', change.unchanged))
+					}
+					return el('li', { textContent: permissionLabel(change.permission) + ': ' + word(change.from) + ' → ' + word(change.to) + '. ' + parts.join(', ') + '.' })
+				})
+				out.push(el('p', { className: 'mcp-gg-preview-group', textContent: (g ? g.displayName : result.group) + ' — ' + n('mcp', '%n member', '%n members', result.members) }))
+				out.push(el('ul', {}, items))
+				if (result.truncated) {
+					out.push(el('p', { textContent: t('mcp', 'Only the first members were counted; the group is very large.') }))
 				}
-				if (change.unchanged > 0) {
-					parts.push(n('mcp', '%n unchanged (another group or the default decides)', '%n unchanged (another group or the default decides)', change.unchanged))
-				}
-				return el('li', { textContent: permissionLabel(change.permission) + ': ' + word(change.from) + ' → ' + word(change.to) + '. ' + parts.join(', ') + '.' })
-			})
-			const head = n('mcp', 'If you save, for the %n member of this group:', 'If you save, for the %n members of this group:', result.members)
-			const out = [el('p', { textContent: head }), el('ul', {}, items)]
-			if (result.truncated) {
-				out.push(el('p', { textContent: t('mcp', 'Only the first members were counted; the group is very large.') }))
 			}
 			preview.replaceChildren(...out)
 		}
 
-		async function reload(keepDraft) {
+		async function reload() {
 			data = await api('GET', '/api/group-grants?search=' + encodeURIComponent(search.value.trim()))
-			renderGroups()
-			if (selected !== '' && !keepDraft) {
-				choose(selected)
-			} else if (selected !== '') {
-				renderEditor()
-			}
+			renderApps()
+			render()
 		}
 
-		select.addEventListener('change', () => choose(select.value))
 		let searchTimer = null
 		search.addEventListener('input', () => {
 			clearTimeout(searchTimer)
-			searchTimer = setTimeout(() => reload(true).catch(() => notifyError(t('mcp', 'Could not load the groups.'))), 300)
+			searchTimer = setTimeout(() => reload().catch(() => notifyError(t('mcp', 'Could not load the groups.'))), 300)
 		})
-		discard.addEventListener('click', () => choose(selected))
+		filter.addEventListener('change', render)
+		appFilter.addEventListener('change', render)
+		discard.addEventListener('click', () => {
+			drafts.clear()
+			render()
+			schedulePreview()
+		})
 		save.addEventListener('click', async () => {
-			const g = group()
-			if (g === null) {
-				return
-			}
-			const losing = (previewed?.changes || []).find((change) => change.permission === 'eligible')?.lose || 0
+			const losing = previews.reduce((sum, result) => sum + ((result.changes.find((change) => change.permission === 'eligible') || {}).lose || 0), 0)
 			if (losing > 0 && !window.confirm(n('mcp', '%n member can no longer connect and is signed out of their MCP clients. Save?', '%n members can no longer connect and are signed out of their MCP clients. Save?', losing))) {
 				return
 			}
 			save.disabled = true
+			discard.disabled = true
 			try {
-				data = await api('PUT', '/api/group-grants', { group: g.id, rules: draft, version: data.version })
-				renderGroups()
-				choose(g.id)
+				for (const [gid, rules] of [...drafts]) {
+					const saved = await api('PUT', '/api/group-grants', { group: gid, rules, version: data.version })
+					// Each save moves the version on; the next group is saved with it. The table reloads afterwards.
+					data.version = saved.version
+					drafts.delete(gid)
+				}
 				status.textContent = t('mcp', 'Saved')
 				flash(status, true)
-				// The matrix shows the decisions the groups just changed.
+				await reload()
+				// The user matrix shows the decisions the groups just changed.
 				load()
 			} catch (e) {
 				status.textContent = t('mcp', 'Not saved')
 				flash(status, false)
 				if (e.message === '409') {
 					notifyError(t('mcp', 'The group permissions were changed in another window or by another administrator; the current rules were loaded.'))
-					await reload(false)
+					drafts.clear()
 				} else {
 					notifyError(t('mcp', 'Could not save the group permissions.'))
-					save.disabled = false
 				}
+				await reload().catch(() => {})
 			}
+			schedulePreview()
 		})
+
 		try {
-			await reload(false)
+			await firstLoad
 		} catch (e) {
-			configured.replaceChildren(t('mcp', 'Could not load the groups.'))
+			// Without the user matrix the full catalog is shown.
+		}
+		try {
+			await reload()
+			schedulePreview()
+		} catch (e) {
+			grid.setAttribute('aria-busy', 'false')
+			grid.tBodies[0].replaceChildren(el('tr', {}, [el('td', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the groups.') })]))
 		}
 	}
 
-	load()
-	initGroupGrants()
+	const firstLoad = load()
+	initGroupGrants(firstLoad)
 	initTagsSection()
 	initOauthClients()
 	initCheckoutLimit()

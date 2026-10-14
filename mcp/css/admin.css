@@ -761,32 +761,23 @@
 	background: var(--color-background-hover);
 }
 
-/* Group editor. */
-#mcp-admin .mcp-gg-configured {
-	color: var(--color-text-maxcontrast);
+/* Group matrix: the same checkboxes as the user table, with the dash of Inherit; an unsaved cell is outlined. */
+#mcp-admin .mcp-gg-matrix td.mcp-gg-changed {
+	outline: 2px dashed var(--color-primary-element);
+	outline-offset: -4px;
 }
-#mcp-admin .mcp-link-button {
-	all: unset;
-	cursor: pointer;
-	color: var(--color-primary-element);
-	text-decoration: underline;
+#mcp-admin .mcp-gg-matrix input {
+	scroll-margin-bottom: 160px;
 }
-#mcp-admin .mcp-gg-table {
-	border-collapse: collapse;
-	margin: 8px 0;
+/* Inherit is the quiet state: a grey dash, so the allowed and denied cells stand out as in the user table. */
+#mcp-admin .mcp-gg-matrix input:indeterminate,
+#mcp-admin #mcp-block-groups .mcp-legend input[data-indeterminate] {
+	accent-color: var(--color-text-maxcontrast);
+	opacity: 0.55;
 }
-#mcp-admin .mcp-gg-table th,
-#mcp-admin .mcp-gg-table td {
-	padding: 2px 12px;
-	border-bottom: 1px solid var(--color-border);
-	text-align: start;
-}
-#mcp-admin .mcp-gg-table td {
-	text-align: center;
-}
-#mcp-admin .mcp-gg-table .mcp-gg-eligible th,
-#mcp-admin .mcp-gg-table .mcp-gg-eligible td {
-	border-bottom-width: 2px;
+#mcp-admin .mcp-gg-preview-group {
+	margin: 4px 0 0;
+	font-weight: bold;
 }
 /* What saving would change and the buttons stay in view while the admin scrolls through the permissions. */
 #mcp-admin .mcp-gg-actions {
@@ -797,10 +788,6 @@
 	padding: 8px 0 4px;
 	background: var(--color-main-background);
 	box-shadow: 0 -6px 8px -6px var(--color-box-shadow);
-}
-/* A row reached by keyboard or by scrolling stops above the bar instead of under it. */
-#mcp-admin .mcp-gg-table input {
-	scroll-margin-bottom: 160px;
 }
 #mcp-admin .mcp-gg-actions p {
 	margin: 6px 0 0;
