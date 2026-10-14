@@ -2,6 +2,12 @@
 
 All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/appinfo/info.xml`.
 
+## Unreleased
+
+### Added
+
+- oauth, admin: self-hosted MCP harnesses that take a manually configured `client_id` and return to their own domain can sign in with OAuth. *OAuth clients* has a new **Allow self-hosted clients (custom redirect URIs)** option (off by default) that enables the built-in public client `nextcloud-mcp-custom` and a list of the exact redirect URIs it may return to: absolute `https` URIs (`http` only on loopback), without user name, `*` or fragment, at most 20. The requested `redirect_uri` must match a listed one exactly, PKCE S256 is required as for every client, and the consent screen names the client and the host it returns to. Turning the option off, or removing a URI, deletes the tokens and pending codes of that client at once; while it is off the client can neither exchange a code nor refresh nor authenticate. New keys `oauth_custom_client_enabled` and `oauth_custom_redirect_uris` (en, pt-BR, es) ([#7](https://github.com/sintax-tech/mcp-for-nextcloud/issues/7)).
+
 ## 1.0.8
 
 ### Changed

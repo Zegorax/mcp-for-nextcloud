@@ -978,6 +978,11 @@ OC.L10N.register(
     "The groups were changed in another window or by another administrator; the current list was loaded." : "Os grupos foram alterados em outra janela ou por outro administrador; a lista atual foi carregada.",
     "Task categories must be a list of at most %s texts." : "As categorias da tarefa devem ser uma lista de no máximo %s textos.",
     "Each task category must have 1 to %s characters and no control characters." : "Cada categoria da tarefa deve ter de 1 a %s caracteres e nenhum caractere de controle.",
-    "Categories" : "Categorias"
+    "Categories" : "Categorias",
+    "Allow self-hosted clients (custom redirect URIs)" : "Permitir clientes auto-hospedados (URIs de redirecionamento personalizadas)",
+    "Self-hosted client (custom redirect URIs)" : "Cliente auto-hospedado (URIs de redirecionamento personalizadas)",
+    "One URI per line, exactly as the client sends it: https, no wildcard or fragment. Removing a URI signs out every connection of this client. Use it for self-hosted programs that take a client_id in their settings and return to their own domain." : "Uma URI por linha, exatamente como o cliente envia: https, sem curinga nem fragmento. Remover uma URI desconecta todas as conexões deste cliente. Use para programas auto-hospedados que aceitam um client_id nas configurações e retornam ao próprio domínio.",
+    "Could not change the self-hosted client." : "Não foi possível alterar o cliente auto-hospedado.",
+    "Invalid redirect URIs: use at most 20 absolute https URIs, without user name, wildcard or fragment." : "URIs de redirecionamento inválidas: use no máximo 20 URIs https absolutas, sem nome de usuário, curinga nem fragmento."
 },
 "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;");

@@ -1045,8 +1045,8 @@
 	}
 
 	/**
-	 * OAuth clients section: allowed client_id hosts and the native client switch, through
-	 * GET and PUT /apps/mcp/api/oauth-clients.
+	 * OAuth clients section: allowed client_id hosts, the native client switch and the custom client with its
+	 * redirect URIs, through GET and PUT /apps/mcp/api/oauth-clients.
 	 */
 	async function initOauthClients() {
 		const hostsInput = document.getElementById('mcp-oauth-hosts')
@@ -1057,6 +1057,13 @@
 		const details = document.getElementById('mcp-native-client-details')
 		const clientId = document.getElementById('mcp-native-client-id')
 		const redirects = document.getElementById('mcp-native-redirects')
+		const customBox = document.getElementById('mcp-custom-client')
+		const customStatus = document.getElementById('mcp-custom-client-status')
+		const customDetails = document.getElementById('mcp-custom-client-details')
+		const customId = document.getElementById('mcp-custom-client-id')
+		const customRedirects = document.getElementById('mcp-custom-redirects')
+		const customSave = document.getElementById('mcp-custom-redirects-save')
+		const customRedirectsStatus = document.getElementById('mcp-custom-redirects-status')
 
 		/** @param {object} data settings returned by the API */
 		function show(data) {
@@ -1065,6 +1072,10 @@
 			details.hidden = !data.nativeClientEnabled
 			clientId.textContent = data.nativeClientId
 			redirects.replaceChildren(...data.nativeRedirectUris.map((uri) => el('li', {}, [el('code', { textContent: uri })])))
+			customBox.checked = data.customClientEnabled
+			customDetails.hidden = !data.customClientEnabled
+			customId.textContent = data.customClientId
+			customRedirects.value = data.customRedirectUris.join('\n')
 		}
 
 		/**
@@ -1109,6 +1120,34 @@
 				notifyError(t('mcp', 'Could not change the native client.'))
 			} finally {
 				nativeBox.disabled = false
+			}
+		})
+
+		customBox.addEventListener('change', async () => {
+			const value = customBox.checked
+			customBox.disabled = true
+			try {
+				show(await api('PUT', '/api/oauth-clients', { customClientEnabled: value }))
+				report(customStatus, true)
+			} catch (e) {
+				customBox.checked = !value
+				report(customStatus, false)
+				notifyError(t('mcp', 'Could not change the self-hosted client.'))
+			} finally {
+				customBox.disabled = false
+			}
+		})
+
+		customSave.addEventListener('click', async () => {
+			const customRedirectUris = customRedirects.value.split('\n').map((uri) => uri.trim()).filter((uri) => uri !== '')
+			customSave.disabled = true
+			try {
+				show(await api('PUT', '/api/oauth-clients', { customRedirectUris }))
+				report(customRedirectsStatus, true)
+			} catch (e) {
+				report(customRedirectsStatus, false, t('mcp', 'Invalid redirect URIs: use at most 20 absolute https URIs, without user name, wildcard or fragment.'))
+			} finally {
+				customSave.disabled = false
 			}
 		})
 	}

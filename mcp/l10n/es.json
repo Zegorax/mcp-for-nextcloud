@@ -976,6 +976,11 @@
     "The groups were changed in another window or by another administrator; the current list was loaded." : "Los grupos se cambiaron en otra ventana o por otro administrador; se cargó la lista actual.",
     "Task categories must be a list of at most %s texts." : "Las categorías de la tarea deben ser una lista de como máximo %s textos.",
     "Each task category must have 1 to %s characters and no control characters." : "Cada categoría de la tarea debe tener de 1 a %s caracteres y ningún carácter de control.",
-    "Categories" : "Categorías"
+    "Categories" : "Categorías",
+    "Allow self-hosted clients (custom redirect URIs)" : "Permitir clientes autoalojados (URI de redirección personalizados)",
+    "Self-hosted client (custom redirect URIs)" : "Cliente autoalojado (URI de redirección personalizados)",
+    "One URI per line, exactly as the client sends it: https, no wildcard or fragment. Removing a URI signs out every connection of this client. Use it for self-hosted programs that take a client_id in their settings and return to their own domain." : "Un URI por línea, exactamente como lo envía el cliente: https, sin comodín ni fragmento. Quitar un URI cierra todas las conexiones de este cliente. Úselo para programas autoalojados que aceptan un client_id en su configuración y vuelven a su propio dominio.",
+    "Could not change the self-hosted client." : "No se pudo cambiar el cliente autoalojado.",
+    "Invalid redirect URIs: use at most 20 absolute https URIs, without user name, wildcard or fragment." : "URI de redirección no válidos: use como máximo 20 URI https absolutos, sin nombre de usuario, comodín ni fragmento."
 },"pluralForm" :"nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

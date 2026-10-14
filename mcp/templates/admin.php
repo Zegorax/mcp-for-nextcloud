@@ -167,6 +167,24 @@
             <ul id="mcp-native-redirects" class="mcp-native-redirects"></ul>
             <p class="settings-hint mcp-hint"><?php p($l->t('Paste this client_id in the client settings, for example Gemini CLI settings.json → mcpServers.<name>.oauth.clientId.')); ?></p>
         </div>
+        <p>
+            <input type="checkbox" class="checkbox" id="mcp-custom-client">
+            <label for="mcp-custom-client"><?php p($l->t('Allow self-hosted clients (custom redirect URIs)')); ?></label>
+            <span class="mcp-status" id="mcp-custom-client-status" aria-live="polite"></span>
+        </p>
+        <div id="mcp-custom-client-details" class="mcp-native-client-details" hidden>
+            <p>
+                client_id: <code id="mcp-custom-client-id"></code>
+                <button type="button" class="mcp-copy" data-copy="mcp-custom-client-id"><?php p($l->t('Copy')); ?></button>
+            </p>
+            <p><label for="mcp-custom-redirects"><?php p($l->t('Accepted redirect URIs')); ?></label></p>
+            <textarea id="mcp-custom-redirects" class="mcp-custom-redirects" rows="4" spellcheck="false" autocomplete="off" placeholder="https://harness.example.com/oauth/callback"></textarea>
+            <p>
+                <button type="button" id="mcp-custom-redirects-save"><?php p($l->t('Save')); ?></button>
+                <span class="mcp-status" id="mcp-custom-redirects-status" aria-live="polite"></span>
+            </p>
+            <p class="settings-hint mcp-hint"><?php p($l->t('One URI per line, exactly as the client sends it: https, no wildcard or fragment. Removing a URI signs out every connection of this client. Use it for self-hosted programs that take a client_id in their settings and return to their own domain.')); ?></p>
+        </div>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">

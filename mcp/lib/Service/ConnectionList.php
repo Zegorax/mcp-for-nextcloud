@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\Mcp\Service;
 
 use InvalidArgumentException;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthStore;
 use OCA\Mcp\OAuth\TokenService;
@@ -90,12 +91,15 @@ class ConnectionList {
     }
 
     /**
-     * @param string $clientId client_id of the grant: a CIMD URL or the native client id
-     * @return array{kind:string, host:string, id:string} kind 'native' or 'web', the host shown to people and the raw id
+     * @param string $clientId client_id of the grant: a CIMD URL or a built-in client id
+     * @return array{kind:string, host:string, id:string} kind 'native', 'custom' or 'web', the host shown to people and the raw id
      */
     public static function client(string $clientId): array {
         if ($clientId === NativeClient::CLIENT_ID) {
             return ['kind' => 'native', 'host' => '', 'id' => $clientId];
+        }
+        if ($clientId === CustomClient::CLIENT_ID) {
+            return ['kind' => 'custom', 'host' => '', 'id' => $clientId];
         }
         $host = parse_url($clientId, PHP_URL_HOST);
         return ['kind' => 'web', 'host' => is_string($host) && $host !== '' ? strtolower($host) : $clientId, 'id' => $clientId];

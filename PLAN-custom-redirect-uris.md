@@ -63,7 +63,7 @@ required, exact redirect matching, the list under administrator control.
 9. **Docs and release**:
    - `mcp/README.md` and `mcp/README.pt-BR.md`: the new keys in the configuration table and a "Self-hosted
      harnesses" subsection (client_id, how to set the redirect URI);
-   - `CHANGELOG.md`; bump `mcp/appinfo/info.xml` to 1.0.9.
+   - `CHANGELOG.md` under "Unreleased"; the version bump is left to the release commit, as for earlier releases.
 
 ## Alternative considered
 
