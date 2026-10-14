@@ -29,6 +29,9 @@ use OCP\IUserSession;
  * saying which part was wrong; a save made on stale data answers 409 with the current state.
  */
 class GroupGrantsController extends Controller {
+    /** Most connections counted for one user in the detail panel; the panel says "100 or more" beyond it. */
+    public const MAX_LISTED_CONNECTIONS = 100;
+
     public function __construct(
         string $appName,
         IRequest $request,
@@ -98,11 +101,14 @@ class GroupGrantsController extends Controller {
 
     /**
      * @param string $uid Nextcloud user id
-     * @return JSONResponse the user's effective access (see EffectiveAccess::forUser), or 400 for an unknown user
+     * @return JSONResponse the user's effective access (see EffectiveAccess::forUser) plus `connections`, the number
+     *     of MCP clients signed in with OAuth (at most MAX_LISTED_CONNECTIONS), for the admin detail panel; or 400
      */
     public function effective(string $uid): JSONResponse {
         try {
-            return new JSONResponse($this->effective->forUser($uid));
+            $access = $this->effective->forUser($uid);
+            $access['connections'] = count($this->oauth->listGrants($access['uid'], '', self::MAX_LISTED_CONNECTIONS, 0, time()));
+            return new JSONResponse($access);
         } catch (InvalidArgumentException) {
             return self::invalid();
         }

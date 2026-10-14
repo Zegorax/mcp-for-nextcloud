@@ -6,8 +6,11 @@
  * Admin permission matrix (users × permissions) for the MCP app.
  *
  * Loads one page of users from GET /apps/mcp/api/grants and saves each checkbox immediately through
- * PUT /apps/mcp/api/grants/{uid}, POST /apps/mcp/api/grants/bulk and PUT /apps/mcp/api/service.
- * Plain browser JavaScript, no build step; strings go through t('mcp', …) for translation.
+ * PUT /apps/mcp/api/grants/{uid}, POST /apps/mcp/api/grants/bulk and PUT /apps/mcp/api/service. The "All"
+ * menus apply to the users on the page, or, chosen explicitly, to every filtered user on every page through
+ * POST /apps/mcp/api/grants/bulk/filtered. The page data and the shared helpers are offered to
+ * js/admin-users.js (users list and detail panel) as window.McpAdmin, with an "mcp:users-loaded" event on
+ * #mcp-admin after every load. Plain browser JavaScript, no build step; strings go through t('mcp', …).
  */
 (function () {
 	'use strict'
@@ -19,6 +22,8 @@
 
 	/** Columns the matrix always shows besides the permissions: user, "Can connect" and "Connected". */
 	const FIXED_COLUMNS = 3
+	/** Users per request of the page endpoint (GrantMatrix::PAGE_SIZE). */
+	const PAGE_SIZE = 50
 	const state = { search: '', group: '', filter: 'eligible', page: 1, app: '', data: null, groupsLoaded: false }
 	const table = document.getElementById('mcp-matrix')
 	const searchInput = document.getElementById('mcp-search')
@@ -181,6 +186,7 @@
 			[t('mcp', 'Could not load the users.'), ' ', retry])
 		table.tBodies[0].replaceChildren(el('tr', {}, [cell]))
 		applyAppFilter()
+		root.dispatchEvent(new CustomEvent('mcp:users-loaded', { detail: { ok: false } }))
 	}
 
 	/** Fills the group filter once, keeping the current selection. */
@@ -232,13 +238,26 @@
 		stickSecondHeaderRow()
 	}
 
-	/** Read the Access tab's app parameter on reload and history navigation. */
+	/**
+	 * Read the Access tab's app and filter parameters on reload and history navigation; the Overview
+	 * counters link to #access?filter=eligible and #access?filter=connected.
+	 */
 	function readAppFromHash() {
 		const [tab, query = ''] = window.location.hash.slice(1).split('?')
 		if (tab !== 'access') {
 			return
 		}
-		state.app = new URLSearchParams(query).get('app') || ''
+		const params = new URLSearchParams(query)
+		state.app = params.get('app') || ''
+		const filter = params.get('filter')
+		if (filter !== null && filter !== state.filter && [...filterSelect.options].some((option) => option.value === filter)) {
+			state.filter = filter
+			filterSelect.value = filter
+			state.page = 1
+			if (state.data) {
+				load()
+			}
+		}
 		if (state.data) {
 			renderApps()
 			applyAppFilter()
@@ -280,8 +299,34 @@
 	window.addEventListener('hashchange', readAppFromHash)
 	readAppFromHash()
 
+	/** Number of the next "All" menu, for the names of its scope radio buttons. */
+	let bulkMenuCount = 0
+
 	/**
-	 * Header menu ("All") that allows, denies or gives back to the groups permissions for every user on the page.
+	 * The scope choice at the top of an "All" menu: the users on this page (the default) or, as a separate
+	 * and explicit choice, every user the filters select on every page.
+	 *
+	 * @return {{node: HTMLElement, everyPage: function(): boolean}}
+	 */
+	function bulkScope() {
+		const name = 'mcp-bulk-scope-' + (++bulkMenuCount)
+		const users = state.data.users.length
+		const page = el('input', { type: 'radio', name, value: 'page', checked: true, className: 'mcp-bulk-scope-input' })
+		const all = el('input', { type: 'radio', name, value: 'all', className: 'mcp-bulk-scope-input' })
+		const allText = state.data.total === null
+			? t('mcp', 'Every filtered user, on every page')
+			: n('mcp', 'The %n filtered user, on every page', 'All %n filtered users, on every page', state.data.total)
+		const node = el('fieldset', { className: 'mcp-bulk-scope' }, [
+			el('legend', { textContent: t('mcp', 'Apply to') }),
+			el('label', {}, [page, ' ', n('mcp', 'The %n user on this page', 'The %n users on this page', users)]),
+			el('label', {}, [all, ' ', allText]),
+		])
+		return { node, everyPage: () => all.checked }
+	}
+
+	/**
+	 * Header menu ("All") that allows, denies or gives back to the groups permissions for every user on the page,
+	 * or for every filtered user.
 	 *
 	 * @param {string|null} module module id, null for eligibility
 	 * @param {Array<{operations: string[], label: string}>} entries one line per permission (or group of them)
@@ -289,7 +334,8 @@
 	 * @return {HTMLElement} a native <details> menu
 	 */
 	function bulkMenu(module, entries, title) {
-		const list = el('div', { className: 'mcp-bulk-list' })
+		const scope = bulkScope()
+		const list = el('div', { className: 'mcp-bulk-list' }, [scope.node])
 		for (const entry of entries) {
 			const make = (target, text) => el('button', {
 				type: 'button',
@@ -297,7 +343,11 @@
 				textContent: text,
 				onclick: (event) => {
 					event.target.closest('details').open = false
-					bulk(module, entry.operations, target, entry.label)
+					if (scope.everyPage()) {
+						bulkFiltered(module, entry.operations, target, entry.label)
+					} else {
+						bulk(module, entry.operations, target, entry.label)
+					}
 				},
 			})
 			const inherit = make('inherit', t('mcp', 'Inherit'))
@@ -310,9 +360,21 @@
 			]))
 		}
 		const summary = el('summary', { className: 'mcp-bulk-summary', textContent: t('mcp', 'All') })
+		summary.addEventListener('click', () => {
+			// Every menu opens on the page scope, so an earlier "every page" choice never carries over silently.
+			scope.node.querySelector('input[value="page"]').checked = true
+		})
+		const menu = el('details', { className: 'mcp-bulk-menu' }, [summary, list])
+		menu.addEventListener('toggle', () => {
+			// A menu near the right edge of the scrolling table opens towards the left, so none of it is cut off.
+			list.classList.remove('mcp-bulk-list-end')
+			if (menu.open && list.getBoundingClientRect().right > table.parentElement.getBoundingClientRect().right) {
+				list.classList.add('mcp-bulk-list-end')
+			}
+		})
+		return menu
 		summary.title = title
 		summary.setAttribute('aria-label', title)
-		return el('details', { className: 'mcp-bulk-menu' }, [summary, list])
 	}
 
 	/** Makes the second header row stick right below the first one, whose height depends on the density. */
@@ -366,7 +428,7 @@
 		top.append(el('th', { rowSpan: 2, className: 'mcp-user-col', scope: 'col', textContent: t('mcp', 'User') }))
 		const canConnect = t('mcp', 'Can connect')
 		top.append(el('th', { rowSpan: 2, scope: 'col', title: t('mcp', 'The administrator allows this user to connect an MCP client') }, [
-			canConnect, ' ', bulkMenu(null, [{ operations: ['eligible'], label: canConnect }], t('mcp', 'Change “{permission}” for every user on this page', { permission: canConnect })),
+			canConnect, ' ', bulkMenu(null, [{ operations: ['eligible'], label: canConnect }], t('mcp', 'Change “{permission}” for several users', { permission: canConnect })),
 		]))
 		Object.entries(data.catalog).forEach(([module, ops], index) => {
 			const band = 'mcp-band-' + (index % 2)
@@ -374,7 +436,7 @@
 			const entries = ops.map((operation) => ({ operations: [operation], label: name + ': ' + (operations[operation] || operation) }))
 			entries.push({ operations: ops, label: t('mcp', '{module}: every permission', { module: name }) })
 			const header = el('th', { colSpan: ops.length, scope: 'colgroup', className: 'mcp-module ' + band }, [
-				name, ' ', bulkMenu(module, entries, t('mcp', 'Change {module} permissions for every user on this page', { module: name })),
+				name, ' ', bulkMenu(module, entries, t('mcp', 'Change {module} permissions for several users', { module: name })),
 			])
 			header.dataset.module = module
 			top.append(header)
@@ -424,6 +486,7 @@
 			: (data.total === null
 				? t('mcp', 'Users {from}–{to}', { from, to })
 				: t('mcp', 'Users {from}–{to} of {total}', { from, to, total: data.total }))
+		root.dispatchEvent(new CustomEvent('mcp:users-loaded', { detail: { ok: true } }))
 	}
 
 	/**
@@ -437,8 +500,8 @@
 			el('button', {
 				type: 'button',
 				className: 'mcp-name-button',
-				title: t('mcp', 'Show the effective access of {user}', { user: user.displayName }),
-				onclick: () => openEffective(user.uid),
+				title: t('mcp', 'Edit the permissions of {user}', { user: user.displayName }, undefined, { escape: false }),
+				onclick: (event) => window.McpAdminUsers?.open(user.uid, event.currentTarget),
 			}, [el('span', { className: 'mcp-name', textContent: user.displayName })]),
 			el('span', { className: 'mcp-uid', textContent: user.uid }),
 		])
@@ -667,6 +730,10 @@
 					box.focus()
 				}
 				flash(cell, false)
+				// The error stays next to the checkbox, not only in a toast that disappears.
+				if (!cell.querySelector('.mcp-cell-error')) {
+					cell.append(el('span', { className: 'mcp-cell-error', textContent: t('mcp', 'Not saved') }))
+				}
 				notifyError(t('mcp', 'Could not save the permission for {user}.', { user: user.displayName }))
 			}
 		}
@@ -945,6 +1012,141 @@
 		}
 	}
 
+	/**
+	 * Header "All" action for every filtered user on every page: asks the server what would change, confirms
+	 * it with the filters in words and how many users gain or lose access, saves it only if nothing changed since
+	 * (409 otherwise) and offers an undo that puts the individual settings back.
+	 *
+	 * @param {string|null} module module id, null for eligibility
+	 * @param {string[]} operationList operation ids, or ["eligible"]
+	 * @param {string} target "allow", "deny" or "inherit"
+	 * @param {string} label permission name
+	 */
+	async function bulkFiltered(module, operationList, target, label) {
+		if (bulkBusy) {
+			return
+		}
+		const vars = { permission: label }
+		const body = { search: state.search, group: state.group, filter: state.filter, module, operations: operationList, state: target }
+		let undo = null
+		setBulkBusy(true)
+		try {
+			let plan
+			try {
+				plan = await api('POST', '/api/grants/bulk/filtered', { ...body, dryRun: true })
+			} catch (e) {
+				notifyError(t('mcp', 'Could not count the filtered users.'))
+				return
+			}
+			if (plan.tooMany) {
+				showNotice(n('mcp', 'More than %n user match the filters. Narrow the search, the group or “Show” first.', 'More than %n users match the filters. Narrow the search, the group or “Show” first.', plan.limit), null)
+				return
+			}
+			const lines = [filterDescription()]
+			if (plan.unavailable > 0) {
+				lines.push(n('mcp', '%n user with this permission unavailable is left out.', '%n users with this permission unavailable are left out.', plan.unavailable, vars, { escape: false }))
+			}
+			if (plan.unchanged > 0) {
+				lines.push({
+					allow: () => n('mcp', '%n user already has it allowed.', '%n users already have it allowed.', plan.unchanged, vars, { escape: false }),
+					deny: () => n('mcp', '%n user already has it denied.', '%n users already have it denied.', plan.unchanged, vars, { escape: false }),
+					inherit: () => n('mcp', '%n user already inherits it.', '%n users already inherit it.', plan.unchanged, vars, { escape: false }),
+				}[target]())
+			}
+			if (plan.change === 0) {
+				showNotice([t('mcp', 'Nothing to change for “{permission}” in the filtered users.', vars, undefined, { escape: false }), ...lines.slice(1)].join(' '), null)
+				return
+			}
+			if (target === 'inherit') {
+				lines.push(t('mcp', 'Once the groups and the default decide: {gain} gain it, {lose} lose it, the others keep the same result.', { gain: plan.gain, lose: plan.lose }))
+			}
+			const question = {
+				allow: () => n('mcp', 'Allow “{permission}” for %n user, across every page of the current filters?', 'Allow “{permission}” for %n users, across every page of the current filters?', plan.change, vars, { escape: false }),
+				deny: () => n('mcp', 'Deny “{permission}” for %n user, across every page of the current filters?', 'Deny “{permission}” for %n users, across every page of the current filters?', plan.change, vars, { escape: false }),
+				inherit: () => n('mcp', 'Let the groups decide “{permission}” for %n user, across every page of the current filters?', 'Let the groups decide “{permission}” for %n users, across every page of the current filters?', plan.change, vars, { escape: false }),
+			}[target]()
+			if (module === null && plan.lose > 0) {
+				lines.push(n('mcp', '%n user can no longer connect and is signed out of their MCP clients; undoing this does not sign them back in.', '%n users can no longer connect and are signed out of their MCP clients; undoing this does not sign them back in.', plan.lose))
+			}
+			if (!window.confirm([question, ...lines].join('\n'))) {
+				return
+			}
+			let result
+			try {
+				result = await api('POST', '/api/grants/bulk/filtered', { ...body, expected: plan.change })
+			} catch (e) {
+				const message = e.message === '409'
+					? t('mcp', 'The filtered users changed since the count, so nothing was saved. Try again to see the new count.')
+					: t('mcp', 'Could not update the filtered users.')
+				notifyError(message)
+				showNotice(message, null)
+				await load()
+				return
+			}
+			undo = () => undoFiltered(module, result.previous)
+			showNotice({
+				allow: () => n('mcp', 'Allowed “{permission}” for %n user across every page.', 'Allowed “{permission}” for %n users across every page.', result.updated, vars, { escape: false }),
+				deny: () => n('mcp', 'Denied “{permission}” for %n user across every page.', 'Denied “{permission}” for %n users across every page.', result.updated, vars, { escape: false }),
+				inherit: () => n('mcp', '“{permission}” now follows the groups for %n user across every page.', '“{permission}” now follows the groups for %n users across every page.', result.updated, vars, { escape: false }),
+			}[target](), undo)
+			await load()
+		} finally {
+			setBulkBusy(false)
+		}
+		if (undo !== null && pendingUndo === undo) {
+			undoButton.focus()
+		}
+	}
+
+	/** @return {string} the current filters in words, for the confirmation of a change on every page */
+	function filterDescription() {
+		const parts = [t('mcp', 'Show: {filter}', { filter: filterSelect.selectedOptions[0]?.textContent || '' }, undefined, { escape: false })]
+		if (state.group !== '') {
+			parts.push(t('mcp', 'Group: {group}', { group: groupSelect.selectedOptions[0]?.textContent || state.group }, undefined, { escape: false }))
+		}
+		if (state.search !== '') {
+			parts.push(t('mcp', 'Search: “{search}”', { search: state.search }, undefined, { escape: false }))
+		}
+		return parts.join(' · ')
+	}
+
+	/**
+	 * Puts back the individual settings a change on every page replaced, through the page endpoint in pages of 50.
+	 *
+	 * @param {string|null} module module id, null for eligibility
+	 * @param {Array<{uid: string, operation: string, state: string}>} previous settings the change replaced
+	 */
+	async function undoFiltered(module, previous) {
+		const groups = new Map()
+		for (const entry of previous) {
+			const key = entry.operation + ':' + entry.state
+			if (!groups.has(key)) {
+				groups.set(key, { operation: entry.operation, state: entry.state, uids: [] })
+			}
+			groups.get(key).uids.push(entry.uid)
+		}
+		const requests = []
+		for (const group of groups.values()) {
+			for (let i = 0; i < group.uids.length; i += PAGE_SIZE) {
+				requests.push({ operation: group.operation, state: group.state, uids: group.uids.slice(i, i + PAGE_SIZE) })
+			}
+		}
+		setBulkBusy(true)
+		try {
+			const saved = await sendBulk(module, requests)
+			if (saved < requests.length) {
+				const failure = t('mcp', 'Could not undo the whole change. The table was reloaded with the saved values.')
+				notifyError(failure)
+				showNotice(failure, null)
+			} else {
+				showNotice(t('mcp', 'Change undone.'), null)
+			}
+			await load()
+		} finally {
+			setBulkBusy(false)
+		}
+	}
+
 	serviceBox.addEventListener('change', async () => {
 		const value = serviceBox.checked
 		serviceBox.disabled = true
@@ -1143,7 +1345,7 @@
 	 * redirect URIs, through GET and PUT /apps/mcp/api/oauth-clients.
 	 */
 	async function initOauthClients() {
-		const hostsInput = document.getElementById('mcp-oauth-hosts')
+		const hostsBox = document.getElementById('mcp-oauth-hosts')
 		const hostsSave = document.getElementById('mcp-oauth-hosts-save')
 		const hostsStatus = document.getElementById('mcp-oauth-hosts-status')
 		const nativeBox = document.getElementById('mcp-native-client')
@@ -1159,9 +1361,48 @@
 		const customSave = document.getElementById('mcp-custom-redirects-save')
 		const customRedirectsStatus = document.getElementById('mcp-custom-redirects-status')
 
+		let hostsEditor = null
+		let redirectsEditor = null
+		let savedRedirects = []
+
 		/** @param {object} data settings returned by the API */
 		function show(data) {
-			hostsInput.value = data.hosts.join(', ')
+			if (hostsEditor === null) {
+				hostsEditor = window.McpAdminListEditor.create({
+					container: hostsBox,
+					items: data.hosts,
+					inputLabel: t('mcp', 'Add a host'),
+					placeholder: 'example.com',
+					emptyText: t('mcp', 'No host: keep at least one.'),
+					removeLabel: (host) => t('mcp', 'Remove {host}', { host }, undefined, { escape: false }),
+					normalize: (text) => {
+						const host = text.trim().toLowerCase()
+						if (/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(host) && host.length <= 253) {
+							return { value: host, error: '' }
+						}
+						return { value: null, error: t('mcp', 'Use a host name only, such as claude.ai: no https://, port, path or *.') }
+					},
+				})
+				redirectsEditor = window.McpAdminListEditor.create({
+					container: customRedirects,
+					items: data.customRedirectUris,
+					inputLabel: t('mcp', 'Add a redirect URI'),
+					placeholder: 'https://harness.example.com/oauth/callback',
+					emptyText: t('mcp', 'No redirect URI yet: the self-hosted client cannot sign in.'),
+					removeLabel: (uri) => t('mcp', 'Remove {uri}', { uri }, undefined, { escape: false }),
+					normalize: (text) => {
+						const uri = text.trim()
+						if (/^https:\/\/[^\s#*]+$/i.test(uri) || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/[^\s#*]*)?$/i.test(uri)) {
+							return { value: uri, error: '' }
+						}
+						return { value: null, error: t('mcp', 'Use the full redirect URI, starting with https:// (http:// only on localhost), without *, user name or #fragment.') }
+					},
+				})
+			} else {
+				hostsEditor.setSaved(data.hosts)
+				redirectsEditor.setSaved(data.customRedirectUris)
+			}
+			savedRedirects = data.customRedirectUris.slice()
 			nativeBox.checked = data.nativeClientEnabled
 			details.hidden = !data.nativeClientEnabled
 			clientId.textContent = data.nativeClientId
@@ -1169,7 +1410,6 @@
 			customBox.checked = data.customClientEnabled
 			customDetails.hidden = !data.customClientEnabled
 			customId.textContent = data.customClientId
-			customRedirects.value = data.customRedirectUris.join('\n')
 		}
 
 		/**
@@ -1190,7 +1430,7 @@
 		}
 
 		hostsSave.addEventListener('click', async () => {
-			const hosts = hostsInput.value.split(',').map((host) => host.trim().toLowerCase()).filter((host) => host !== '')
+			const hosts = hostsEditor.getItems()
 			hostsSave.disabled = true
 			try {
 				show(await api('PUT', '/api/oauth-clients', { hosts }))
@@ -1233,7 +1473,11 @@
 		})
 
 		customSave.addEventListener('click', async () => {
-			const customRedirectUris = customRedirects.value.split('\n').map((uri) => uri.trim()).filter((uri) => uri !== '')
+			const customRedirectUris = redirectsEditor.getItems()
+			const removed = savedRedirects.filter((uri) => !customRedirectUris.includes(uri))
+			if (removed.length > 0 && !window.confirm(n('mcp', 'Removing %n redirect URI signs out every connection of the self-hosted client. Save?', 'Removing %n redirect URIs signs out every connection of the self-hosted client. Save?', removed.length))) {
+				return
+			}
 			customSave.disabled = true
 			try {
 				show(await api('PUT', '/api/oauth-clients', { customRedirectUris }))
@@ -1453,85 +1697,6 @@
 		}
 		const [module, operation] = permission.split('.')
 		return (moduleLabels()[module] || module) + ': ' + (operationLabels()[operation] || operation)
-	}
-
-	const effectiveDialog = document.getElementById('mcp-effective')
-	const effectiveTitle = document.getElementById('mcp-effective-title')
-	const effectiveBody = document.getElementById('mcp-effective-body')
-	document.getElementById('mcp-effective-close')?.addEventListener('click', () => effectiveDialog.close())
-
-	/**
-	 * Opens the effective-access view of one user: their groups, what blocks them, and for each permission the
-	 * result and where it comes from.
-	 *
-	 * @param {string} uid user id
-	 */
-	async function openEffective(uid) {
-		if (!effectiveDialog) {
-			return
-		}
-		effectiveTitle.textContent = t('mcp', 'Effective access')
-		effectiveBody.replaceChildren(el('p', { textContent: t('mcp', 'Loading…') }))
-		effectiveDialog.showModal()
-		let data
-		try {
-			data = await api('GET', '/api/effective/' + encodeURIComponent(uid))
-		} catch (e) {
-			effectiveBody.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the effective access.') }))
-			return
-		}
-		effectiveTitle.textContent = t('mcp', 'Effective access of {user}', { user: data.displayName }, undefined, { escape: false })
-		effectiveBody.replaceChildren(...renderEffective(data))
-	}
-
-	/**
-	 * @param {object} data answer of /api/effective/{uid}
-	 * @return {HTMLElement[]} the view
-	 */
-	function renderEffective(data) {
-		const blockers = {
-			service_off: t('mcp', 'The MCP service is off for the whole server.'),
-			account_disabled: t('mcp', 'The account is disabled.'),
-			not_eligible: t('mcp', 'The user may not connect: “Can connect” is denied.'),
-			not_connected: t('mcp', 'The user has not turned the connection on in their personal settings.'),
-		}
-		const names = data.groups.map((group) => group.displayName)
-		const out = [
-			el('p', { textContent: names.length === 0 ? t('mcp', 'Groups: none.') : t('mcp', 'Groups: {groups}.', { groups: names.join(', ') }, undefined, { escape: false }) }),
-			el('p', { className: data.canConnect ? 'mcp-effective-ok' : 'mcp-effective-blocked', textContent: data.canConnect
-				? t('mcp', 'This user can use MCP now. The permissions below are in effect.')
-				: t('mcp', 'This user cannot use MCP now:') }),
-		]
-		if (!data.canConnect) {
-			out.push(el('ul', { className: 'mcp-effective-blockers' }, data.blockers.map((code) => el('li', { textContent: blockers[code] || code }))))
-		}
-		const table = el('table', { className: 'mcp-effective-table' })
-		table.append(el('thead', {}, [el('tr', {}, [
-			el('th', { scope: 'col', textContent: t('mcp', 'Permission') }),
-			el('th', { scope: 'col', textContent: t('mcp', 'Result') }),
-			el('th', { scope: 'col', textContent: t('mcp', 'Why') }),
-			el('th', { scope: 'col', textContent: t('mcp', 'In effect') }),
-		])]))
-		const rows = [{ key: 'eligible', ...data.eligible, available: true, effective: data.eligible.result && data.canConnect }]
-		for (const row of data.permissions) {
-			// Apps the server does not have are left out, like the matrix columns.
-			if (state.data === null || state.data.catalog[row.module]) {
-				rows.push({ key: row.module + '.' + row.operation, ...row })
-			}
-		}
-		const body = el('tbody')
-		for (const row of rows) {
-			const why = row.available ? sourceText(row) : t('mcp', 'This app is unavailable for this user.') + ' ' + sourceText(row)
-			body.append(el('tr', {}, [
-				el('th', { scope: 'row', textContent: permissionLabel(row.key) }),
-				el('td', { className: row.result ? 'mcp-yes' : 'mcp-no', textContent: row.result ? t('mcp', 'Allowed') : t('mcp', 'Denied') }),
-				el('td', { textContent: why }),
-				el('td', { textContent: row.effective ? t('mcp', 'yes') : t('mcp', 'no') }),
-			]))
-		}
-		table.append(body)
-		out.push(table)
-		return out
 	}
 
 	/**
@@ -1821,6 +1986,26 @@
 			grid.setAttribute('aria-busy', 'false')
 			grid.tBodies[0].replaceChildren(el('tr', {}, [el('td', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the groups.') })]))
 		}
+	}
+
+	/** Shared with js/admin-users.js, which loads after this file. */
+	window.McpAdmin = {
+		api,
+		el,
+		flash,
+		notifyError,
+		moduleLabels,
+		operationLabels,
+		operationHint,
+		unavailableReason,
+		rowUnavailableReason,
+		decisionOf,
+		sourceText,
+		permissionLabel,
+		/** @return {object|null} the last page loaded from GET /api/grants */
+		data: () => state.data,
+		/** Reloads the current page of users (users list and matrix). */
+		reload: () => load(),
 	}
 
 	const firstLoad = load()

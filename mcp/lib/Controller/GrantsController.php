@@ -15,6 +15,7 @@ use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthStore;
 use OCA\Mcp\Service\GrantMatrix;
 use OCA\Mcp\Service\GrantPolicy;
+use OCA\Mcp\Service\GroupGrants;
 use OCA\Mcp\Service\LogsAccess;
 use OCA\Mcp\Service\LogsGroupsConflict;
 use OCP\AppFramework\Controller;
@@ -125,6 +126,138 @@ class GrantsController extends Controller {
             }
             return ['updated' => count($uids)];
         });
+    }
+
+    /**
+     * Applies one change to every user the matrix filters select, across all pages, never to more than
+     * GrantMatrix::MAX_BULK users.
+     *
+     * Body {search: string, group: string, filter: string, module: string|null, operations: list<string>,
+     * state: "allow" | "deny" | "inherit", dryRun: bool, expected?: int}; module null with operations ["eligible"]
+     * changes "Can connect". Users for whom the permission is unavailable (a disabled account, "Can connect" denied,
+     * the app unavailable to them) are left out, like the "All" menu of one page. Allow and deny change the users
+     * whose result differs; inherit changes the users who have an individual setting. A dry run only counts, and also
+     * says how many users gain or lose access once the groups and the default decide. The real run must send
+     * `expected`, the `change` count of its dry run: when the selection changed in between it answers 409 with the
+     * new counts and writes nothing.
+     *
+     * @return JSONResponse a dry run {matched, change, unavailable, unchanged, gain, lose, tooMany, limit}; a real run
+     *     {updated, previous: list<{uid, operation, state}>} with the individual settings it replaced, so the page can
+     *     undo it; 400 for an invalid body or a selection over the limit; 409 when `expected` no longer matches
+     */
+    public function bulkFiltered(): JSONResponse {
+        try {
+            $search = $this->request->getParam('search', '');
+            $group = $this->request->getParam('group', '');
+            $filter = $this->request->getParam('filter', '');
+            $module = $this->request->getParam('module');
+            $operations = $this->request->getParam('operations');
+            $target = $this->request->getParam('state');
+            self::state($target);
+            $dryRun = self::bool($this->request->getParam('dryRun', false));
+            if (!is_string($search) || !is_string($group) || !is_string($filter) || !is_array($operations) || $operations === [] || !array_is_list($operations)) {
+                throw new InvalidArgumentException('Invalid request');
+            }
+            $eligibility = $module === null && $operations === [self::ELIGIBLE];
+            if (!$eligibility) {
+                foreach ($operations as $operation) {
+                    self::grant($module, $operation);
+                }
+                if (count(array_unique($operations)) !== count($operations)) {
+                    throw new InvalidArgumentException('Invalid request');
+                }
+            }
+            $users = $this->matrix->matching($search, $group, $filter, GrantMatrix::MAX_BULK);
+        } catch (InvalidArgumentException) {
+            return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
+        }
+        $tooMany = count($users) > GrantMatrix::MAX_BULK;
+        if ($tooMany && !$dryRun) {
+            return new JSONResponse(['error' => 'Too many users', 'limit' => GrantMatrix::MAX_BULK], Http::STATUS_BAD_REQUEST);
+        }
+        $plan = $this->bulkPlan($tooMany ? [] : $users, $module, $operations, $target);
+        $counts = ['matched' => min(count($users), GrantMatrix::MAX_BULK), 'change' => count($plan['changes']),
+            'unavailable' => $plan['unavailable'], 'unchanged' => $plan['unchanged'], 'gain' => $plan['gain'], 'lose' => $plan['lose'],
+            'tooMany' => $tooMany, 'limit' => GrantMatrix::MAX_BULK];
+        if ($dryRun) {
+            return new JSONResponse($counts);
+        }
+        $expected = $this->request->getParam('expected');
+        if (!is_int($expected)) {
+            return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
+        }
+        if ($expected !== $counts['change']) {
+            return new JSONResponse(['error' => 'Conflict'] + $counts, Http::STATUS_CONFLICT);
+        }
+        $value = self::state($target);
+        $previous = [];
+        foreach ($plan['changes'] as $uid => $values) {
+            // A numeric uid became an integer array key; the policy and the answer take it as the string it is.
+            $uid = (string)$uid;
+            foreach ($values as $operation => $before) {
+                $eligibility ? $this->policy->setEligibleOverride($uid, $value) : $this->policy->setGrantOverride($uid, (string)$module, $operation, $value);
+                $previous[] = ['uid' => $uid, 'operation' => $operation, 'state' => $before === null ? 'inherit' : ($before ? 'allow' : 'deny')];
+            }
+        }
+        return new JSONResponse(['updated' => count($plan['changes']), 'previous' => $previous]);
+    }
+
+    /**
+     * What a change would do to each user, with the rule of the page's "All" menu.
+     *
+     * @param list<IUser> $users users to change
+     * @param string|null $module module id, null for eligibility
+     * @param list<string> $operations operation ids, or ["eligible"]
+     * @param string $target "allow", "deny" or "inherit"
+     * @return array{changes: array<array-key, array<string, bool|null>>, unavailable: int, unchanged: int, gain: int, lose: int}
+     *     per uid, the operations that change and their individual setting before (null = inherit); gain and lose
+     *     count the users whose result turns on or off for at least one operation
+     */
+    private function bulkPlan(array $users, ?string $module, array $operations, string $target): array {
+        $changes = [];
+        $unavailable = 0;
+        $unchanged = 0;
+        $gain = 0;
+        $lose = 0;
+        foreach (array_chunk($users, GrantMatrix::PAGE_SIZE) as $chunk) {
+            foreach ($this->matrix->rows($chunk) as $row) {
+                if (!$row['enabled'] || ($module !== null && (!$row['eligible'] || !($row['appsEnabled'][$module] ?? false)))) {
+                    $unavailable++;
+                    continue;
+                }
+                $values = [];
+                $gains = false;
+                $loses = false;
+                foreach ($operations as $operation) {
+                    $permission = $module === null ? GroupGrants::ELIGIBLE : $module . '.' . $operation;
+                    $current = $module === null ? $row['eligible'] : $row['grants'][$module][$operation];
+                    $override = $module === null ? $row['overrides']['eligible'] : $row['overrides']['grants'][$module][$operation];
+                    if ($target === 'inherit') {
+                        if ($override === null) {
+                            continue;
+                        }
+                        $rules = $row['groupRules'][$permission] ?? ['allow' => [], 'deny' => []];
+                        $next = $rules['deny'] === [] && ($rules['allow'] !== [] || ($module !== null && GrantPolicy::defaultGranted($module, $operation)));
+                    } else {
+                        $next = $target === 'allow';
+                        if ($current === $next) {
+                            continue;
+                        }
+                    }
+                    $values[$operation] = $override;
+                    $gains = $gains || (!$current && $next);
+                    $loses = $loses || ($current && !$next);
+                }
+                if ($values === []) {
+                    $unchanged++;
+                    continue;
+                }
+                $changes[$row['uid']] = $values;
+                $gain += $gains ? 1 : 0;
+                $lose += $loses ? 1 : 0;
+            }
+        }
+        return ['changes' => $changes, 'unavailable' => $unavailable, 'unchanged' => $unchanged, 'gain' => $gain, 'lose' => $lose];
     }
 
     /**

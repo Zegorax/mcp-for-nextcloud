@@ -156,6 +156,11 @@ final class GroupGrantsControllerTest extends TestCase {
         $this->assertTrue($permissions['deck.read']['result']);
         $this->assertFalse($permissions['deck.read']['available'], 'Deck is not enabled for bob');
         $this->assertFalse($permissions['deck.read']['effective']);
+        $this->assertSame(0, $data['connections']);
+        $live = ['client_id' => 'https://claude.ai/x', 'scope' => 'mcp', 'created_at' => 1, 'access_expires' => 1, 'refresh_expires' => PHP_INT_MAX];
+        $this->fx->oauth->insertToken(['user_id' => 'bob'] + $live, 0);
+        $this->fx->oauth->insertToken(['user_id' => 'bob', 'refresh_expires' => 1] + $live, 0);
+        $this->assertSame(1, $this->controller()->effective('bob')->getData()['connections'], 'live connections only');
 
         $carol = $this->controller()->effective('dave')->getData();
         $this->assertSame(['not_eligible', 'not_connected'], $carol['blockers']);
