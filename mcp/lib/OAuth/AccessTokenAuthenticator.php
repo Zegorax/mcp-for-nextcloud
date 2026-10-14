@@ -44,7 +44,7 @@ class AccessTokenAuthenticator {
             || !ResourceUrl::sameResource((string)$row['resource'], $resource)) {
             return null;
         }
-        if ($row['client_id'] === NativeClient::CLIENT_ID && !ClientResolver::nativeEnabled($this->config)) {
+        if (ClientResolver::builtInDisabled($this->config, (string)$row['client_id'])) {
             return null;
         }
         return $this->gate->owner((string)$row['user_id']);

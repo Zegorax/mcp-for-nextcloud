@@ -1047,6 +1047,11 @@ OC.L10N.register(
     "No groups found." : "No se encontraron grupos.",
     "(not saved)" : "(sin guardar)",
     "If you save:" : "Si guarda:",
-    "_%n group_::_%n groups_" : ["%n grupo", "%n grupos", "%n grupos"]
+    "_%n group_::_%n groups_" : ["%n grupo", "%n grupos", "%n grupos"],
+    "Allow self-hosted clients (custom redirect URIs)" : "Permitir clientes autoalojados (URI de redirección personalizados)",
+    "Self-hosted client (custom redirect URIs)" : "Cliente autoalojado (URI de redirección personalizados)",
+    "One URI per line, exactly as the client sends it: https, no wildcard or fragment. Removing a URI signs out every connection of this client. Use it for self-hosted programs that take a client_id in their settings and return to their own domain." : "Un URI por línea, exactamente como lo envía el cliente: https, sin comodín ni fragmento. Quitar un URI cierra todas las conexiones de este cliente. Úselo para programas autoalojados que aceptan un client_id en su configuración y vuelven a su propio dominio.",
+    "Could not change the self-hosted client." : "No se pudo cambiar el cliente autoalojado.",
+    "Invalid redirect URIs: use at most 20 absolute https URIs, without user name, wildcard or fragment." : "URI de redirección no válidos: use como máximo 20 URI https absolutos, sin nombre de usuario, comodín ni fragmento."
 },
 "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;");

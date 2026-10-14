@@ -9,6 +9,7 @@ namespace OCA\Mcp\Controller;
 
 use OCA\Mcp\OAuth\AuthorizationRequest;
 use OCA\Mcp\OAuth\AuthorizationValidator;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthException;
 use OCA\Mcp\OAuth\RedirectUriMatcher;
@@ -77,6 +78,7 @@ class OAuthController extends Controller {
             'client' => $authRequest->client->name,
             'clientHost' => $authRequest->client->host(),
             'nativeClient' => $authRequest->client->clientId === NativeClient::CLIENT_ID,
+            'customClient' => $authRequest->client->clientId === CustomClient::CLIENT_ID,
             'redirectHost' => (string)parse_url($authRequest->redirectUri, PHP_URL_HOST),
             'loopback' => RedirectUriMatcher::isLoopback($authRequest->redirectUri),
             'account' => $user->getDisplayName(),

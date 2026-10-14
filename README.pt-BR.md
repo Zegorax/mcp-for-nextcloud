@@ -133,6 +133,7 @@ Todos os clientes falam com a mesma URL, `https://cloud.example.com/apps/mcp/`, 
 | **Claude** — claude.ai, Claude Desktop, Cowork, Claude Code | **Entrar agora** (OAuth), identidade publicada do Claude (CIMD) | Nada: o `claude.ai` é permitido por padrão |
 | **ChatGPT** | **Entrar agora** (OAuth), identidade publicada da OpenAI (CIMD) | Nada: o `chatgpt.com` é permitido por padrão |
 | **Gemini CLI** | OAuth com o cliente nativo embutido no app | Ligar **Permitir programas locais** e copiar o `client_id` |
+| **Harness auto-hospedado** que aceita um `client_id` e retorna ao próprio domínio | OAuth com o cliente auto-hospedado embutido no app | Ligar **Permitir clientes auto-hospedados**, listar o redirect URI do harness e copiar o `client_id` |
 | **Qualquer outro cliente MCP** | Senha de app (HTTP Basic) | Nada |
 
 ### Claude (claude.ai, Claude Desktop, Cowork e Claude Code — recomendado)
@@ -181,14 +182,29 @@ Dois passos, um do administrador e um do usuário, sem nenhum passo no terminal 
 
 Por que um cliente embutido: o Gemini CLI não publica documento de identidade de cliente, então o app traz um cliente público fixo para programas locais. O id é o mesmo para todo mundo na instância, e isso é seguro porque ele não concede nada sozinho — o login, a elegibilidade, a conexão pessoal, as liberações do administrador, a tela de consentimento e o PKCE continuam valendo. Desligar a opção também impede o cliente de trocar um código de autorização e de renovar token.
 
+### Harnesses auto-hospedados (redirect URI personalizado)
+
+Para um harness MCP que você mesmo roda (no seu próprio domínio), que suporta OAuth e deixa digitar um `client_id`, mas não publica documento de identidade de cliente. Um harness que publica esse documento só precisa ter o host incluído em **Hosts de clientes permitidos**.
+
+**Administrador** — *Configurações de administração → MCP for Cloud → Clientes OAuth*:
+
+1. Marque **Permitir clientes auto-hospedados (URIs de redirecionamento personalizadas)**. Por padrão está desligado.
+2. Em **URIs de redirecionamento aceitas**, informe a URL de callback do harness, uma por linha, exatamente como o harness envia (por exemplo `https://harness.example.com/oauth/callback`), e clique em **Salvar**. Cada uma deve ser um URI `https` absoluto, sem nome de usuário, `*` ou `#fragmento`; `http` simples só é aceito para endereços loopback. No máximo 20.
+3. Copie o `client_id` exibido ali — `nextcloud-mcp-custom`.
+
+**No harness**: adicione um servidor MCP com a URL `https://cloud.example.com/apps/mcp/`, escolha OAuth e informe o client id `nextcloud-mcp-custom`, sem client secret (é um cliente público com PKCE). Ao conectar, o seu Nextcloud abre: faça login e clique em **Permitir**; a tela de consentimento mostra o host para onde vai retornar.
+
+O redirect URI precisa casar caractere por caractere com um dos URIs da lista — outro caminho, query, porta ou barra final é recusado antes da tela de login. Desmarcar a opção, ou remover um URI da lista, desconecta na hora todas as conexões feitas com esse cliente. Como o cliente nativo, o id é o mesmo para todo mundo na instância e não concede nada sozinho: o login, a elegibilidade, a conexão pessoal, as liberações do administrador, o consentimento e o PKCE continuam valendo.
+
 ### Administradores: Clientes OAuth
 
 *Configurações de administração → MCP for Cloud → Clientes OAuth* decide quais clientes podem conectar, sem nenhum passo no terminal:
 
 - **Hosts de clientes permitidos** — os hosts cujo documento de identidade de cliente publicado o app aceita baixar, separados por vírgula; `claude.ai` e `chatgpt.com` por padrão. Só nome de host exato: sem `https://`, sem porta, sem caminho, sem `*`, e é preciso deixar pelo menos um. O host é o que está na URL que o cliente usa como `client_id`. Salvar substitui a lista inteira, e remover um host recusa aquele cliente na hora, mesmo que o documento dele já esteja em cache.
 - **Permitir programas locais (cliente nativo)** — liga o cliente `nextcloud-mcp-native` descrito acima e mostra o `client_id` e os redirect URIs aceitos para copiar.
+- **Permitir clientes auto-hospedados (URIs de redirecionamento personalizadas)** — liga o cliente `nextcloud-mcp-custom` descrito acima, com os redirect URIs exatos para onde ele pode retornar.
 
-Os dois controles são exclusivos de administrador, têm proteção CSRF e avisam quando uma gravação é recusada. Uma configuração que você mesmo gravou não é sobrescrita pelos padrões: um valor de `oauth_client_hosts` salvo antes da 0.8.0 continua valendo como está.
+Esses controles são exclusivos de administrador, têm proteção CSRF e avisam quando uma gravação é recusada. Uma configuração que você mesmo gravou não é sobrescrita pelos padrões: um valor de `oauth_client_hosts` salvo antes da 0.8.0 continua valendo como está.
 
 ### Outros clientes MCP (senha de app)
 

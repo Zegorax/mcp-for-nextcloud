@@ -108,10 +108,10 @@ class TokenService {
 
     /**
      * @param string $clientId client of a grant being exchanged or renewed
-     * @throws OAuthException invalid_grant when the grant belongs to the native client and it is disabled
+     * @throws OAuthException invalid_grant when the grant belongs to a built-in client that is disabled
      */
     private function assertClientEnabled(string $clientId): void {
-        if ($clientId === NativeClient::CLIENT_ID && !ClientResolver::nativeEnabled($this->config)) {
+        if (ClientResolver::builtInDisabled($this->config, $clientId)) {
             throw new OAuthException('invalid_grant', 'This client is disabled');
         }
     }

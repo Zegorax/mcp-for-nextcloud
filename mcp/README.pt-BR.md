@@ -300,11 +300,13 @@ O login pelo navegador via OAuth está descrito em [Conectar pelo claude.ai (OAu
 | tabela própria | `mcp_logs_groups` | uma linha de grupos (JSON canônico) e versão; lista vazia = só administradores; editável no bloco **Log do servidor**; importa o appconfig legado na primeira leitura |
 | app `mcp` | `oauth_client_hosts` | lista de hosts separados por vírgula; ausente ou vazia vale o padrão `claude.ai,chatgpt.com` |
 | app `mcp` | `oauth_native_client_enabled` | `1` habilita o cliente nativo local `nextcloud-mcp-native`, `0` ou ausente desabilitado |
+| app `mcp` | `oauth_custom_client_enabled` | `1` habilita o cliente auto-hospedado `nextcloud-mcp-custom`, `0` ou ausente desabilitado |
+| app `mcp` | `oauth_custom_redirect_uris` | lista JSON dos redirect URIs exatos de `nextcloud-mcp-custom` (ausente = nenhum, e o cliente é recusado) |
 | app `mcp` | `checkout_max_bytes` | limite de envio do `files_checkout` em bytes; padrão 50 MiB; editável no bloco Status em MiB; nunca acima do `post_max_size` do PHP |
 | app `mcp` | `hidden_system_tags` | lista JSON de IDs de etiquetas de sistema ocultas (`[]` = ocultação desligada); editável no bloco **Excluídos do acesso MCP** |
 | app `mcp` | `logs_hide_file_names` | `1` (padrão) esconde o texto das mensagens do log nas ferramentas de log enquanto houver etiquetas de ocultação configuradas; `0` mostra o log completo para diagnóstico |
 
-As duas chaves OAuth são editáveis pela seção **Clientes OAuth** da tela de admin e não precisam de `occ`; ver [Conectar pelo claude.ai (OAuth)](#conectar-pelo-claudeai-oauth).
+As chaves OAuth são editáveis pela seção **Clientes OAuth** da tela de admin e não precisam de `occ`; ver [Conectar pelo claude.ai (OAuth)](#conectar-pelo-claudeai-oauth).
 
 A chave `enabled` do app `mcp` pertence ao Nextcloud, que a usa para marcar o app como habilitado (`yes`), e não é o liga/desliga do MCP. O app nunca lê nem grava `enabled`, `installed_version`, `types`, `levels` ou `ocsid`. Para diagnóstico: `occ config:app:get mcp service_enabled`.
 
@@ -316,7 +318,7 @@ No claude.ai, em **Personalizar > Conectores > Adicionar conector personalizado*
 - metadata do servidor de autorização em `/apps/mcp/.well-known/openid-configuration` e `/apps/mcp/.well-known/oauth-authorization-server` (issuer `https://<instância>/apps/mcp`);
 - `oauth/authorize` (consentimento) e `oauth/token` (PKCE S256, refresh com rotação). Access token 1 h, refresh 30 dias; só hashes vão ao banco.
 
-Só clientes CIMD com host na allowlist são aceitos. A allowlist padrão é `claude.ai,chatgpt.com` e é editada sem terminal em **Administração → MCP for Cloud → Clientes OAuth → Hosts de clientes permitidos** (host exato, sem `https://`, porta, caminho ou `*`, ao menos um; salvar substitui a lista inteira e remover um host recusa o cliente na hora, mesmo com o documento em cache). A chave `oauth_client_hosts` não precisa ser gravada à mão: um valor salvo antes da 0.8.0 é preservado e o padrão só vale quando a chave está ausente ou vazia. A mesma seção liga **Permitir programas locais (cliente nativo)**, que habilita o `client_id` público fixo `nextcloud-mcp-native` (desligado por padrão) para programas locais como o Gemini CLI, e mostra os redirect URIs loopback aceitos.
+Só clientes CIMD com host na allowlist são aceitos. A allowlist padrão é `claude.ai,chatgpt.com` e é editada sem terminal em **Administração → MCP for Cloud → Clientes OAuth → Hosts de clientes permitidos** (host exato, sem `https://`, porta, caminho ou `*`, ao menos um; salvar substitui a lista inteira e remover um host recusa o cliente na hora, mesmo com o documento em cache). A chave `oauth_client_hosts` não precisa ser gravada à mão: um valor salvo antes da 0.8.0 é preservado e o padrão só vale quando a chave está ausente ou vazia. A mesma seção liga **Permitir programas locais (cliente nativo)**, que habilita o `client_id` público fixo `nextcloud-mcp-native` (desligado por padrão) para programas locais como o Gemini CLI, e mostra os redirect URIs loopback aceitos. **Permitir clientes auto-hospedados (URIs de redirecionamento personalizados)** habilita o `client_id` público fixo `nextcloud-mcp-custom` (desligado por padrão) com a lista de redirect URIs exatos do administrador (`https` absoluto, `http` só em loopback; sem userinfo, `*` ou fragmento; no máximo 20, de até 2000 caracteres). Desligar qualquer um dos clientes embutidos, ou remover um redirect URI do auto-hospedado, apaga os tokens e códigos pendentes daquele cliente, e um cliente embutido desligado não troca código, não renova e não autentica.
 
 Todo redirecionamento de volta a um cliente carrega `iss` com o emissor (RFC 9207), inclusive na negação e em erros redirecionáveis; erros anteriores à validação do redirect continuam locais. Clientes sem documento de identidade próprio, como o Gemini CLI, são recusados com `invalid_client` enquanto o cliente nativo estiver desligado.
 
@@ -328,6 +330,8 @@ Passos para o usuário, com a mesma URL e a mesma tela "Permitir", estão no REA
 
 - **ChatGPT**: CIMD em `chatgpt.com`, aceito pela allowlist padrão. O documento real traz `token_endpoint_auth_methods_supported: [none, private_key_jwt]` e o singular `private_key_jwt`; o plural vence, e `none` está na lista, então o cliente é aceito como público.
 - **Gemini CLI**: não publica documento de identidade, então usa o cliente nativo estático. O usuário cola o `client_id` exibido na seção do admin em `~/.gemini/settings.json` → `mcpServers.<nome>.oauth.clientId` e roda `/mcp auth`. O redirect `http://localhost:<porta>/oauth/callback` casa porque `RedirectUriMatcher` ignora a porta em loopback (RFC 8252 7.3).
+
+- **Harnesses auto-hospedados**: um harness que aceita um `client_id` configurado à mão e retorna ao próprio domínio usa o cliente estático `nextcloud-mcp-custom`. O `RedirectUriMatcher` compara o `redirect_uri` pedido com a lista gravada de forma exata (só entradas loopback ignoram a porta); a tela de consentimento chama o cliente de "Cliente auto-hospedado" e mostra o host de retorno. Os passos estão no README da raiz.
 
 `iss` é obrigatório porque o Gemini CLI rejeita retorno sem ele.
 

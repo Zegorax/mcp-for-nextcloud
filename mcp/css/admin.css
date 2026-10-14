@@ -902,3 +902,5 @@
     text-decoration: underline;
 }
 
+/* Redirect URIs of the self-hosted client: one per line, wide enough for a full URL. */
+.mcp-custom-redirects { width: 100%; max-width: 640px; font-family: var(--font-face-monospace, monospace); }
