@@ -141,6 +141,11 @@ final class VisibilityContractTest extends TestCase {
                 $args[] = $this->guard;
                 continue;
             }
+            if ($name === \OCA\Mcp\Service\GroupGrants::class) {
+                // Group rules read the database; this contract is about visibility, so only individual grants apply.
+                $args[] = null;
+                continue;
+            }
             if ($name === \OCP\IConfig::class) {
                 $args[] = $this->config->mock($this);
                 continue;

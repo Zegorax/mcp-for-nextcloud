@@ -134,8 +134,8 @@ class GrantMatrix {
     }
 
     /**
-     * Eligible users, or eligible users who also connected (GrantPolicy::connectedUsers, the count of the status
-     * summary). Only those users are loaded (never the whole user base),
+     * Users who may connect, individually or through a group (GrantPolicy::eligibleUsers), or those who also
+     * connected (GrantPolicy::connectedUsers, the count of the status summary). Only those users are loaded (never the whole user base),
      * then narrowed by group and by uid, display name or e-mail, ordered by display name like the backend search.
      *
      * @param string $key GrantPolicy::ELIGIBLE_KEY or GrantPolicy::CONNECTED_KEY
@@ -147,7 +147,7 @@ class GrantMatrix {
             throw new InvalidArgumentException('Invalid request');
         }
         $users = [];
-        foreach ($key === GrantPolicy::CONNECTED_KEY ? $this->policy->connectedUsers() : $this->policy->flaggedUsers($key) as $uid) {
+        foreach ($key === GrantPolicy::CONNECTED_KEY ? $this->policy->connectedUsers() : $this->policy->eligibleUsers() as $uid) {
             $user = $this->userManager->get($uid);
             if ($user === null || ($gid !== '' && !$this->groupManager->isInGroup($uid, $gid))) {
                 continue;

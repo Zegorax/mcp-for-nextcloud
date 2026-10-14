@@ -132,7 +132,8 @@
                 <span class="mcp-legend-item"><input type="checkbox" checked disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Allowed')); ?></span>
                 <span class="mcp-legend-item"><input type="checkbox" disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Denied')); ?></span>
                 <span class="mcp-legend-item"><span class="mcp-state-mark" aria-hidden="true">⊘</span> <?php p($l->t('Unavailable')); ?></span>
-                <span><?php p($l->t('Point at ⊘ for the reason.')); ?></span>
+                <span class="mcp-legend-item"><span class="mcp-override-dot" aria-hidden="true"></span> <?php p($l->t('Individual setting (↺ gives it back to the groups)')); ?></span>
+                <span><?php p($l->t('Point at a cell to see where its value comes from; click a name for the full explanation.')); ?></span>
             </p>
             <span class="mcp-pager">
                 <button type="button" id="mcp-prev-bottom"><?php p($l->t('Previous')); ?></button>
@@ -141,6 +142,55 @@
             </span>
         </div>
     </div>
+
+    <div class="section mcp-block" id="mcp-block-groups">
+        <h2><?php p($l->t('Group permissions')); ?></h2>
+        <p class="settings-hint mcp-hint"><?php p($l->t('A group can allow or deny “Can connect” and each permission for its members. Each decision follows one order: an individual deny, an individual allow, the groups (a deny in any of a user’s groups wins), then the default. Nextcloud permissions still apply.')); ?></p>
+        <div class="mcp-toolbar">
+            <input type="search" id="mcp-gg-search" placeholder="<?php p($l->t('Search groups')); ?>" aria-label="<?php p($l->t('Search groups')); ?>">
+            <select id="mcp-gg-filter" aria-label="<?php p($l->t('Show')); ?>">
+                <option value=""><?php p($l->t('All groups')); ?></option>
+                <option value="configured"><?php p($l->t('Only groups with rules')); ?></option>
+            </select>
+            <label for="mcp-gg-app"><?php p($l->t('Show apps')); ?></label>
+            <select id="mcp-gg-app">
+                <option value=""><?php p($l->t('All apps')); ?></option>
+            </select>
+            <span class="mcp-pager">
+                <span id="mcp-gg-count" class="mcp-count" aria-live="polite"></span>
+            </span>
+        </div>
+        <div class="mcp-matrix-wrap">
+            <table class="mcp-matrix mcp-gg-matrix" id="mcp-gg-table" aria-busy="true">
+                <thead></thead>
+                <tbody><tr><td class="mcp-empty"><?php p($l->t('Loading…')); ?></td></tr></tbody>
+            </table>
+        </div>
+        <div class="mcp-gg-actions">
+            <div id="mcp-gg-preview" class="mcp-gg-preview" role="status" aria-live="polite"></div>
+            <p>
+                <button type="button" id="mcp-gg-save" class="primary" disabled><?php p($l->t('Save group permissions')); ?></button>
+                <button type="button" id="mcp-gg-discard" disabled><?php p($l->t('Discard changes')); ?></button>
+                <span class="mcp-status" id="mcp-gg-status" aria-live="polite"></span>
+            </p>
+        </div>
+        <div class="mcp-toolbar mcp-toolbar-bottom">
+            <p class="mcp-legend">
+                <span class="mcp-legend-item"><input type="checkbox" disabled aria-hidden="true" tabindex="-1" data-indeterminate> <?php p($l->t('Inherit')); ?></span>
+                <span class="mcp-legend-item"><input type="checkbox" checked disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Allow')); ?></span>
+                <span class="mcp-legend-item"><input type="checkbox" disabled aria-hidden="true" tabindex="-1"> <?php p($l->t('Deny')); ?></span>
+                <span><?php p($l->t('Click a cell to change it; nothing is saved until you click “Save group permissions”.')); ?></span>
+            </p>
+        </div>
+    </div>
+
+    <dialog id="mcp-effective" class="mcp-effective" aria-labelledby="mcp-effective-title">
+        <div class="mcp-effective-head">
+            <h3 id="mcp-effective-title"></h3>
+            <button type="button" id="mcp-effective-close"><?php p($l->t('Close')); ?></button>
+        </div>
+        <div id="mcp-effective-body" class="mcp-effective-body"></div>
+    </dialog>
     </div>
 
     <div role="tabpanel" id="mcp-panel-clients" aria-labelledby="mcp-tab-clients" class="mcp-tab-panel" tabindex="0">

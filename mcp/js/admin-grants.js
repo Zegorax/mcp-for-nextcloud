@@ -281,7 +281,7 @@
 	readAppFromHash()
 
 	/**
-	 * Header menu ("All") that allows or denies permissions for every user on the page.
+	 * Header menu ("All") that allows, denies or gives back to the groups permissions for every user on the page.
 	 *
 	 * @param {string|null} module module id, null for eligibility
 	 * @param {Array<{operations: string[], label: string}>} entries one line per permission (or group of them)
@@ -291,19 +291,22 @@
 	function bulkMenu(module, entries, title) {
 		const list = el('div', { className: 'mcp-bulk-list' })
 		for (const entry of entries) {
-			const make = (granted, text) => el('button', {
+			const make = (target, text) => el('button', {
 				type: 'button',
 				className: 'mcp-bulk',
 				textContent: text,
 				onclick: (event) => {
 					event.target.closest('details').open = false
-					bulk(module, entry.operations, granted, entry.label)
+					bulk(module, entry.operations, target, entry.label)
 				},
 			})
+			const inherit = make('inherit', t('mcp', 'Inherit'))
+			inherit.title = t('mcp', 'Remove the individual settings so the groups or the default decide')
 			list.append(el('div', { className: 'mcp-bulk-line' }, [
 				el('span', { className: 'mcp-bulk-name', textContent: entry.label }),
-				make(true, t('mcp', 'Allow')),
-				make(false, t('mcp', 'Deny')),
+				make('allow', t('mcp', 'Allow')),
+				make('deny', t('mcp', 'Deny')),
+				inherit,
 			]))
 		}
 		const summary = el('summary', { className: 'mcp-bulk-summary', textContent: t('mcp', 'All') })
@@ -313,8 +316,8 @@
 	}
 
 	/** Makes the second header row stick right below the first one, whose height depends on the density. */
-	function stickSecondHeaderRow() {
-		const [top, sub] = table.tHead.rows
+	function stickSecondHeaderRow(target = table) {
+		const [top, sub] = target.tHead.rows
 		if (!top || !sub) {
 			return
 		}
@@ -343,7 +346,7 @@
 			return
 		}
 		if (!headerObserver) {
-			headerObserver = new window.ResizeObserver(stickSecondHeaderRow)
+			headerObserver = new window.ResizeObserver(() => stickSecondHeaderRow())
 		}
 		headerObserver.disconnect()
 		observedHeaderRow = top
@@ -431,7 +434,12 @@
 		const row = el('tr', { className: user.enabled ? '' : 'mcp-disabled-user' })
 		row.dataset.uid = user.uid
 		const name = el('th', { scope: 'row', className: 'mcp-user-col' }, [
-			el('span', { className: 'mcp-name', textContent: user.displayName }),
+			el('button', {
+				type: 'button',
+				className: 'mcp-name-button',
+				title: t('mcp', 'Show the effective access of {user}', { user: user.displayName }),
+				onclick: () => openEffective(user.uid),
+			}, [el('span', { className: 'mcp-name', textContent: user.displayName })]),
 			el('span', { className: 'mcp-uid', textContent: user.uid }),
 		])
 		if (!user.enabled) {
@@ -440,7 +448,7 @@
 			name.append(el('span', { className: 'mcp-badge mcp-badge-connected', textContent: t('mcp', 'connected') }))
 		}
 		row.append(name)
-		row.append(permissionCell(user, null, user.eligible, t('mcp', 'Can connect'), { eligible: null }))
+		row.append(permissionCell(user, null, user.eligible, t('mcp', 'Can connect'), { eligible: null }, decisionOf(user, null, null)))
 		const rowReason = rowUnavailableReason(user)
 		if (rowReason !== null) {
 			// One notice instead of a mark in every column; the saved permissions come back with "Can connect".
@@ -454,7 +462,7 @@
 		}
 		Object.entries(state.data.catalog).forEach(([module, ops], index) => {
 			ops.forEach((operation, i) => {
-				const cell = permissionCell(user, module, user.grants[module][operation], module + ':' + operation, { module, operation, granted: null })
+				const cell = permissionCell(user, module, user.grants[module][operation], module + ':' + operation, { module, operation, granted: null }, decisionOf(user, module, operation))
 				cell.dataset.module = module
 				cell.hidden = state.app !== '' && state.app !== module
 				cell.classList.add('mcp-band-' + (index % 2))
@@ -530,6 +538,46 @@
 	}
 
 	/**
+	 * Where a cell's value comes from: the user's own setting, their groups, or the default.
+	 *
+	 * @param {object} user row from the API
+	 * @param {string|null} module module id, null for "Can connect"
+	 * @param {string|null} operation operation id, null for "Can connect"
+	 * @return {{override: boolean|null, source: string, allow: string[], deny: string[]}}
+	 */
+	function decisionOf(user, module, operation) {
+		const key = module === null ? 'eligible' : module + '.' + operation
+		const rules = (user.groupRules || {})[key] || { allow: [], deny: [] }
+		return {
+			override: module === null ? user.overrides?.eligible ?? null : user.overrides?.grants?.[module]?.[operation] ?? null,
+			source: (module === null ? user.sources?.eligible : user.sources?.grants?.[module]?.[operation]) || 'default',
+			allow: rules.allow,
+			deny: rules.deny,
+		}
+	}
+
+	/**
+	 * A sentence saying where a value comes from, for tooltips and the effective-access view.
+	 *
+	 * @param {{override: boolean|null, source: string, allow: string[], deny: string[]}} decision see decisionOf
+	 * @return {string}
+	 */
+	function sourceText(decision) {
+		if (decision.source === 'override') {
+			const groups = [...decision.allow, ...decision.deny]
+			return groups.length === 0
+				? t('mcp', 'Individual setting.')
+				: t('mcp', 'Individual setting; it takes precedence over the groups ({groups}).', { groups: groups.join(', ') }, undefined, { escape: false })
+		}
+		if (decision.source === 'group') {
+			return decision.deny.length > 0
+				? t('mcp', 'Denied by group {groups}; a deny in any group wins.', { groups: decision.deny.join(', ') }, undefined, { escape: false })
+				: t('mcp', 'Allowed by group {groups}.', { groups: decision.allow.join(', ') }, undefined, { escape: false })
+		}
+		return t('mcp', 'Default: no individual setting and no group rule.')
+	}
+
+	/**
 	 * Paints one state on a cell: its class, tooltip and the name read by screen readers.
 	 *
 	 * @param {HTMLTableCellElement} cell the cell
@@ -552,9 +600,10 @@
 	 * @param {boolean} checked saved value
 	 * @param {string} label accessible name of the permission
 	 * @param {object} body request body template; the null field receives the new value
+	 * @param {{override: boolean|null, source: string, allow: string[], deny: string[]}} decision see decisionOf
 	 * @return {HTMLTableCellElement}
 	 */
-	function permissionCell(user, module, checked, label, body) {
+	function permissionCell(user, module, checked, label, body, decision) {
 		const cell = el('td', { className: 'mcp-cell' })
 		const reason = unavailableReason(user, module)
 		if (reason !== null) {
@@ -567,10 +616,33 @@
 		}
 		const box = el('input', { type: 'checkbox', checked })
 		box.setAttribute('aria-label', user.displayName + ' — ' + label)
-		paintState(cell, checked ? 'allowed' : 'denied')
-		box.addEventListener('change', async () => {
+		paintState(cell, checked ? 'allowed' : 'denied', sourceText(decision))
+		if (decision.override !== null) {
+			// An individual setting wins over every group; the dot shows it, the button gives the decision back.
+			cell.classList.add('mcp-override')
+			const reset = el('button', {
+				type: 'button',
+				className: 'mcp-inherit',
+				textContent: '↺',
+				title: t('mcp', 'Inherit: remove the individual setting so the groups or the default decide'),
+			})
+			reset.setAttribute('aria-label', t('mcp', 'Inherit {permission} for {user}', { permission: label, user: user.displayName }, undefined, { escape: false }))
+			reset.addEventListener('click', () => save(Object.fromEntries(Object.entries(body).filter(([, v]) => v !== null)), 'inherit'))
+			cell.append(reset)
+		}
+		box.addEventListener('change', () => save(Object.fromEntries(Object.entries(body).map(([key, v]) => [key, v === null ? box.checked : v])), null))
+
+		/**
+		 * Saves the cell and redraws the row, keeping the focus where the admin left it.
+		 *
+		 * @param {object} payload request body
+		 * @param {string|null} mode "inherit" to clear the individual setting, null for the checkbox value
+		 */
+		async function save(payload, mode) {
 			const value = box.checked
-			const payload = Object.fromEntries(Object.entries(body).map(([key, v]) => [key, v === null ? value : v]))
+			if (mode !== null) {
+				payload.state = mode
+			}
 			const hadFocus = document.activeElement === box
 			// The focus comes back to this checkbox only when the admin did not move it during the save.
 			const focusStayed = () => hadFocus && (document.activeElement === null || document.activeElement === document.body || document.activeElement === box)
@@ -589,7 +661,7 @@
 				}
 			} catch (e) {
 				const restore = focusStayed()
-				box.checked = !value
+				box.checked = mode === null ? !value : value
 				box.disabled = false
 				if (restore) {
 					box.focus()
@@ -597,8 +669,8 @@
 				flash(cell, false)
 				notifyError(t('mcp', 'Could not save the permission for {user}.', { user: user.displayName }))
 			}
-		})
-		cell.append(box)
+		}
+		cell.prepend(box)
 		return cell
 	}
 
@@ -691,15 +763,30 @@
 	})
 
 	/**
-	 * What a bulk change would do on this page: per operation, the users whose saved value differs
-	 * and that value; users with an unavailable cell are left out, users already set are counted.
+	 * The individual setting of one permission of a user, as the bulk endpoint names it.
+	 *
+	 * @param {object} user row from the API
+	 * @param {string|null} module module id, null for eligibility
+	 * @param {string} operation operation id, or "eligible"
+	 * @return {string} "allow", "deny" or "inherit"
+	 */
+	function overrideOf(user, module, operation) {
+		const value = decisionOf(user, module, module === null ? null : operation).override
+		return value === null ? 'inherit' : (value ? 'allow' : 'deny')
+	}
+
+	/**
+	 * What a bulk change would do on this page: per operation, the users it changes and their individual setting
+	 * before, so an undo can put exactly that back. Allow and deny change the users whose result differs; inherit
+	 * changes the users who have an individual setting. Users with an unavailable cell are left out, users already
+	 * set are counted.
 	 *
 	 * @param {string|null} module module id, null for eligibility
 	 * @param {string[]} operationList operation ids, or ["eligible"]
-	 * @param {boolean} granted new value
-	 * @return {{changes: Array<{operation: string, previous: Map<string, boolean>}>, users: number, unavailable: number, unchanged: number}}
+	 * @param {string} target "allow", "deny" or "inherit"
+	 * @return {{changes: Array<{operation: string, previous: Map<string, string>}>, users: number, unavailable: number, unchanged: number}}
 	 */
-	function bulkPlan(module, operationList, granted) {
+	function bulkPlan(module, operationList, target) {
 		const changes = operationList.map((operation) => ({ operation, previous: new Map() }))
 		let users = 0
 		let unavailable = 0
@@ -712,8 +799,9 @@
 			let changed = false
 			for (const change of changes) {
 				const current = module === null ? user.eligible : user.grants[module][change.operation]
-				if (current !== granted) {
-					change.previous.set(user.uid, current)
+				const before = overrideOf(user, module, change.operation)
+				if (target === 'inherit' ? before !== 'inherit' : current !== (target === 'allow')) {
+					change.previous.set(user.uid, before)
 					changed = true
 				}
 			}
@@ -723,17 +811,17 @@
 	}
 
 	/**
-	 * Saves a bulk change through the bulk endpoint, one request per operation and saved value.
+	 * Saves a bulk change through the bulk endpoint, one request per operation and setting.
 	 *
 	 * @param {string|null} module module id, null for eligibility
-	 * @param {Array<{operation: string, uids: string[], granted: boolean}>} requests requests to send in order
+	 * @param {Array<{operation: string, uids: string[], state: string}>} requests requests to send in order
 	 * @return {Promise<number>} how many requests were saved before a failure (all of them on success)
 	 */
 	async function sendBulk(module, requests) {
 		let saved = 0
 		try {
 			for (const request of requests) {
-				await api('POST', '/api/grants/bulk', { uids: request.uids, module, operation: request.operation, granted: request.granted })
+				await api('POST', '/api/grants/bulk', { uids: request.uids, module, operation: request.operation, state: request.state })
 				saved++
 			}
 		} catch (e) {
@@ -743,18 +831,18 @@
 	}
 
 	/**
-	 * Requests that put back the previous values, grouped by operation and previous value.
+	 * Requests that put back the previous individual settings, grouped by operation and setting.
 	 *
-	 * @param {Array<{operation: string, previous: Map<string, boolean>}>} changes changes that were saved
-	 * @return {Array<{operation: string, uids: string[], granted: boolean}>}
+	 * @param {Array<{operation: string, previous: Map<string, string>}>} changes changes that were saved
+	 * @return {Array<{operation: string, uids: string[], state: string}>}
 	 */
 	function undoRequests(changes) {
 		const requests = []
 		for (const change of changes) {
-			for (const value of [true, false]) {
+			for (const value of ['allow', 'deny', 'inherit']) {
 				const uids = [...change.previous].filter(([, previous]) => previous === value).map(([uid]) => uid)
 				if (uids.length > 0) {
-					requests.push({ operation: change.operation, uids, granted: value })
+					requests.push({ operation: change.operation, uids, state: value })
 				}
 			}
 		}
@@ -766,38 +854,42 @@
 	 *
 	 * @param {string|null} module module id, null for eligibility
 	 * @param {string[]} operationList operation ids, or ["eligible"]; several are saved one after the other
-	 * @param {boolean} granted new value
+	 * @param {string} target "allow", "deny" or "inherit"
 	 * @param {string} label permission name
 	 */
-	async function bulk(module, operationList, granted, label) {
+	async function bulk(module, operationList, target, label) {
 		if (bulkBusy) {
 			return
 		}
-		const plan = bulkPlan(module, operationList, granted)
+		const plan = bulkPlan(module, operationList, target)
 		const vars = { permission: label }
 		const lines = []
 		if (plan.unavailable > 0) {
 			lines.push(n('mcp', '%n user with this permission unavailable is left out.', '%n users with this permission unavailable are left out.', plan.unavailable, vars, { escape: false }))
 		}
 		if (plan.unchanged > 0) {
-			lines.push(granted
-				? n('mcp', '%n user already has it allowed.', '%n users already have it allowed.', plan.unchanged, vars, { escape: false })
-				: n('mcp', '%n user already has it denied.', '%n users already have it denied.', plan.unchanged, vars, { escape: false }))
+			lines.push({
+				allow: () => n('mcp', '%n user already has it allowed.', '%n users already have it allowed.', plan.unchanged, vars, { escape: false }),
+				deny: () => n('mcp', '%n user already has it denied.', '%n users already have it denied.', plan.unchanged, vars, { escape: false }),
+				inherit: () => n('mcp', '%n user already inherits it.', '%n users already inherit it.', plan.unchanged, vars, { escape: false }),
+			}[target]())
 		}
 		if (plan.users === 0) {
 			showNotice([t('mcp', 'Nothing to change on this page for “{permission}”.', vars, undefined, { escape: false }), ...lines].join(' '), null)
 			return
 		}
-		const question = granted
-			? n('mcp', 'Allow “{permission}” for %n user on this page?', 'Allow “{permission}” for %n users on this page?', plan.users, vars, { escape: false })
-			: n('mcp', 'Deny “{permission}” for %n user on this page?', 'Deny “{permission}” for %n users on this page?', plan.users, vars, { escape: false })
-		if (module === null && !granted) {
+		const question = {
+			allow: () => n('mcp', 'Allow “{permission}” for %n user on this page?', 'Allow “{permission}” for %n users on this page?', plan.users, vars, { escape: false }),
+			deny: () => n('mcp', 'Deny “{permission}” for %n user on this page?', 'Deny “{permission}” for %n users on this page?', plan.users, vars, { escape: false }),
+			inherit: () => n('mcp', 'Let the groups decide “{permission}” for %n user on this page (remove the individual setting)?', 'Let the groups decide “{permission}” for %n users on this page (remove their individual settings)?', plan.users, vars, { escape: false }),
+		}[target]()
+		if (module === null && target !== 'allow') {
 			lines.push(t('mcp', 'They are signed out of their MCP clients, and undoing this does not sign them back in.'))
 		}
 		if (!window.confirm([question, ...lines].join('\n'))) {
 			return
 		}
-		const requests = plan.changes.map((change) => ({ operation: change.operation, uids: [...change.previous.keys()], granted }))
+		const requests = plan.changes.map((change) => ({ operation: change.operation, uids: [...change.previous.keys()], state: target }))
 		let undo = null
 		setBulkBusy(true)
 		try {
@@ -810,9 +902,11 @@
 					showNotice(t('mcp', 'Part of the change was saved.'), undo)
 				}
 			} else {
-				showNotice(granted
-					? n('mcp', 'Allowed “{permission}” for %n user.', 'Allowed “{permission}” for %n users.', plan.users, vars, { escape: false })
-					: n('mcp', 'Denied “{permission}” for %n user.', 'Denied “{permission}” for %n users.', plan.users, vars, { escape: false }), undo)
+				showNotice({
+					allow: () => n('mcp', 'Allowed “{permission}” for %n user.', 'Allowed “{permission}” for %n users.', plan.users, vars, { escape: false }),
+					deny: () => n('mcp', 'Denied “{permission}” for %n user.', 'Denied “{permission}” for %n users.', plan.users, vars, { escape: false }),
+					inherit: () => n('mcp', '“{permission}” now follows the groups for %n user.', '“{permission}” now follows the groups for %n users.', plan.users, vars, { escape: false }),
+				}[target](), undo)
 			}
 			await load()
 		} finally {
@@ -826,12 +920,12 @@
 	}
 
 	/**
-	 * Puts back the values a bulk change replaced; a failure part way is reported and the matrix reloaded.
-	 * It restores what the bulk saw, so a change someone else made in between is overwritten (last write
-	 * wins): grants have no versioning yet, which is left for 1.1.0.
+	 * Puts back the individual settings a bulk change replaced; a failure part way is reported and the matrix
+	 * reloaded. It restores what the bulk saw, so a change someone else made in between is overwritten (last write
+	 * wins): per-user grants have no versioning.
 	 *
 	 * @param {string|null} module module id, null for eligibility
-	 * @param {Array<{operation: string, previous: Map<string, boolean>}>} changes changes that were saved
+	 * @param {Array<{operation: string, previous: Map<string, string>}>} changes changes that were saved
 	 */
 	async function undoBulk(module, changes) {
 		const requests = undoRequests(changes)
@@ -1310,7 +1404,388 @@
 		await reload()
 	}
 
-	load()
+	/**
+	 * @param {string} permission "eligible" or "<module>.<operation>"
+	 * @return {string} its name for people
+	 */
+	function permissionLabel(permission) {
+		if (permission === 'eligible') {
+			return t('mcp', 'Can connect')
+		}
+		const [module, operation] = permission.split('.')
+		return (moduleLabels()[module] || module) + ': ' + (operationLabels()[operation] || operation)
+	}
+
+	const effectiveDialog = document.getElementById('mcp-effective')
+	const effectiveTitle = document.getElementById('mcp-effective-title')
+	const effectiveBody = document.getElementById('mcp-effective-body')
+	document.getElementById('mcp-effective-close')?.addEventListener('click', () => effectiveDialog.close())
+
+	/**
+	 * Opens the effective-access view of one user: their groups, what blocks them, and for each permission the
+	 * result and where it comes from.
+	 *
+	 * @param {string} uid user id
+	 */
+	async function openEffective(uid) {
+		if (!effectiveDialog) {
+			return
+		}
+		effectiveTitle.textContent = t('mcp', 'Effective access')
+		effectiveBody.replaceChildren(el('p', { textContent: t('mcp', 'Loading…') }))
+		effectiveDialog.showModal()
+		let data
+		try {
+			data = await api('GET', '/api/effective/' + encodeURIComponent(uid))
+		} catch (e) {
+			effectiveBody.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the effective access.') }))
+			return
+		}
+		effectiveTitle.textContent = t('mcp', 'Effective access of {user}', { user: data.displayName }, undefined, { escape: false })
+		effectiveBody.replaceChildren(...renderEffective(data))
+	}
+
+	/**
+	 * @param {object} data answer of /api/effective/{uid}
+	 * @return {HTMLElement[]} the view
+	 */
+	function renderEffective(data) {
+		const blockers = {
+			service_off: t('mcp', 'The MCP service is off for the whole server.'),
+			account_disabled: t('mcp', 'The account is disabled.'),
+			not_eligible: t('mcp', 'The user may not connect: “Can connect” is denied.'),
+			not_connected: t('mcp', 'The user has not turned the connection on in their personal settings.'),
+		}
+		const names = data.groups.map((group) => group.displayName)
+		const out = [
+			el('p', { textContent: names.length === 0 ? t('mcp', 'Groups: none.') : t('mcp', 'Groups: {groups}.', { groups: names.join(', ') }, undefined, { escape: false }) }),
+			el('p', { className: data.canConnect ? 'mcp-effective-ok' : 'mcp-effective-blocked', textContent: data.canConnect
+				? t('mcp', 'This user can use MCP now. The permissions below are in effect.')
+				: t('mcp', 'This user cannot use MCP now:') }),
+		]
+		if (!data.canConnect) {
+			out.push(el('ul', { className: 'mcp-effective-blockers' }, data.blockers.map((code) => el('li', { textContent: blockers[code] || code }))))
+		}
+		const table = el('table', { className: 'mcp-effective-table' })
+		table.append(el('thead', {}, [el('tr', {}, [
+			el('th', { scope: 'col', textContent: t('mcp', 'Permission') }),
+			el('th', { scope: 'col', textContent: t('mcp', 'Result') }),
+			el('th', { scope: 'col', textContent: t('mcp', 'Why') }),
+			el('th', { scope: 'col', textContent: t('mcp', 'In effect') }),
+		])]))
+		const rows = [{ key: 'eligible', ...data.eligible, available: true, effective: data.eligible.result && data.canConnect }]
+		for (const row of data.permissions) {
+			// Apps the server does not have are left out, like the matrix columns.
+			if (state.data === null || state.data.catalog[row.module]) {
+				rows.push({ key: row.module + '.' + row.operation, ...row })
+			}
+		}
+		const body = el('tbody')
+		for (const row of rows) {
+			const why = row.available ? sourceText(row) : t('mcp', 'This app is unavailable for this user.') + ' ' + sourceText(row)
+			body.append(el('tr', {}, [
+				el('th', { scope: 'row', textContent: permissionLabel(row.key) }),
+				el('td', { className: row.result ? 'mcp-yes' : 'mcp-no', textContent: row.result ? t('mcp', 'Allowed') : t('mcp', 'Denied') }),
+				el('td', { textContent: why }),
+				el('td', { textContent: row.effective ? t('mcp', 'yes') : t('mcp', 'no') }),
+			]))
+		}
+		table.append(body)
+		out.push(table)
+		return out
+	}
+
+	/**
+	 * Group permissions, drawn like the user matrix: one row per group, one column per permission, each cell
+	 * Inherit (–), Allow (✓) or Deny (✕). A click cycles the cell; changes are kept until "Save", and the preview
+	 * says for every changed group how many members gain or lose each permission. Each group is saved with the
+	 * version read, so a save made on stale data is refused and the current rules are loaded.
+	 *
+	 * @param {Promise} firstLoad the first load of the user matrix, which knows the apps available on the server
+	 */
+	async function initGroupGrants(firstLoad) {
+		const grid = document.getElementById('mcp-gg-table')
+		const search = document.getElementById('mcp-gg-search')
+		const filter = document.getElementById('mcp-gg-filter')
+		const appFilter = document.getElementById('mcp-gg-app')
+		const count = document.getElementById('mcp-gg-count')
+		const preview = document.getElementById('mcp-gg-preview')
+		const save = document.getElementById('mcp-gg-save')
+		const discard = document.getElementById('mcp-gg-discard')
+		const status = document.getElementById('mcp-gg-status')
+		if (!grid) {
+			return
+		}
+		const STATES = ['inherit', 'allow', 'deny']
+		// The legend's "Inherit" sample: indeterminate cannot be written in HTML.
+		for (const sample of document.querySelectorAll('#mcp-block-groups .mcp-legend input[data-indeterminate]')) {
+			sample.indeterminate = true
+		}
+		const names = () => ({ inherit: t('mcp', 'Inherit'), allow: t('mcp', 'Allow'), deny: t('mcp', 'Deny') })
+		let data = null
+		/** @type {Map<string, Object<string, string>>} unsaved rules by group id */
+		const drafts = new Map()
+		let previewTimer = null
+		let previews = []
+
+		/** @return {Object<string, string[]>} the modules shown: those of apps the server has, filtered by "Show apps" */
+		function catalog() {
+			const all = state.data?.catalog || data.catalog
+			return appFilter.value === '' ? all : Object.fromEntries(Object.entries(all).filter(([module]) => module === appFilter.value))
+		}
+
+		/** @return {object[]} the rows: groups with rules first, then the search results, each group once */
+		function rows() {
+			const seen = new Set()
+			const out = []
+			for (const g of [...data.configured, ...(filter.value === 'configured' ? [] : data.groups)]) {
+				const term = search.value.trim().toLowerCase()
+				if (seen.has(g.id) || (term !== '' && !g.id.toLowerCase().includes(term) && !g.displayName.toLowerCase().includes(term))) {
+					continue
+				}
+				seen.add(g.id)
+				out.push(g)
+			}
+			return out
+		}
+
+		/** @return {Object<string, string>} the rules shown for a group: its draft, else what is saved */
+		function rulesOf(g) {
+			return drafts.get(g.id) || g.rules
+		}
+
+		function renderApps() {
+			const all = state.data?.catalog || data.catalog
+			const modules = moduleLabels()
+			const current = appFilter.value
+			appFilter.replaceChildren(el('option', { value: '', textContent: t('mcp', 'All apps') }),
+				...Object.keys(all).map((module) => el('option', { value: module, textContent: modules[module] || module })))
+			appFilter.value = all[current] ? current : ''
+		}
+
+		function render() {
+			const modules = moduleLabels()
+			const operations = operationLabels()
+			const shown = catalog()
+			const top = el('tr')
+			const sub = el('tr')
+			top.append(el('th', { rowSpan: 2, className: 'mcp-user-col', scope: 'col', textContent: t('mcp', 'Group') }))
+			top.append(el('th', { rowSpan: 2, scope: 'col', title: t('mcp', 'The group allows or denies its members to connect an MCP client'), textContent: t('mcp', 'Can connect') }))
+			Object.entries(shown).forEach(([module, ops], index) => {
+				const band = 'mcp-band-' + (index % 2)
+				top.append(el('th', { colSpan: ops.length, scope: 'colgroup', className: 'mcp-module ' + band, textContent: modules[module] || module }))
+				ops.forEach((operation, i) => sub.append(el('th', {
+					scope: 'col',
+					className: band + (i === 0 ? ' mcp-module' : ''),
+					title: operationHint(module, operation),
+					textContent: operations[operation] || operation,
+				})))
+			})
+			grid.tHead.replaceChildren(top, sub)
+			stickSecondHeaderRow(grid)
+
+			const list = rows()
+			const body = list.map((g) => {
+				const rules = rulesOf(g)
+				const name = el('th', { scope: 'row', className: 'mcp-user-col' }, [
+					el('span', { className: 'mcp-name', textContent: g.displayName }),
+					el('span', { className: 'mcp-uid', textContent: g.members === null ? g.id : g.id + ' · ' + n('mcp', '%n member', '%n members', g.members) }),
+				])
+				if (g.missing) {
+					name.append(el('span', { className: 'mcp-badge', textContent: t('mcp', 'group removed') }))
+				} else if (Object.keys(g.rules).length > 0) {
+					name.append(el('span', { className: 'mcp-badge mcp-badge-connected', textContent: n('mcp', '%n rule', '%n rules', Object.keys(g.rules).length) }))
+				}
+				const row = el('tr', {}, [name, cell(g, 'eligible', t('mcp', 'Can connect'), rules)])
+				row.dataset.gid = g.id
+				Object.entries(shown).forEach(([module, ops], index) => {
+					ops.forEach((operation, i) => {
+						const td = cell(g, module + '.' + operation, (modules[module] || module) + ': ' + (operations[operation] || operation), rules)
+						td.classList.add('mcp-band-' + (index % 2))
+						if (i === 0) {
+							td.classList.add('mcp-module')
+						}
+						row.append(td)
+					})
+				})
+				return row
+			})
+			if (body.length === 0) {
+				const columns = 2 + Object.values(shown).reduce((sum, ops) => sum + ops.length, 0)
+				body.push(el('tr', {}, [el('td', { colSpan: columns, className: 'mcp-empty', textContent: filter.value === 'configured' ? t('mcp', 'No group has rules yet.') : t('mcp', 'No groups found.') })]))
+			}
+			grid.tBodies[0].replaceChildren(...body)
+			grid.setAttribute('aria-busy', 'false')
+			count.textContent = n('mcp', '%n group', '%n groups', list.length)
+		}
+
+		/**
+		 * One permission of one group, as the same checkbox as the user table: checked is Allow, empty is Deny,
+		 * and the indeterminate dash is Inherit. A click cycles Inherit, Allow, Deny.
+		 *
+		 * @param {object} g group
+		 * @param {string} permission "eligible" or "<module>.<operation>"
+		 * @param {string} label name of the permission
+		 * @param {Object<string, string>} rules the rules shown for the group
+		 * @return {HTMLTableCellElement}
+		 */
+		function cell(g, permission, label, rules) {
+			const value = rules[permission] || 'inherit'
+			const changed = value !== (g.rules[permission] || 'inherit')
+			const box = el('input', { type: 'checkbox', checked: value === 'allow', indeterminate: value === 'inherit' })
+			const text = names()[value] + (changed ? ' ' + t('mcp', '(not saved)') : '')
+			box.setAttribute('aria-label', g.displayName + ' — ' + label + ': ' + text)
+			box.addEventListener('click', (event) => {
+				// The browser would only toggle checked; the cycle sets all three states itself.
+				event.preventDefault()
+				const next = STATES[(STATES.indexOf(value) + 1) % STATES.length]
+				const draft = { ...rulesOf(g) }
+				if (next === 'inherit') {
+					delete draft[permission]
+				} else {
+					draft[permission] = next
+				}
+				const same = JSON.stringify(Object.entries(draft).sort()) === JSON.stringify(Object.entries(g.rules).sort())
+				same ? drafts.delete(g.id) : drafts.set(g.id, draft)
+				const index = [...box.closest('tr').children].indexOf(box.closest('td'))
+				// Redrawn after the click finishes, so preventDefault does not undo the new state.
+				setTimeout(() => {
+					render()
+					// The focus stays on the same cell, so the keyboard can cycle it again.
+					grid.querySelector(`tr[data-gid="${CSS.escape(g.id)}"]`)?.children[index]?.querySelector('input')?.focus()
+					schedulePreview()
+				})
+			})
+			const td = el('td', { className: 'mcp-cell mcp-gg-' + value + (changed ? ' mcp-gg-changed' : ''), title: text }, [box])
+			return td
+		}
+
+		function schedulePreview() {
+			clearTimeout(previewTimer)
+			save.disabled = drafts.size === 0
+			discard.disabled = drafts.size === 0
+			// With nothing unsaved the answer is known at once; a stale preview must not stay on screen.
+			if (drafts.size === 0) {
+				runPreview()
+			} else {
+				previewTimer = setTimeout(runPreview, 250)
+			}
+		}
+
+		/** Asks the server what saving the changed groups would do, without saving. */
+		async function runPreview() {
+			if (drafts.size === 0) {
+				previews = []
+				preview.replaceChildren(el('p', { textContent: t('mcp', 'No unsaved changes.') }))
+				return
+			}
+			const asked = JSON.stringify([...drafts])
+			try {
+				const results = []
+				for (const [gid, rules] of drafts) {
+					results.push(await api('POST', '/api/group-grants/preview', { group: gid, rules }))
+				}
+				if (asked !== JSON.stringify([...drafts])) {
+					return
+				}
+				previews = results
+				paintPreview()
+			} catch (e) {
+				preview.replaceChildren(el('p', { className: 'mcp-empty', textContent: t('mcp', 'Could not compute what would change.') }))
+			}
+		}
+
+		function paintPreview() {
+			const word = (value) => value === null ? t('mcp', 'Inherit') : (value ? t('mcp', 'Allow') : t('mcp', 'Deny'))
+			const out = [el('p', { textContent: t('mcp', 'If you save:') })]
+			for (const result of previews) {
+				const g = [...data.configured, ...data.groups].find((group) => group.id === result.group)
+				const items = result.changes.map((change) => {
+					const parts = [n('mcp', '%n member gains it', '%n members gain it', change.gain), n('mcp', '%n loses it', '%n lose it', change.lose)]
+					if (change.overridden > 0) {
+						parts.push(n('mcp', '%n keeps an individual setting', '%n keep an individual setting', change.overridden))
+					}
+					if (change.unchanged > 0) {
+						parts.push(n('mcp', '%n unchanged (another group or the default decides)', '%n unchanged (another group or the default decides)', change.unchanged))
+					}
+					return el('li', { textContent: permissionLabel(change.permission) + ': ' + word(change.from) + ' → ' + word(change.to) + '. ' + parts.join(', ') + '.' })
+				})
+				out.push(el('p', { className: 'mcp-gg-preview-group', textContent: (g ? g.displayName : result.group) + ' — ' + n('mcp', '%n member', '%n members', result.members) }))
+				out.push(el('ul', {}, items))
+				if (result.truncated) {
+					out.push(el('p', { textContent: t('mcp', 'Only the first members were counted; the group is very large.') }))
+				}
+			}
+			preview.replaceChildren(...out)
+		}
+
+		async function reload() {
+			data = await api('GET', '/api/group-grants?search=' + encodeURIComponent(search.value.trim()))
+			renderApps()
+			render()
+		}
+
+		let searchTimer = null
+		search.addEventListener('input', () => {
+			clearTimeout(searchTimer)
+			searchTimer = setTimeout(() => reload().catch(() => notifyError(t('mcp', 'Could not load the groups.'))), 300)
+		})
+		filter.addEventListener('change', render)
+		appFilter.addEventListener('change', render)
+		discard.addEventListener('click', () => {
+			drafts.clear()
+			render()
+			schedulePreview()
+		})
+		save.addEventListener('click', async () => {
+			const losing = previews.reduce((sum, result) => sum + ((result.changes.find((change) => change.permission === 'eligible') || {}).lose || 0), 0)
+			if (losing > 0 && !window.confirm(n('mcp', '%n member can no longer connect and is signed out of their MCP clients. Save?', '%n members can no longer connect and are signed out of their MCP clients. Save?', losing))) {
+				return
+			}
+			save.disabled = true
+			discard.disabled = true
+			try {
+				for (const [gid, rules] of [...drafts]) {
+					const saved = await api('PUT', '/api/group-grants', { group: gid, rules, version: data.version })
+					// Each save moves the version on; the next group is saved with it. The table reloads afterwards.
+					data.version = saved.version
+					drafts.delete(gid)
+				}
+				status.textContent = t('mcp', 'Saved')
+				flash(status, true)
+				await reload()
+				// The user matrix shows the decisions the groups just changed.
+				load()
+			} catch (e) {
+				status.textContent = t('mcp', 'Not saved')
+				flash(status, false)
+				if (e.message === '409') {
+					notifyError(t('mcp', 'The group permissions were changed in another window or by another administrator; the current rules were loaded.'))
+					drafts.clear()
+				} else {
+					notifyError(t('mcp', 'Could not save the group permissions.'))
+				}
+				await reload().catch(() => {})
+			}
+			schedulePreview()
+		})
+
+		try {
+			await firstLoad
+		} catch (e) {
+			// Without the user matrix the full catalog is shown.
+		}
+		try {
+			await reload()
+			schedulePreview()
+		} catch (e) {
+			grid.setAttribute('aria-busy', 'false')
+			grid.tBodies[0].replaceChildren(el('tr', {}, [el('td', { className: 'mcp-empty', textContent: t('mcp', 'Could not load the groups.') })]))
+		}
+	}
+
+	const firstLoad = load()
+	initGroupGrants(firstLoad)
 	initTagsSection()
 	initOauthClients()
 	initCheckoutLimit()

@@ -126,6 +126,49 @@ final class GrantsControllerTest extends TestCase {
         $this->assertCount(1, $this->fx->oauth->tokens);
     }
 
+    public function testStateSetsAndClearsIndividualValues(): void {
+        $row = $this->controller(['module' => 'files', 'operation' => 'edit', 'state' => 'allow'])->update('ana')->getData();
+        $this->assertTrue($row['grants']['files']['edit']);
+        $this->assertTrue($row['overrides']['grants']['files']['edit']);
+        $this->assertSame('override', $row['sources']['grants']['files']['edit']);
+        $row = $this->controller(['module' => 'files', 'operation' => 'edit', 'state' => 'inherit'])->update('ana')->getData();
+        $this->assertNull($row['overrides']['grants']['files']['edit']);
+        $this->assertSame('default', $row['sources']['grants']['files']['edit']);
+        $this->assertArrayNotHasKey('grant_files_edit', $this->fx->config->user['ana']['mcp'] ?? []);
+
+        $this->fx->oauth->insertToken(['user_id' => 'ana'], 0);
+        $row = $this->controller(['state' => 'allow'])->update('ana')->getData();
+        $this->assertTrue($row['eligible']);
+        $this->assertCount(1, $this->fx->oauth->tokens);
+        $row = $this->controller(['state' => 'inherit'])->update('ana')->getData();
+        $this->assertFalse($row['eligible'], 'without a group, inherit falls back to the default');
+        $this->assertSame([], $this->fx->oauth->tokens, 'losing eligibility signs the user out');
+    }
+
+    public function testStateIsValidatedAndNeverMixedWithTheBooleanForms(): void {
+        foreach ([
+            ['state' => 'yes'],
+            ['state' => true],
+            ['state' => 'allow', 'eligible' => true],
+            ['module' => 'files', 'operation' => 'edit', 'state' => 'allow', 'granted' => true],
+            ['module' => 'files', 'operation' => 'delete', 'state' => 'allow'],
+        ] as $body) {
+            self::assertBad($this->controller($body)->update('ana'));
+        }
+        self::assertBad($this->controller(['uids' => ['ana'], 'module' => 'files', 'operation' => 'edit', 'state' => 'allow', 'granted' => true])->bulk());
+        self::assertBad($this->controller(['uids' => ['ana'], 'module' => 'files', 'operation' => 'edit', 'state' => 'maybe'])->bulk());
+        $this->assertArrayNotHasKey('ana', $this->fx->config->user);
+    }
+
+    public function testBulkInheritClearsTheValuesOfThePage(): void {
+        $this->controller(['uids' => ['ana', 'bob'], 'module' => 'files', 'operation' => 'edit', 'granted' => false])->bulk();
+        $this->assertSame('0', $this->fx->config->user['bob']['mcp']['grant_files_edit']);
+        $this->assertSame(['updated' => 2], $this->controller(['uids' => ['ana', 'bob'], 'module' => 'files', 'operation' => 'edit', 'state' => 'inherit'])->bulk()->getData());
+        $this->assertArrayNotHasKey('grant_files_edit', $this->fx->config->user['bob']['mcp']);
+        $this->controller(['uids' => ['ana'], 'module' => null, 'operation' => 'eligible', 'state' => 'allow'])->bulk();
+        $this->assertTrue($this->fx->policy->eligible('ana'));
+    }
+
     public function testServiceUsesItsOwnKey(): void {
         $this->assertSame(['enabled' => true], $this->controller(['enabled' => true])->service()->getData());
         $this->assertSame('1', $this->fx->config->app['mcp']['service_enabled']);

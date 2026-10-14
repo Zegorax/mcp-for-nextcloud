@@ -711,6 +711,159 @@
 	width: 8em;
 }
 
+/* Group permissions (issue #3): the user name opens the effective-access view. */
+#mcp-admin .mcp-name-button {
+	all: unset;
+	cursor: pointer;
+	display: block;
+}
+#mcp-admin .mcp-name-button:hover .mcp-name,
+#mcp-admin .mcp-name-button:focus-visible .mcp-name {
+	text-decoration: underline;
+}
+#mcp-admin .mcp-name-button:focus-visible {
+	outline: 2px solid var(--color-primary-element);
+	outline-offset: 2px;
+}
+
+/* An individual setting: a dot in the corner of the cell, and a small button that gives the decision back. */
+#mcp-admin .mcp-cell.mcp-override {
+	white-space: nowrap;
+}
+#mcp-admin .mcp-cell.mcp-override::before,
+#mcp-admin .mcp-override-dot {
+	content: '';
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--color-primary-element);
+	vertical-align: middle;
+}
+#mcp-admin .mcp-cell.mcp-override::before {
+	margin-inline-end: 3px;
+}
+#mcp-admin .mcp-inherit {
+	min-height: 0;
+	min-width: 0;
+	margin: 0 0 0 2px;
+	padding: 0 4px;
+	border: 0;
+	background: transparent;
+	color: var(--color-text-maxcontrast);
+	font-size: 12px;
+	line-height: 1.4;
+	cursor: pointer;
+}
+#mcp-admin .mcp-inherit:hover,
+#mcp-admin .mcp-inherit:focus-visible {
+	color: var(--color-main-text);
+	background: var(--color-background-hover);
+}
+
+/* Group matrix: the same checkboxes as the user table, with the dash of Inherit; an unsaved cell is outlined. */
+#mcp-admin .mcp-gg-matrix td.mcp-gg-changed {
+	outline: 2px dashed var(--color-primary-element);
+	outline-offset: -4px;
+}
+#mcp-admin .mcp-gg-matrix input {
+	scroll-margin-bottom: 160px;
+}
+/* Inherit is the quiet state: a grey dash, so the allowed and denied cells stand out as in the user table. */
+#mcp-admin .mcp-gg-matrix input:indeterminate,
+#mcp-admin #mcp-block-groups .mcp-legend input[data-indeterminate] {
+	accent-color: var(--color-text-maxcontrast);
+	opacity: 0.55;
+}
+#mcp-admin .mcp-gg-preview-group {
+	margin: 4px 0 0;
+	font-weight: bold;
+}
+/* What saving would change and the buttons stay in view while the admin scrolls through the permissions. */
+#mcp-admin .mcp-gg-actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	max-width: 900px;
+	padding: 8px 0 4px;
+	background: var(--color-main-background);
+	box-shadow: 0 -6px 8px -6px var(--color-box-shadow);
+}
+#mcp-admin .mcp-gg-actions p {
+	margin: 6px 0 0;
+}
+#mcp-admin .mcp-gg-preview {
+	max-width: 900px;
+	padding: 8px 12px;
+	border-radius: var(--border-radius-large, 8px);
+	background: var(--color-background-dark);
+}
+#mcp-admin .mcp-gg-preview:empty {
+	display: none;
+}
+
+/* Effective-access view. */
+#mcp-admin .mcp-effective[open] {
+	display: flex;
+	flex-direction: column;
+}
+/* Nextcloud's styles give dialogs a display value, which would keep a closed one on screen and in the way. */
+#mcp-admin .mcp-effective:not([open]) {
+	display: none;
+}
+#mcp-admin .mcp-effective {
+	/* Nextcloud's own styles drop the browser centring of dialogs; put it back. */
+	position: fixed;
+	inset: 0;
+	margin: auto;
+	width: min(1000px, 95vw);
+	height: fit-content;
+	max-height: 85vh;
+	padding: 16px 20px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large, 8px);
+	background: var(--color-main-background);
+	color: var(--color-main-text);
+}
+#mcp-admin .mcp-effective-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+#mcp-admin .mcp-effective-head h3 {
+	margin: 0;
+}
+#mcp-admin .mcp-effective-body {
+	overflow: auto;
+	min-height: 0;
+}
+#mcp-admin .mcp-effective-table,
+#mcp-personal .mcp-effective-table {
+	border-collapse: collapse;
+	width: 100%;
+}
+#mcp-admin .mcp-effective-table th,
+#mcp-admin .mcp-effective-table td,
+#mcp-personal .mcp-effective-table th,
+#mcp-personal .mcp-effective-table td {
+	padding: 3px 8px;
+	border-bottom: 1px solid var(--color-border);
+	text-align: start;
+	vertical-align: top;
+}
+#mcp-admin .mcp-effective-table .mcp-yes,
+#mcp-personal .mcp-effective-table .mcp-yes {
+	color: var(--color-success-text, var(--color-success));
+}
+#mcp-admin .mcp-effective-table .mcp-no,
+#mcp-personal .mcp-effective-table .mcp-no {
+	color: var(--color-text-maxcontrast);
+}
+#mcp-admin .mcp-effective-blocked {
+	color: var(--color-warning-text, var(--color-warning));
+}
+
 /* Narrow screens: one column of cards, stacked toolbars, and tables that scroll sideways instead of overflowing. */
 @media (max-width: 768px) {
 	.mcp-settings .mcp-cards {
@@ -748,3 +901,4 @@
 #mcp-admin .mcp-attribution a {
     text-decoration: underline;
 }
+

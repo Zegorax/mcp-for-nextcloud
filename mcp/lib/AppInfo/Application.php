@@ -71,6 +71,10 @@ class Application extends App implements IBootstrap {
     public function register(IRegistrationContext $context): void {
         $context->registerEventListener(\OCP\User\Events\UserChangedEvent::class, \OCA\Mcp\OAuth\UserRevocationListener::class);
         $context->registerEventListener(\OCP\User\Events\UserDeletedEvent::class, \OCA\Mcp\OAuth\UserRevocationListener::class);
+        foreach ([\OCP\Group\Events\UserAddedEvent::class, \OCP\Group\Events\UserRemovedEvent::class,
+            \OCP\Group\Events\BeforeGroupDeletedEvent::class, \OCP\Group\Events\GroupDeletedEvent::class] as $groupEvent) {
+            $context->registerEventListener($groupEvent, \OCA\Mcp\Service\GroupChangeListener::class);
+        }
         // Production dependencies (smalot/pdfparser) are bundled in the package's vendor/.
         $autoload = __DIR__ . '/../../vendor/autoload.php';
         if (is_file($autoload)) {

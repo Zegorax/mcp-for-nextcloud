@@ -2,6 +2,22 @@
 
 All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/appinfo/info.xml`.
 
+## 1.1.0
+
+### Added
+
+- admin: group permissions. A Nextcloud group can allow or deny "Can connect" and each operation of the catalog for its members, in a new **Group permissions** block of the "Access and permissions" tab, laid out like the user matrix: one row per group (searchable, with member counts), the same checkboxes with a grey dash for *Inherit*, and changes kept pending until saved. Each decision follows one documented order: an individual deny, an individual allow, the user's groups (a deny in any group wins over an allow), then the default. Groups can restrict a read that starts allowed and open the server log read that starts denied ([#3](https://github.com/sintax-tech/mcp-for-nextcloud/issues/3)).
+- admin: before a group's rules are saved, a preview counts, per changed permission, the members who gain it, lose it, keep their own individual setting, or stay unchanged because another group or the default decides; members who would no longer be allowed to connect are counted and confirmed, then signed out of every MCP client. The rules are versioned like the server-log groups: a save made on stale data is refused (409) and the current rules are loaded ([#3](https://github.com/sintax-tech/mcp-for-nextcloud/issues/3)).
+- admin: each matrix cell shows where its value comes from (individual setting, the deciding group, or the default); a dot marks an individual setting and ↺ gives the decision back to the groups. The "All" menu offers *Inherit*, and its *Undo* restores the previous individual settings. Clicking a user opens their effective access: groups, what blocks them and, per permission, result, source and whether it is in effect ([#3](https://github.com/sintax-tech/mcp-for-nextcloud/issues/3)).
+- personal page: **Your access** shows each user what an MCP client may do with their account and why ([#3](https://github.com/sintax-tech/mcp-for-nextcloud/issues/3)).
+- api: `GET`/`PUT /api/group-grants`, `POST /api/group-grants/preview`, `GET /api/effective/{uid}` (admin) and `GET /api/my/access` (the signed-in user); the per-user and bulk grant endpoints accept `state: allow | deny | inherit` besides the boolean.
+
+### Changed
+
+- Per-user values are now individual settings: `1` allow, `0` deny, absent inherits from the groups. On upgrade nothing is converted and nobody's access changes: every value stored by 1.0.x stays and keeps deciding for that user, and no group has rules until an administrator adds them. "Reset to inherit" (↺, or *Inherit* in the "All" menu) hands a user back to their groups.
+- A group membership change applies to the next request; joining a denying group, leaving the group that allowed connecting, or deleting that group also signs the user out of their MCP clients at once, and a deleted group's rules are removed.
+- The "who can connect" filter and the counts of the status block include users allowed through a group.
+
 ## 1.0.8
 
 ### Changed
