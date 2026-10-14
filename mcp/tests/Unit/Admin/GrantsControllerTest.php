@@ -38,7 +38,7 @@ final class GrantsControllerTest extends TestCase {
     }
 
     public function testEveryEndpointIsAdminOnlyAndCsrfProtected(): void {
-        foreach (['index', 'update', 'bulk', 'service', 'oauthClients', 'updateOauthClients', 'logsAccess', 'updateLogsAccess'] as $method) {
+        foreach (['index', 'show', 'update', 'bulk', 'bulkFiltered', 'service', 'oauthClients', 'updateOauthClients', 'logsAccess', 'updateLogsAccess'] as $method) {
             $this->assertSame([], (new \ReflectionMethod(GrantsController::class, $method))->getAttributes(), $method);
         }
     }
@@ -124,6 +124,111 @@ final class GrantsControllerTest extends TestCase {
         $this->controller(['uids' => $this->fx->groups['sales'], 'module' => null,
             'operation' => 'eligible', 'granted' => true])->bulk();
         $this->assertCount(1, $this->fx->oauth->tokens);
+    }
+
+    public function testShowReturnsOneUserWithGroupsAndConnections(): void {
+        $this->fx->groups['sales'] = ['ana'];
+        $this->fx->groups['admin'] = ['ana'];
+        $this->fx->policy->setEligible('ana', true);
+        $live = ['client_id' => 'https://claude.ai/x', 'scope' => 'mcp', 'created_at' => 1, 'access_expires' => 1, 'refresh_expires' => PHP_INT_MAX];
+        $this->fx->oauth->insertToken(['user_id' => 'ana'] + $live, 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'refresh_expires' => 1] + $live, 0);
+        $this->fx->oauth->insertToken(['user_id' => 'bob'] + $live, 0);
+        $data = $this->controller()->show('ana')->getData();
+        $this->assertSame('ana', $data['uid']);
+        $this->assertTrue($data['eligible']);
+        $this->assertSame([['id' => 'admin', 'displayName' => 'Admin'], ['id' => 'sales', 'displayName' => 'Sales']], $data['groups']);
+        $this->assertSame(1, $data['connections']);
+        $this->assertArrayHasKey('grants', $data);
+        $this->assertStringNotContainsString('corp.example', json_encode($data));
+        self::assertBad($this->controller()->show('ghost'));
+        self::assertBad($this->controller()->show(''));
+    }
+
+    /** @param array<string, mixed> $body */
+    private function filtered(array $body): JSONResponse {
+        return $this->controller($body + ['search' => '', 'group' => '', 'filter' => ''])->bulkFiltered();
+    }
+
+    public function testBulkFilteredDryRunCountsWithoutWriting(): void {
+        $this->fx->policy->setEligible('ana', true);
+        $this->fx->policy->setEligible('bob', true);
+        $this->fx->policy->setGrant('bob', 'notes', 'edit', true);
+        $data = $this->filtered(['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'dryRun' => true])->getData();
+        // carl is disabled, bob already has it, ana changes.
+        $this->assertSame(['matched' => 3, 'change' => 1, 'unavailable' => 1, 'unchanged' => 1, 'tooMany' => false, 'limit' => 5000], $data);
+        $this->assertFalse($this->fx->policy->granted('ana', 'notes', 'edit'));
+    }
+
+    public function testBulkFilteredWritesEveryPageAndReturnsThePreviousValues(): void {
+        for ($i = 0; $i < 120; $i++) {
+            $this->fx->addUser(sprintf('u%03d', $i), sprintf('User %03d', $i), '', true, ['sales']);
+        }
+        $body = ['group' => 'sales', 'module' => null, 'operations' => ['eligible'], 'granted' => true];
+        $dry = $this->filtered($body + ['dryRun' => true])->getData();
+        $this->assertSame(120, $dry['change']);
+        $response = $this->filtered($body + ['expected' => 120]);
+        $this->assertSame(200, $response->getStatus());
+        $this->assertSame(120, $response->getData()['updated']);
+        $this->assertCount(120, $response->getData()['previous']);
+        $this->assertSame(['uid' => 'u000', 'operation' => 'eligible', 'granted' => false], $response->getData()['previous'][0]);
+        $this->assertTrue($this->fx->policy->eligible('u119'), 'past the first page');
+        $this->assertFalse($this->fx->policy->eligible('ana'), 'outside the group');
+
+        // Every Notes permission for the eligible users of the group, several operations at once.
+        $data = $this->filtered(['group' => 'sales', 'filter' => 'eligible', 'module' => 'notes', 'operations' => ['create', 'edit'], 'granted' => true, 'expected' => 120])->getData();
+        $this->assertSame(120, $data['updated']);
+        $this->assertCount(240, $data['previous']);
+        $this->assertTrue($this->fx->policy->granted('u050', 'notes', 'create'));
+        $this->assertTrue($this->fx->policy->granted('u050', 'notes', 'edit'));
+    }
+
+    public function testBulkFilteredRefusesAStalePreview(): void {
+        $this->fx->policy->setEligible('ana', true);
+        $this->fx->policy->setEligible('bob', true);
+        $response = $this->filtered(['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'expected' => 1]);
+        $this->assertSame(409, $response->getStatus());
+        $this->assertSame(2, $response->getData()['change']);
+        $this->assertFalse($this->fx->policy->granted('ana', 'notes', 'edit'));
+        self::assertBad($this->filtered(['module' => 'notes', 'operations' => ['edit'], 'granted' => true]));
+    }
+
+    public function testBulkFilteredNumericUidsStayStrings(): void {
+        $this->fx->addUser('1234', 'Numeric');
+        $data = $this->filtered(['search' => 'Numeric', 'module' => null, 'operations' => ['eligible'], 'granted' => true, 'expected' => 1])->getData();
+        $this->assertSame([['uid' => '1234', 'operation' => 'eligible', 'granted' => false]], $data['previous']);
+        $this->assertTrue($this->fx->policy->eligible('1234'));
+    }
+
+    public function testBulkFilteredRefusesASelectionOverTheLimit(): void {
+        for ($i = 0; $i <= \OCA\Mcp\Service\GrantMatrix::MAX_BULK; $i++) {
+            $this->fx->users['x' . $i] = ['name' => 'X' . $i, 'email' => '', 'enabled' => true];
+        }
+        $dry = $this->filtered(['module' => null, 'operations' => ['eligible'], 'granted' => true, 'dryRun' => true])->getData();
+        $this->assertTrue($dry['tooMany']);
+        $this->assertSame(5000, $dry['matched']);
+        $response = $this->filtered(['module' => null, 'operations' => ['eligible'], 'granted' => true, 'expected' => 0]);
+        $this->assertSame([400, ['error' => 'Too many users', 'limit' => 5000]], [$response->getStatus(), $response->getData()]);
+        $this->assertFalse($this->fx->policy->eligible('x1'));
+    }
+
+    public function testBulkFilteredValidatesInput(): void {
+        foreach ([
+            ['module' => null, 'operations' => ['edit'], 'granted' => true, 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['eligible'], 'granted' => true, 'dryRun' => true],
+            ['module' => 'notes', 'operations' => [], 'granted' => true, 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit', 'edit'], 'granted' => true, 'dryRun' => true],
+            ['module' => 'notes', 'operations' => 'edit', 'granted' => true, 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => 'yes', 'dryRun' => true],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'dryRun' => 1],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'dryRun' => true, 'group' => 'nope'],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'dryRun' => true, 'filter' => 'all'],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'dryRun' => true, 'search' => str_repeat('a', 101)],
+            ['module' => 'notes', 'operations' => ['edit'], 'granted' => true, 'expected' => '1'],
+        ] as $body) {
+            $response = $this->controller($body + ['search' => '', 'group' => '', 'filter' => ''])->bulkFiltered();
+            self::assertBad($response);
+        }
     }
 
     public function testServiceUsesItsOwnKey(): void {

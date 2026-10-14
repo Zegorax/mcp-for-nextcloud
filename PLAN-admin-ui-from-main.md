@@ -3,6 +3,16 @@
 Base: `main` at `a1a7911` (1.0.8). Independent of the open PRs #1 (custom redirect URIs) and #2 (group
 permissions). See `PLAN-admin-ui-integrated.md` for the version that builds on both.
 
+## Implementation notes
+
+Implemented on this branch as planned, with one change: instead of moving the matrix out of
+`js/admin-grants.js` (step 5's refactor), the new code lives in new files (`js/admin-users.js` for the
+users list and the detail panel, `js/admin-list.js` for the list editor) and `admin-grants.js` only gains
+a small `window.McpAdmin` namespace and the "every filtered user" flow. The matrix code is untouched, so
+there is no behavior-neutral refactor to review. The cross-page endpoint is
+`POST /api/grants/bulk/filtered` and takes `operations` (a list), so "every permission of a module" works
+on every page too.
+
 ## What 1.0.7 already delivered
 
 The 1.0.7 release ("task categories and admin page redesign") already covers most of the issue. These items

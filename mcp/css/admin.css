@@ -711,6 +711,376 @@
 	width: 8em;
 }
 
+/* Whether a block saves at once or needs its Save button, under each heading (data-save-mode). */
+#mcp-admin .mcp-save-mode {
+	display: inline-block;
+	margin: 0 0 8px;
+	padding: 0 8px;
+	border: 1px solid var(--color-border-dark);
+	border-radius: var(--border-radius-pill, var(--border-radius));
+	color: var(--color-text-maxcontrast);
+	font-size: 0.85em;
+}
+
+/* Text blocks keep one reading width; the matrix, the users list and the connections stay wide. */
+#mcp-admin .mcp-block > p,
+#mcp-admin .mcp-glossary {
+	max-width: 900px;
+}
+
+#mcp-admin .mcp-card-value {
+	color: var(--color-main-text);
+}
+
+#mcp-admin a.mcp-card-value:hover,
+#mcp-admin a.mcp-card-value:focus-visible {
+	text-decoration: underline;
+}
+
+#mcp-admin .mcp-block a:not(.mcp-card-value) {
+	text-decoration: underline;
+}
+
+/* "How access works" in Overview. */
+#mcp-admin .mcp-glossary {
+	display: grid;
+	grid-template-columns: minmax(140px, max-content) 1fr;
+	gap: 6px 16px;
+	margin: 8px 0;
+}
+
+#mcp-admin .mcp-glossary dt {
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-glossary dt,
+#mcp-admin .mcp-glossary dd {
+	margin: 0;
+	padding: 0;
+	text-align: start;
+}
+
+/* Users view and Matrix (advanced) of the Access tab: one shows, the other hides with its own controls. */
+#mcp-admin .mcp-view-switch {
+	display: inline-flex;
+	margin: 8px 0 0;
+	border: 1px solid var(--color-border-dark);
+	border-radius: var(--border-radius-large);
+	overflow: hidden;
+}
+
+#mcp-admin .mcp-view-switch[hidden] {
+	display: none;
+}
+
+#mcp-admin .mcp-view-switch button {
+	margin: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	padding: 6px 16px;
+	font-weight: normal;
+}
+
+#mcp-admin .mcp-view-switch button[aria-pressed="true"] {
+	background-color: var(--color-primary-element);
+	color: var(--color-primary-element-text);
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-view-users .mcp-matrix-only,
+#mcp-admin .mcp-view-matrix .mcp-users-only {
+	display: none;
+}
+
+#mcp-admin .mcp-users-wrap {
+	overflow-x: auto;
+	max-width: 1100px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+}
+
+#mcp-admin .mcp-users-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+#mcp-admin .mcp-users-table th,
+#mcp-admin .mcp-users-table td {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--color-border);
+	text-align: start;
+	vertical-align: middle;
+}
+
+#mcp-admin .mcp-users-table thead th {
+	color: var(--color-text-maxcontrast);
+	font-weight: normal;
+	background-color: var(--color-background-dark);
+}
+
+#mcp-admin .mcp-users-table tbody th {
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-users-table tbody tr:hover > * {
+	background-color: var(--color-background-hover);
+}
+
+#mcp-admin .mcp-users-table .mcp-summary {
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-yesno-mark {
+	display: inline-block;
+	inline-size: 1.2em;
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-yes .mcp-yesno-mark {
+	color: var(--color-success-text, var(--color-success));
+}
+
+#mcp-admin .mcp-no,
+#mcp-admin .mcp-na {
+	color: var(--color-text-maxcontrast);
+}
+
+/* A save that failed in a matrix cell keeps its message next to the checkbox. */
+#mcp-admin .mcp-cell-error {
+	display: block;
+	color: var(--color-error-text, var(--color-error));
+	font-size: 0.8em;
+}
+
+/* An open "All" menu must fit inside the scrolling wrapper, even above a page of one or two rows. */
+#mcp-admin .mcp-matrix-wrap:has(.mcp-bulk-menu[open]) {
+	min-height: 420px;
+}
+
+/* Scope of an "All" menu: this page, or every filtered user. */
+#mcp-admin .mcp-bulk-scope {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 0 0 6px;
+	padding: 0 0 6px;
+	border: none;
+	border-bottom: 1px solid var(--color-border);
+}
+
+#mcp-admin .mcp-bulk-scope legend {
+	padding: 0;
+	color: var(--color-text-maxcontrast);
+	font-size: 0.85em;
+}
+
+#mcp-admin .mcp-bulk-scope label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 0.9em;
+	white-space: nowrap;
+}
+
+/* Per-user detail panel. Nextcloud's styles can keep a closed <dialog> on screen, so it is hidden explicitly. */
+#mcp-admin dialog.mcp-dialog:not([open]) {
+	display: none;
+}
+
+#mcp-admin dialog.mcp-dialog {
+	position: fixed;
+	inset: 0;
+	margin: auto;
+	box-sizing: border-box;
+	inline-size: min(760px, calc(100vw - 32px));
+	block-size: fit-content;
+	max-block-size: calc(100vh - 64px);
+	padding: 16px 20px;
+	text-align: start;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+	background-color: var(--color-main-background);
+	color: var(--color-main-text);
+	box-shadow: 0 4px 16px var(--color-box-shadow);
+	overflow-y: auto;
+}
+
+#mcp-admin dialog.mcp-dialog::backdrop {
+	background-color: rgba(0, 0, 0, 0.4);
+}
+
+#mcp-admin .mcp-dialog-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+#mcp-admin .mcp-dialog-head h3 {
+	margin: 0;
+	font-size: 1.3em;
+	font-weight: bold;
+}
+
+/* The title takes the focus when the panel opens, for screen readers; it is not a control. */
+#mcp-admin .mcp-dialog-head h3:focus {
+	outline: none;
+}
+
+#mcp-admin .mcp-detail-state {
+	margin: 8px 0;
+	padding: 8px 12px;
+	border-radius: var(--border-radius);
+	border-inline-start: 4px solid var(--color-warning);
+	background-color: var(--color-background-hover);
+}
+
+#mcp-admin .mcp-detail-state.mcp-detail-ok {
+	border-inline-start-color: var(--color-success);
+}
+
+#mcp-admin .mcp-detail-facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 16px;
+	margin: 8px 0 12px;
+}
+
+#mcp-admin .mcp-detail-facts dt,
+#mcp-admin .mcp-detail-facts dd {
+	margin: 0;
+	padding: 0;
+	line-height: 1.5;
+	text-align: start;
+}
+
+#mcp-admin .mcp-detail-facts dt {
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-detail-group {
+	margin: 0 0 12px;
+	padding: 8px 12px 10px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+}
+
+#mcp-admin .mcp-detail-group legend {
+	padding: 0 6px;
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-detail-ops {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 8px 16px;
+}
+
+#mcp-admin .mcp-detail-op {
+	display: grid;
+	grid-template-columns: auto auto 1fr;
+	align-items: center;
+	column-gap: 6px;
+}
+
+#mcp-admin .mcp-detail-op input[type="checkbox"] {
+	margin: 0;
+	inline-size: 18px;
+	block-size: 18px;
+}
+
+#mcp-admin .mcp-detail-op label {
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-detail-op .mcp-status {
+	justify-self: start;
+	padding: 0 6px;
+	border-radius: var(--border-radius);
+	font-size: 0.85em;
+}
+
+#mcp-admin .mcp-detail-op .mcp-detail-hint {
+	grid-column: 2 / -1;
+}
+
+#mcp-admin .mcp-detail-op-unavailable label {
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-detail-hint {
+	color: var(--color-text-maxcontrast);
+	font-size: 0.9em;
+	text-align: start;
+}
+
+#mcp-admin .mcp-detail-unavailable {
+	margin: 0 0 6px;
+	font-style: italic;
+	color: var(--color-text-maxcontrast);
+}
+
+/* Editable lists (js/admin-list.js): one entry per row with its own Remove button. */
+#mcp-admin .mcp-field-label {
+	margin: 8px 0 4px;
+	font-weight: bold;
+}
+
+#mcp-admin .mcp-list-editor {
+	max-width: 500px;
+}
+
+#mcp-admin .mcp-list-items {
+	margin: 0 0 6px;
+	padding: 0;
+	list-style: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+}
+
+#mcp-admin .mcp-list-items li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px 4px 4px 10px;
+	border-bottom: 1px solid var(--color-border);
+}
+
+#mcp-admin .mcp-list-items li:last-child {
+	border-bottom: none;
+}
+
+#mcp-admin .mcp-list-items .mcp-list-empty {
+	padding: 8px 10px;
+	color: var(--color-text-maxcontrast);
+}
+
+#mcp-admin .mcp-list-add {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+#mcp-admin .mcp-list-add input {
+	flex: 1 1 200px;
+	margin: 0;
+}
+
+#mcp-admin .mcp-list-dirty {
+	color: var(--color-warning-text, var(--color-warning));
+	font-size: 0.9em;
+}
+
+#mcp-admin .mcp-list-message {
+	display: block;
+	min-height: 1.2em;
+	color: var(--color-error-text, var(--color-error));
+	font-size: 0.9em;
+}
+
 /* Narrow screens: one column of cards, stacked toolbars, and tables that scroll sideways instead of overflowing. */
 @media (max-width: 768px) {
 	.mcp-settings .mcp-cards {
@@ -736,6 +1106,11 @@
 	.mcp-settings .mcp-connections-table {
 		display: block;
 		overflow-x: auto;
+	}
+
+	#mcp-admin .mcp-glossary,
+	#mcp-admin .mcp-detail-facts {
+		grid-template-columns: 1fr;
 	}
 }
 
