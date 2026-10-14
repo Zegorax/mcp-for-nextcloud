@@ -121,6 +121,17 @@ final class GroupGrantsControllerTest extends TestCase {
         $this->assertSame(['rules' => [], 'version' => 0], $this->fx->mapper->state());
     }
 
+    public function testRulesLeftByAGroupThatVanishedCanOnlyBeCleared(): void {
+        $this->fx->rule('ops', ['eligible' => true]);
+        unset($this->fx->members['ops']); // removed by its backend without an event
+        $listed = $this->controller()->index()->getData()['configured'];
+        $this->assertSame([['id' => 'ops', 'displayName' => 'ops', 'members' => null, 'missing' => true, 'rules' => ['eligible' => 'allow']]], $listed);
+        $this->assertSame(400, $this->controller(['group' => 'ops', 'rules' => ['eligible' => 'deny'], 'version' => 1])->update()->getStatus());
+        $this->assertSame(400, $this->controller(['group' => 'never', 'rules' => [], 'version' => 1])->update()->getStatus());
+        $this->assertSame(200, $this->controller(['group' => 'ops', 'rules' => [], 'version' => 1])->update()->getStatus());
+        $this->assertSame([], $this->fx->mapper->state()['rules']);
+    }
+
     public function testEffectiveAccessExplainsEachPermissionAndWhatBlocks(): void {
         $this->fx->rule('staff', ['eligible' => true, 'files.edit' => true]);
         $this->fx->rule('interns', ['files.edit' => false, 'notes.read' => false]);

@@ -5,14 +5,15 @@
  */
 /**
  * Personal page of the "MCP for Cloud" settings section: a status card (service, administrator eligibility,
- * own connection) with the Connect/Disconnect switch, the user's own OAuth connections (filled by
- * js/connections.js) and the app-password guidance. Every visible string goes through the IL10N that
+ * own connection) with the Connect/Disconnect switch, what the user may do and why (filled by js/my-access.js),
+ * the user's own OAuth connections (filled by js/connections.js) and the app-password guidance. Every visible string goes through the IL10N that
  * \OC\Template\Base injects as $l, so the page follows the user language.
  *
  * @var array $_ template parameters provided by \OCA\Mcp\Settings\PersonalSettings
  * @var \OCP\IL10N $l translations for app "mcp", injected by the template engine
  */
 \OCP\Util::addScript('mcp', 'connections');
+\OCP\Util::addScript('mcp', 'my-access');
 \OCP\Util::addStyle('mcp', 'admin');
 $escape = static fn ($value): string => htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 $service = $_['global'] ? $l->t('enabled') : $l->t('disabled');
@@ -47,6 +48,22 @@ $canConnect = $_['connected'] || ($_['eligible'] && $_['global']);
             <p class="settings-hint mcp-hint"><?= $l->t('An administrator must turn the service on and allow your account before you can connect.') ?></p>
         <?php } ?>
         <p class="settings-hint mcp-hint"><?= $l->t('Disconnecting blocks access to this app on the next request. It does not revoke the app password; revoke that separately in Nextcloud Settings → Security.') ?></p>
+    </div>
+
+    <div class="section mcp-block" id="mcp-my-access">
+        <h2><?= $l->t('Your access') ?></h2>
+        <p class="settings-hint mcp-hint"><?= $l->t('What an MCP client may do with your account, and why. Your administrator decides this, for you or for your groups; Nextcloud permissions still apply.') ?></p>
+        <p id="mcp-my-access-summary" aria-live="polite"><?= $l->t('Loading…') ?></p>
+        <table class="mcp-effective-table" id="mcp-my-access-table" hidden>
+            <thead>
+                <tr>
+                    <th scope="col"><?= $l->t('Permission') ?></th>
+                    <th scope="col"><?= $l->t('Result') ?></th>
+                    <th scope="col"><?= $l->t('Why') ?></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="personal">

@@ -213,9 +213,9 @@ The normal installation is through the Nextcloud App Store: *Apps* → search fo
 Replace `<server>`, `<nextcloud>` (installation root), `<apps>` (writable apps directory, for example `custom_apps` or `apps`, according to `apps_paths` in `config/config.php`) and `<www>` (web server user, for example `www-data`).
 
 ```sh
-scp build/mcp-1.0.8.tar.gz <server>:/tmp/
+scp build/mcp-1.1.0.tar.gz <server>:/tmp/
 ssh <server>
-sudo tar -xzf /tmp/mcp-1.0.8.tar.gz -C <nextcloud>/<apps>/
+sudo tar -xzf /tmp/mcp-1.1.0.tar.gz -C <nextcloud>/<apps>/
 sudo chown -R <www>:<www> <nextcloud>/<apps>/mcp
 sudo -u <www> php <nextcloud>/occ app:enable mcp
 sudo -u <www> php <nextcloud>/occ app:list | grep -A1 mcp
@@ -271,6 +271,9 @@ The `VisibilityGuard` applies system-tag hiding on every access path of the conn
    - The search looks by name, ID or email, and there is a filter by group and by "only who can connect / only connected" (done on the server, with an exact total; the list starts with the users who can connect); the "Show apps" selector shows one app at a time (kept in the address as `#access?app=<module>`, an unknown module falls back to all apps) and is applied in the browser only, with no new request parameter; the table shows 50 users per page, with counter and pagination above and below. There are optional compact rows (remembered in the browser).
    - Each checkbox saves immediately: *Can connect* enables the user, and the other columns are the operations per module; the header and the column of names stay fixed when scrolling, modules alternate in bands and each operation has a hint of what it allows. Every cell reads Allowed, Denied or Unavailable. When the account is disabled or *Can connect* is off, one notice replaces the app-permission cells; otherwise, an unavailable app or log role is marked with ⊘ in the affected cells, with the reason on hover and for screen readers. A legend sits under the table.
    - The **All** menu in the header of each module (and of *Can connect*) allows or denies an operation, or all of the module, for the users of the current page, with a confirmation that counts the users who change, those left out because the permission is unavailable to them and those who already have the value (nothing is sent when no one changes); users with the permission unavailable are not written. *Undo* restores the previous values for 10 seconds (the timer pauses on hover and focus) and writes them back as they were, so a concurrent change made meanwhile is overwritten; one change or undo runs at a time. Connected users appear with the *connected* mark.
+   - **Group permissions** (same tab): pick a group (searchable, with member counts) and set *Can connect* and each operation to *Inherit*, *Allow* or *Deny*. Before saving, a preview counts, per changed permission, the members who gain it, lose it, keep their own individual setting, or stay unchanged because another group or the default decides. Saving uses the version read (`mcp_group_grants`, compare-and-set like the server-log groups), so a save made on stale data answers 409 and reloads the current rules; members who can no longer connect are signed out of every MCP client.
+   - **Resolution order**, for *Can connect* and each operation: an individual deny, an individual allow, the user's groups (a deny in any group wins over an allow), then the default. Each matrix cell shows the result and, on hover, where it comes from; a dot marks an individual setting and ↺ (*Inherit*) removes it so the groups decide. The **All** menu also offers *Inherit*, and its *Undo* restores the previous individual settings. Clicking a user's name opens their **effective access**: groups, what blocks them (service off, account disabled, not allowed to connect, connection off, app unavailable) and, per permission, the result, its source and whether it is in effect. The personal page shows each user the same explanation under **Your access**.
+   - Membership changes apply to the next request (every request decides again); joining a denying group, leaving the group that allowed connecting, or deleting that group also signs the user out of their MCP clients at once (`GroupChangeListener`), and a deleted group's rules are removed.
    - Disabled users appear marked and cannot be edited. Modules whose app is not available on the server do not appear in the matrix; for a user without access to the app, the cell is disabled. The saved permissions are preserved.
    - The email is only used for the search and is never displayed.
 2. **Excluded from MCP access**: select system tags so that tagged files and folders become completely invisible to the MCP tools (reading, search, listing, images, notes, talk and checkout; the server log tools only while “Hide the text of log messages” is on). Restricted or invisible tags are recommended. The tag covers all descendants, a local share inherits the hiding of the owner's source folder and, in doubt (invalid configuration, query failure), the app refuses; see [Hidden tags (1.0.6)](#hidden-tags-106).
@@ -291,7 +294,9 @@ Browser login through OAuth is described in [Connecting through claude.ai (OAuth
 | app `mcp` | `service_enabled` | `1` on, `0` or absent off |
 | user, app `mcp` | `eligible` | `1` enabled by the administrator |
 | user, app `mcp` | `connected` | `1` personal connection active |
-| user, app `mcp` | `grant_<module>_<operation>` | `1`/`0`; absent means `1` for `read` (except `logs`, which means `0`) and `0` for the others |
+| user, app `mcp` | `eligible` | `1` individual allow, `0` individual deny, absent inherits from the groups (default off) |
+| user, app `mcp` | `grant_<module>_<operation>` | `1` individual allow, `0` individual deny, absent inherits from the groups, then the default: `1` for `read` (except `logs`) and `0` for the others |
+| own table | `mcp_group_grants` | one row: every group's rules as JSON (`{gid: {"eligible" or "<module>.<operation>": true/false}}`) and a version; edited in the **Group permissions** block |
 | own table | `mcp_logs_groups` | one row of groups (canonical JSON) and version; empty list = administrators only; editable in the **Server log** block; imports the legacy appconfig on the first read |
 | app `mcp` | `oauth_client_hosts` | comma-separated list of hosts; absent or empty means the default `claude.ai,chatgpt.com` |
 | app `mcp` | `oauth_native_client_enabled` | `1` enables the local native client `nextcloud-mcp-native`, `0` or absent disabled |

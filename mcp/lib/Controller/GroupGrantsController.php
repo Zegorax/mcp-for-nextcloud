@@ -119,13 +119,14 @@ class GroupGrantsController extends Controller {
     }
 
     /**
-     * @return array{0: string, 1: array<string, bool>} the group id (an existing group) and its rules
+     * @return array{0: string, 1: array<string, bool>} the group id and its rules; a group that no longer exists is
+     *     accepted only to clear the rules it left behind (a backend that removed it without an event)
      * @throws InvalidArgumentException for an unknown group or a malformed rule
      */
     private function body(): array {
         $gid = $this->request->getParam('group');
         $raw = $this->request->getParam('rules');
-        if (!is_string($gid) || $gid === '' || $this->groupManager->get($gid) === null || !is_array($raw)) {
+        if (!is_string($gid) || $gid === '' || !is_array($raw)) {
             throw new InvalidArgumentException('Invalid request');
         }
         $rules = [];
@@ -134,6 +135,9 @@ class GroupGrantsController extends Controller {
                 throw new InvalidArgumentException('Invalid request');
             }
             $rules[$permission] = $value === 'allow';
+        }
+        if ($this->groupManager->get($gid) === null && ($rules !== [] || !isset($this->groups->state()['rules'][$gid]))) {
+            throw new InvalidArgumentException('Invalid request');
         }
         return [$gid, $rules];
     }

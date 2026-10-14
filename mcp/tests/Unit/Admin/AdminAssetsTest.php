@@ -172,12 +172,12 @@ final class AdminAssetsTest extends TestCase {
         $this->assertSame($sorted, $positions, 'tabs, panels and blocks must appear in the tab order');
     }
 
-    /** Eight blocks, each a core settings section with its own heading, in the tab order. */
-    public function testAdminPageHasEightSectionBlocks(): void {
+    /** Nine blocks, each a core settings section with its own heading, in the tab order. */
+    public function testAdminPageHasNineSectionBlocks(): void {
         $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
         preg_match_all('/<div class="section mcp-block" id="([^"]+)"[^>]*>\s*<h2><\?php p\(\$l->t\(\'([^\']+)\'\)\); \?><\/h2>/', $template, $blocks);
-        $this->assertSame(['mcp-block-status', 'mcp-block-matrix', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'], $blocks[1]);
-        $this->assertSame(['Status', 'Permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'Log privacy', 'OCR'], $blocks[2]);
+        $this->assertSame(['mcp-block-status', 'mcp-block-matrix', 'mcp-block-groups', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'], $blocks[1]);
+        $this->assertSame(['Status', 'Permissions', 'Group permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'Log privacy', 'OCR'], $blocks[2]);
         $this->assertStringContainsString('data-scope="admin"', $template);
     }
 
@@ -249,6 +249,33 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString('#app-content-vue #mcp-admin .mcp-tab-bar', $css);
         $this->assertStringContainsString('#app-content-vue .settings-content #mcp-admin .mcp-tab-bar', $css);
         $this->assertMatchesRegularExpression('/@media \(max-width: 1024px\) \{\s*#app-content #mcp-admin \.mcp-tab-bar/', $css);
+    }
+
+    /**
+     * Group permissions and the effective-access view: the block, its controls and the dialog are in the template;
+     * a closed dialog is hidden explicitly (Nextcloud's styles give dialogs a display value, which kept a closed one
+     * on screen and in front of the page); the personal page loads "Your access".
+     */
+    public function testGroupPermissionsAndEffectiveAccessAreWiredAndAClosedDialogIsHidden(): void {
+        $app = dirname(__DIR__, 3);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        foreach (['mcp-gg-search', 'mcp-gg-group', 'mcp-gg-configured', 'mcp-gg-editor', 'mcp-gg-table', 'mcp-gg-preview', 'mcp-gg-save', 'mcp-gg-discard',
+            'mcp-gg-status', 'mcp-effective', 'mcp-effective-title', 'mcp-effective-body', 'mcp-effective-close'] as $id) {
+            $this->assertSame(1, substr_count($template, 'id="' . $id . '"'), $id);
+        }
+        $this->assertStringContainsString('<dialog id="mcp-effective"', $template);
+        $css = (string)file_get_contents($app . '/css/admin.css');
+        $this->assertMatchesRegularExpression('/\.mcp-effective:not\(\[open\]\) \{\s*display: none;/', $css);
+        $this->assertMatchesRegularExpression('/\.mcp-gg-actions \{[^}]*position: sticky;[^}]*bottom: 0;/s', $css);
+        $script = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString("api('POST', '/api/group-grants/preview'", $script);
+        $this->assertStringContainsString("api('PUT', '/api/group-grants'", $script);
+        $this->assertStringContainsString("e.message === '409'", $script);
+        $this->assertStringContainsString("'/api/effective/' + encodeURIComponent(uid)", $script);
+        $personal = (string)file_get_contents($app . '/templates/personal.php');
+        $this->assertStringContainsString("\\OCP\\Util::addScript('mcp', 'my-access');", $personal);
+        $this->assertStringContainsString('id="mcp-my-access-table"', $personal);
+        $this->assertStringContainsString("'/apps/mcp/api/my/access'", (string)file_get_contents($app . '/js/my-access.js'));
     }
 
     /** The personal page loads the shared connections script, and every id that script looks up appears once. */
@@ -385,7 +412,7 @@ final class AdminAssetsTest extends TestCase {
         $this->assertTrue($loaded);
         $blocks = [
             'mcp-panel-overview' => ['mcp-block-status'],
-            'mcp-panel-access' => ['mcp-block-matrix'],
+            'mcp-panel-access' => ['mcp-block-matrix', 'mcp-block-groups', 'mcp-effective'],
             'mcp-panel-clients' => ['mcp-block-oauth', 'mcp-connections'],
             'mcp-panel-protection' => ['mcp-block-tags'],
             'mcp-panel-advanced' => ['mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'],
