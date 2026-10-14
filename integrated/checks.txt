@@ -1,0 +1,24 @@
+PASS Group rule saved (Sales allows "Can connect")
+PASS Group rule saved (Support denies Files: read)
+PASS Users view is the default
+PASS "Can connect" says where it comes from (individual vs. group) — ✓ Yesindividual / ✓ YesSales
+PASS Panel shows "Can connect" allowed by the group, on Inherit
+PASS MCP tools/list follows the panel (Files: edit allowed for sales001) — 29 → 32 tools: +files_checkout, files_edit, files_replace
+PASS Focus stays on the chosen option after saving
+PASS Escape closes the panel and the focus returns to the user's Edit button
+PASS A group deny is shown as the reason — Denied by group Support; a deny in any group wins.
+PASS An individual allow wins and says what Inherit would give — Individual setting; it takes precedence over the groups (Support). Inherit gives: denied by Support.
+PASS Inherit hands the decision back to the group
+PASS Groups view keeps its address
+PASS Confirmation names the count, the scope and the filters — "Allow “Notes: create” for 122 users, across every page of the current filters?\nShow: Everyone · Group: Sales\n1 user already has it allowed."
+PASS Users on the last page changed too — 23 users on page 3
+PASS Inherit on every page counts who loses access once the groups decide — "Let the groups decide “Notes: create” for 123 users, across every page of the current filters?\nShow: Everyone · Group: Sales\nOnce the groups and the default decide: 0 gain it, 123 lose it, the others keep the same result."
+PASS Every individual setting was removed — {"matched":123,"change":0,"unavailable":0,"unchanged":123,"gain":0,"lose":0,"tooMany":false,"limit":5000}
+PASS Undo puts the individual settings back on every page — 123 of 123
+PASS Stale preview answers 409 and nothing is written — status 409, 122 still to change
+PASS Saved hosts include the new entry
+PASS A redirect URI with a fragment is refused next to the field — Use the full redirect URI, starting with https:// (http:// only on localhost), without *, user name or #fragment.
+PASS Redirect URIs saved as entered
+PASS Removing a redirect URI asks first, because it signs the client out — "Removing 1 redirect URI signs out every connection of the self-hosted client. Save?"
+PASS Every block with a control says how it saves
+PASS No JavaScript errors on the page (besides the expected 409)

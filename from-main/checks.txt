@@ -1,0 +1,20 @@
+PASS Overview "Connected users" opens Access filtered on connected users — ana,carla,gabriela
+PASS Users view is the default
+PASS Panel of a user without "Can connect" says what is missing
+PASS Permissions of a user without "Can connect" are disabled with the reason
+PASS Grant saved through the panel is stored
+PASS Focus stays on the control after saving
+PASS Escape closes the panel and the focus returns to the user's Edit button
+PASS Users list refreshes after the panel closes — Reads in 7 of 7 apps · changes in Files
+PASS MCP tools/list follows the panel (notes_create removed for ana) — 38 → 37 tools
+PASS Matrix view keeps its address
+PASS Confirmation names the count, the scope and the filters — "Allow “Can connect” for 119 users, across every page of the current filters?\nShow: Everyone · Group: Sales\n4 users already have it allowed."
+PASS Every page of the group was changed — {"matched":123,"change":0,"unavailable":0,"unchanged":123,"tooMany":false,"limit":5000}
+PASS Users on the last page changed too — 23 users on page 3
+PASS Undo restores the previous values on every page — 119 of 119 back to denied
+PASS Stale preview answers 409 and nothing is written — status 409
+PASS A URL is refused with a message next to the field — Use a host name only, such as claude.ai: no https://, port, path or *.
+PASS Saved hosts include the new entry, lower-cased — claude.ai,chatgpt.com,agents.example.org
+PASS Removing and saving restores the default hosts
+PASS Every block with a control says how it saves
+PASS No JavaScript errors on the page (besides the expected 409)
