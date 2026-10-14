@@ -189,9 +189,10 @@ final class AdminAssetsTest extends TestCase {
         $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
         preg_match_all('/<div class="section mcp-block" id="([^"]+)"([^>]*)>\s*<h2>.*?<\/h2>\s*(<p class="mcp-save-mode">)?/s', $template, $blocks, PREG_SET_ORDER);
         $this->assertCount(10, $blocks);
-        foreach ($blocks as [, $id, $attributes]) {
+        foreach ($blocks as $block) {
+            [, $id, $attributes] = $block;
             $this->assertSame(1, preg_match('/data-save-mode="(immediate|button|mixed|none)"/', $attributes, $mode), "$id needs a data-save-mode");
-            $this->assertSame($mode[1] !== 'none', ($blocks[array_search($id, array_column($blocks, 1), true)][3] ?? '') !== '', "$id: the label under the heading matches its mode");
+            $this->assertSame($mode[1] !== 'none', ($block[3] ?? '') !== '', "$id: the label under the heading matches its mode");
         }
     }
 

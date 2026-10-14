@@ -880,7 +880,12 @@
 	align-items: center;
 	gap: 4px;
 	font-size: 0.9em;
-	white-space: nowrap;
+	white-space: normal;
+}
+
+#mcp-admin .mcp-bulk-list.mcp-bulk-list-end {
+	inset-inline-start: auto;
+	inset-inline-end: 0;
 }
 
 /* Per-user detail panel. Nextcloud's styles can keep a closed <dialog> on screen, so it is hidden explicitly. */

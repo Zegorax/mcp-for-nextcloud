@@ -360,9 +360,17 @@
 			// Every menu opens on the page scope, so an earlier "every page" choice never carries over silently.
 			scope.node.querySelector('input[value="page"]').checked = true
 		})
+		const menu = el('details', { className: 'mcp-bulk-menu' }, [summary, list])
+		menu.addEventListener('toggle', () => {
+			// A menu near the right edge of the scrolling table opens towards the left, so none of it is cut off.
+			list.classList.remove('mcp-bulk-list-end')
+			if (menu.open && list.getBoundingClientRect().right > table.parentElement.getBoundingClientRect().right) {
+				list.classList.add('mcp-bulk-list-end')
+			}
+		})
+		return menu
 		summary.title = title
 		summary.setAttribute('aria-label', title)
-		return el('details', { className: 'mcp-bulk-menu' }, [summary, list])
 	}
 
 	/** Makes the second header row stick right below the first one, whose height depends on the density. */
