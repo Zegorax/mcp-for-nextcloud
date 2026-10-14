@@ -15,7 +15,7 @@ use OCP\IURLGenerator;
 use OCP\Settings\IIconSection;
 use PHPUnit\Framework\TestCase;
 
-/** The app has its own "MCP for Nextcloud" entry with an icon in both settings menus, and renders only there. */
+/** The app has its own "MCP for Cloud" entry with an icon in both settings menus, and renders only there. */
 final class SettingsSectionTest extends TestCase {
     private const APP = __DIR__ . '/../../..';
 
@@ -33,7 +33,7 @@ final class SettingsSectionTest extends TestCase {
         foreach ([new AdminSection($urls), new PersonalSection($urls)] as $section) {
             $this->assertInstanceOf(IIconSection::class, $section);
             $this->assertSame('mcp', $section->getID());
-            $this->assertSame('MCP for Nextcloud', $section->getName());
+            $this->assertSame('MCP for Cloud', $section->getName());
             $this->assertSame(75, $section->getPriority());
             $this->assertSame('/apps/mcp/img/app-dark.svg', $section->getIcon());
         }

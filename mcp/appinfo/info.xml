@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>mcp</id>
-    <name>MCP for Nextcloud</name>
-    <summary>Turn Nextcloud into an MCP server for Claude, ChatGPT and other AI assistants, with per-user permissions</summary>
-    <summary lang="pt-br">Transforma o Nextcloud em um servidor MCP para o Claude, o ChatGPT e outros assistentes de IA, com permissões por usuário</summary>
-    <summary lang="es">Convierte Nextcloud en un servidor MCP para Claude, ChatGPT y otros asistentes de IA, con permisos por usuario</summary>
+    <name>MCP for Cloud</name>
+    <summary>MCP server for your Nextcloud: connect Claude, ChatGPT and other AI clients, with per-user permissions</summary>
+    <summary lang="pt-br">Servidor MCP para o seu Nextcloud: conecte o Claude, o ChatGPT e outros clientes de IA, com permissões por usuário</summary>
+    <summary lang="es">Servidor MCP para su Nextcloud: conecte Claude, ChatGPT y otros clientes de IA, con permisos por usuario</summary>
     <description><![CDATA[
-**MCP for Nextcloud** is a native Nextcloud app that turns your instance into a Model Context Protocol (MCP) server. AI assistants work with your files, notes, calendars, contacts, tasks, Deck boards and Talk conversations through one URL on your own server: no extra service, no Docker, no copy of your data elsewhere.
+**MCP for Cloud** is a native app that turns your Nextcloud into a Model Context Protocol (MCP) server. AI assistants work with your files, notes, calendars, contacts, tasks, Deck boards and Talk conversations through one URL on your own server: no extra service, no Docker, no copy of your data elsewhere.
 
 ## What the assistant can do
 
@@ -36,7 +36,7 @@ Claude (claude.ai and Claude Desktop), ChatGPT and Gemini CLI sign in with OAuth
 Nextcloud 32–35 and PHP 8.2 or later. Deck and Talk are optional: their tools appear only when the app is enabled in a supported version.
     ]]></description>
     <description lang="pt-br"><![CDATA[
-**MCP for Nextcloud** é um app nativo do Nextcloud que transforma a sua instância em um servidor Model Context Protocol (MCP). Os assistentes de IA trabalham com os seus arquivos, notas, calendários, contatos, tarefas, quadros do Deck e conversas do Talk por um único endereço no seu próprio servidor: sem serviço extra, sem Docker, sem cópia dos seus dados em outro lugar.
+**MCP for Cloud** é um app nativo que transforma o seu Nextcloud em um servidor Model Context Protocol (MCP). Os assistentes de IA trabalham com os seus arquivos, notas, calendários, contatos, tarefas, quadros do Deck e conversas do Talk por um único endereço no seu próprio servidor: sem serviço extra, sem Docker, sem cópia dos seus dados em outro lugar.
 
 ## O que o assistente pode fazer
 
@@ -66,7 +66,7 @@ O Claude (claude.ai e Claude Desktop), o ChatGPT e o Gemini CLI entram com OAuth
 Nextcloud 32–35 e PHP 8.2 ou superior. O Deck e o Talk são opcionais: as ferramentas deles só aparecem com o app ativo numa versão suportada.
     ]]></description>
     <description lang="es"><![CDATA[
-**MCP for Nextcloud** es una aplicación nativa de Nextcloud que convierte su instancia en un servidor Model Context Protocol (MCP). Los asistentes de IA trabajan con sus archivos, notas, calendarios, contactos, tareas, tableros de Deck y conversaciones de Talk a través de una sola dirección en su propio servidor: sin servicio adicional, sin Docker, sin copia de sus datos en otro lugar.
+**MCP for Cloud** es una aplicación nativa que convierte su Nextcloud en un servidor Model Context Protocol (MCP). Los asistentes de IA trabajan con sus archivos, notas, calendarios, contactos, tareas, tableros de Deck y conversaciones de Talk a través de una sola dirección en su propio servidor: sin servicio adicional, sin Docker, sin copia de sus datos en otro lugar.
 
 ## Lo que el asistente puede hacer
 
@@ -95,7 +95,7 @@ Claude (claude.ai y Claude Desktop), ChatGPT y Gemini CLI inician sesión con OA
 
 Nextcloud 32–35 y PHP 8.2 o superior. Deck y Talk son opcionales: sus herramientas solo aparecen con la aplicación activa en una versión compatible.
     ]]></description>
-    <version>1.0.7</version>
+    <version>1.0.8</version>
     <licence>AGPL-3.0-or-later</licence>
     <author mail="jhonatan@sintax.tech">Jhonatan Jaworski</author>
     <namespace>Mcp</namespace>

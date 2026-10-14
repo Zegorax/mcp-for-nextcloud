@@ -1,6 +1,6 @@
 <div align="center">
 
-# MCP for Nextcloud
+# MCP for Cloud
 
 **App nativo do Nextcloud que transforma o seu Nextcloud em um servidor MCP.**
 Deixe o Claude e outros clientes MCP trabalharem com seus arquivos, notas, calendários, contatos, tarefas, quadros do Deck e conversas do Talk. Cada usuário usa as próprias permissões, e nada sai do servidor sem liberação do admin.
@@ -20,7 +20,7 @@ Deixe o Claude e outros clientes MCP trabalharem com seus arquivos, notas, calen
 
 ## Por quê
 
-Assistentes de IA rendem mais quando alcançam as ferramentas que o time já usa. Ligar esses assistentes ao Nextcloud costuma exigir scripts com senha compartilhada, tokens amplos ou dados copiados para fora. O **MCP for Nextcloud** roda **dentro** do seu Nextcloud:
+Assistentes de IA rendem mais quando alcançam as ferramentas que o time já usa. Ligar esses assistentes ao Nextcloud costuma exigir scripts com senha compartilhada, tokens amplos ou dados copiados para fora. O **MCP for Cloud** roda **dentro** do seu Nextcloud:
 
 - **Uma URL por instância.** `https://cloud.example.com/apps/mcp/`. Sem subdomínio, sem serviço extra, sem Node/Docker/AppAPI.
 - **Login pelo Nextcloud.** Clientes como o claude.ai usam OAuth ("Entrar agora"): a pessoa faz login no próprio Nextcloud e clica em **Permitir**. Senha de app (HTTP Basic) continua valendo para outros clientes.
@@ -46,6 +46,7 @@ Desde a 1.0.0 o app está publicado na [App Store do Nextcloud](https://apps.nex
   - **Tarefas:** as ferramentas de Tarefas leem, gravam e filtram as categorias das tarefas (a propriedade `CATEGORIES` do VTODO): `categories` em `tasks_read_task` e `tasks_list_tasks`, `categories` ao criar e editar (omitir mantém, `[]` limpa, uma lista substitui) e o filtro `category` na listagem. O plano de confirmação mostra cada nome antes e depois da mudança ([#6](https://github.com/sintax-tech/mcp-for-nextcloud/issues/6)).
   - **Tela de admin:** cinco abas com endereço próprio, seletores com busca para os grupos do log do servidor e as etiquetas de exclusão, e uma matriz de permissões que mostra um aplicativo por vez e mantém os nomes à vista. Cada célula diz Permitido, Negado ou Indisponível (com o motivo), o menu "Todos" pede confirmação contando quem muda, e "Desfazer" devolve os valores por 10 segundos ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
   - **Excluídos do acesso MCP:** a seção de etiquetas diz o que faz e o que não faz: esconde arquivos só deste conector, quem pode atribuir cada tipo de etiqueta e que as ferramentas de log do servidor respeitam a exclusão só enquanto "Esconder o texto das mensagens do log" estiver ligado ([#4](https://github.com/sintax-tech/mcp-for-nextcloud/issues/4)).
+- **1.0.8: novo nome.** O app passa a se chamar **MCP for Cloud**: as regras da App Store do Nextcloud não permitem o nome Nextcloud no nome de um app. Nada muda para você: o ID do app, as configurações, as permissões e as conexões são os mesmos, e não há nada a fazer.
 
 Quem vem da 0.7.0 ou de uma versão posterior: as migrações de esquema rodam sozinhas (tabelas `mcp_file_batches`, `mcp_oauth_spent` e `mcp_logs_groups`), sem passo manual, sem `occ` e sem mudar o `config.php`.
 
@@ -93,7 +94,7 @@ A exclusão de tarefas usa a lixeira nativa do calendário e é recusada com `da
 
 ## Instalação
 
-**Pela App Store (recomendado).** Como administrador, abra *Apps*, busque **MCP for Nextcloud** e clique em **Baixar e ativar**. Pelo terminal, o equivalente é `sudo -u www-data php /var/www/nextcloud/occ app:install mcp`. O pacote da loja é assinado, e as atualizações chegam pelo atualizador normal de apps do Nextcloud.
+**Pela App Store (recomendado).** Como administrador, abra *Apps*, busque **MCP for Cloud** e clique em **Baixar e ativar**. Pelo terminal, o equivalente é `sudo -u www-data php /var/www/nextcloud/occ app:install mcp`. O pacote da loja é assinado, e as atualizações chegam pelo atualizador normal de apps do Nextcloud.
 
 **Build manual (alternativa, para desenvolvimento).**
 
@@ -118,7 +119,7 @@ A exclusão de tarefas usa a lixeira nativa do calendário e é recusada com `da
 
    Ajuste os caminhos e o usuário do servidor web ao seu ambiente. Com Docker, rode o `occ` dentro do container.
 
-Depois, **configure** em *Configurações de administração → MCP for Nextcloud* (o app tem entrada própria, com ícone, no menu de configurações): ligue o serviço, marque quem pode conectar, libere as permissões de escrita necessárias e selecione as etiquetas de sistema que excluem arquivos sensíveis do acesso MCP. A página tem cinco abas, cada uma com endereço próprio: **Visão geral** (endpoint para copiar, serviço, versão do app, usuários habilitados/conectados, conexões ativas e o limite de envio do checkout editável em MiB, ao lado do teto `post_max_size` do PHP), **Acesso e permissões** (a matriz usuários × permissões, com busca, grupo, filtros "quem pode conectar / conectados" e por aplicativo, coluna de nomes fixa, Permitido, Negado ou Indisponível em cada célula, menu "Todos" por módulo para os usuários da página que pede confirmação e oferece "Desfazer" por 10 segundos, e paginação em cima e embaixo), **Clientes e conexões** (clientes OAuth e conexões ativas), **Proteção de dados** (**Excluídos do acesso MCP**, as etiquetas de sistema que excluem arquivos) e **Avançado** (**Log do servidor**: os grupos cujos membros podem lê-lo, além dos administradores, **Privacidade do log**: o interruptor que esconde o texto das mensagens do log enquanto houver arquivos excluídos por etiquetas, e **OCR**).
+Depois, **configure** em *Configurações de administração → MCP for Cloud* (o app tem entrada própria, com ícone, no menu de configurações): ligue o serviço, marque quem pode conectar, libere as permissões de escrita necessárias e selecione as etiquetas de sistema que excluem arquivos sensíveis do acesso MCP. A página tem cinco abas, cada uma com endereço próprio: **Visão geral** (endpoint para copiar, serviço, versão do app, usuários habilitados/conectados, conexões ativas e o limite de envio do checkout editável em MiB, ao lado do teto `post_max_size` do PHP), **Acesso e permissões** (a matriz usuários × permissões, com busca, grupo, filtros "quem pode conectar / conectados" e por aplicativo, coluna de nomes fixa, Permitido, Negado ou Indisponível em cada célula, menu "Todos" por módulo para os usuários da página que pede confirmação e oferece "Desfazer" por 10 segundos, e paginação em cima e embaixo), **Clientes e conexões** (clientes OAuth e conexões ativas), **Proteção de dados** (**Excluídos do acesso MCP**, as etiquetas de sistema que excluem arquivos) e **Avançado** (**Log do servidor**: os grupos cujos membros podem lê-lo, além dos administradores, **Privacidade do log**: o interruptor que esconde o texto das mensagens do log enquanto houver arquivos excluídos por etiquetas, e **OCR**).
 
 Os grupos com acesso ao log do servidor ficam na tabela versionada do próprio app, criada automaticamente pela migração nativa. Os grupos que já estavam no appconfig são importados na primeira leitura. A API de admin devolve `version` no GET e exige o campo no PUT; gravações desatualizadas recebem 409. A comparação atômica no banco continua protegendo as revogações com `filelocking.enabled=false`, quando o bloqueio extra do Nextcloud vira Noop.
 
@@ -140,7 +141,7 @@ Todos os clientes falam com a mesma URL, `https://cloud.example.com/apps/mcp/`, 
 3. Autenticação: **Entrar agora** (OAuth). Cliente: **identidade publicada do Claude** (CIMD). Não precisa de cabeçalho.
 4. **Vincular**: o seu Nextcloud abre, você faz login e clica em **Permitir**.
 
-O `claude.ai` já está na lista de hosts de clientes permitidos, então nada precisa ser mudado no servidor. Se um administrador restringiu essa lista, o Claude é recusado com `invalid_client` antes mesmo de a tela de login abrir: peça para ele recolocar o `claude.ai` em *Configurações de administração → MCP for Nextcloud → Clientes OAuth → Hosts de clientes permitidos*.
+O `claude.ai` já está na lista de hosts de clientes permitidos, então nada precisa ser mudado no servidor. Se um administrador restringiu essa lista, o Claude é recusado com `invalid_client` antes mesmo de a tela de login abrir: peça para ele recolocar o `claude.ai` em *Configurações de administração → MCP for Cloud → Clientes OAuth → Hosts de clientes permitidos*.
 
 ### ChatGPT
 
@@ -148,13 +149,13 @@ O `claude.ai` já está na lista de hosts de clientes permitidos, então nada pr
 2. Autenticação: **Sign in** (OAuth). O ChatGPT se identifica com o documento de identidade de cliente publicado em `chatgpt.com`; o app baixa esse documento para descobrir os redirect URIs registrados. Não precisa de cabeçalho nem de senha de app.
 3. **Conectar**: o seu Nextcloud abre, você faz login e clica em **Permitir**.
 
-O `chatgpt.com` é permitido por padrão, então uma instalação nunca configurada já aceita o ChatGPT. Se um administrador restringiu a lista para outros hosts, o ChatGPT é recusado com `invalid_client` antes da tela de login — peça para ele recolocar o `chatgpt.com` em *Configurações de administração → MCP for Nextcloud → Clientes OAuth → Hosts de clientes permitidos*.
+O `chatgpt.com` é permitido por padrão, então uma instalação nunca configurada já aceita o ChatGPT. Se um administrador restringiu a lista para outros hosts, o ChatGPT é recusado com `invalid_client` antes da tela de login — peça para ele recolocar o `chatgpt.com` em *Configurações de administração → MCP for Cloud → Clientes OAuth → Hosts de clientes permitidos*.
 
 ### Gemini CLI
 
 Dois passos, um do administrador e um do usuário, sem nenhum passo no terminal do servidor.
 
-**Administrador** — *Configurações de administração → MCP for Nextcloud → Clientes OAuth*:
+**Administrador** — *Configurações de administração → MCP for Cloud → Clientes OAuth*:
 
 1. Marque **Permitir programas locais (cliente nativo)**. Por padrão está desligado.
 2. A seção passa a mostrar o `client_id` para copiar — `nextcloud-mcp-native` — e os redirect URIs aceitos.
@@ -181,7 +182,7 @@ Por que um cliente embutido: o Gemini CLI não publica documento de identidade d
 
 ### Administradores: Clientes OAuth
 
-*Configurações de administração → MCP for Nextcloud → Clientes OAuth* decide quais clientes podem conectar, sem nenhum passo no terminal:
+*Configurações de administração → MCP for Cloud → Clientes OAuth* decide quais clientes podem conectar, sem nenhum passo no terminal:
 
 - **Hosts de clientes permitidos** — os hosts cujo documento de identidade de cliente publicado o app aceita baixar, separados por vírgula; `claude.ai` e `chatgpt.com` por padrão. Só nome de host exato: sem `https://`, sem porta, sem caminho, sem `*`, e é preciso deixar pelo menos um. O host é o que está na URL que o cliente usa como `client_id`. Salvar substitui a lista inteira, e remover um host recusa aquele cliente na hora, mesmo que o documento dele já esteja em cache.
 - **Permitir programas locais (cliente nativo)** — liga o cliente `nextcloud-mcp-native` descrito acima e mostra o `client_id` e os redirect URIs aceitos para copiar.
@@ -190,7 +191,7 @@ Os dois controles são exclusivos de administrador, têm proteção CSRF e avisa
 
 ### Outros clientes MCP (senha de app)
 
-Crie uma senha de app em *Configurações pessoais → Segurança* e ative a conexão em *Configurações pessoais → MCP for Nextcloud*. Depois configure o cliente com a URL acima e autenticação HTTP Basic (`usuario:senha-de-app`). Teste rápido:
+Crie uma senha de app em *Configurações pessoais → Segurança* e ative a conexão em *Configurações pessoais → MCP for Cloud*. Depois configure o cliente com a URL acima e autenticação HTTP Basic (`usuario:senha-de-app`). Teste rápido:
 
 ```bash
 curl -u 'alice:SENHA-DE-APP' \
@@ -201,8 +202,8 @@ curl -u 'alice:SENHA-DE-APP' \
 
 ### Revogando acesso
 
-- **Usuário**: *Configurações pessoais → MCP for Nextcloud → Desconectar* bloqueia a próxima requisição e revoga os tokens OAuth. A mesma página lista os próprios clientes OAuth (cliente, conectado em, expira em) com **Revogar** em cada um. Senhas de app se revogam em *Segurança*.
-- **Admin**: remova a permissão de conectar ou desligue o serviço. Vale a partir da próxima requisição. *Configurações de administração → MCP for Nextcloud → Conexões ativas* lista toda conexão OAuth (usuário, cliente, conectado em, expira em) e revoga uma, ou todas de um usuário, na hora; o usuário pode entrar de novo enquanto tiver permissão para conectar.
+- **Usuário**: *Configurações pessoais → MCP for Cloud → Desconectar* bloqueia a próxima requisição e revoga os tokens OAuth. A mesma página lista os próprios clientes OAuth (cliente, conectado em, expira em) com **Revogar** em cada um. Senhas de app se revogam em *Segurança*.
+- **Admin**: remova a permissão de conectar ou desligue o serviço. Vale a partir da próxima requisição. *Configurações de administração → MCP for Cloud → Conexões ativas* lista toda conexão OAuth (usuário, cliente, conectado em, expira em) e revoga uma, ou todas de um usuário, na hora; o usuário pode entrar de novo enquanto tiver permissão para conectar.
 
 ## Segurança
 
@@ -261,4 +262,4 @@ Desenvolvido pela [Sintax](https://sintax.tech) · sintax.tech.
 - Site: https://sintax.tech
 - GitHub: https://github.com/sintax-tech
 - Contato: contato@sintax.tech
-- Outros apps da Sintax para Nextcloud: [MCP for Nextcloud](https://apps.nextcloud.com/apps/mcp) · [Audiolog](https://apps.nextcloud.com/apps/audiolog)
+- Outros apps da Sintax para Nextcloud: [MCP for Cloud](https://apps.nextcloud.com/apps/mcp) · [Audiolog](https://apps.nextcloud.com/apps/audiolog)

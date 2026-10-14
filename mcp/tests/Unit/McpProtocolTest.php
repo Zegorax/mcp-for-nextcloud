@@ -25,7 +25,7 @@ final class McpProtocolTest extends TestCase {
         $this->assertSame(200, $out['status']);
         $this->assertSame('2025-06-18', $out['body']['result']['protocolVersion']);
         $this->assertArrayHasKey('tools', $out['body']['result']['capabilities']);
-        $this->assertSame('nextcloud-mcp', $out['body']['result']['serverInfo']['name']);
+        $this->assertSame('mcp-for-cloud', $out['body']['result']['serverInfo']['name']);
     }
 
     public function testInitializeWithoutClientInfoIsInvalidParams(): void {

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 /**
- * Admin page of the "MCP for Nextcloud" settings section: five WAI-ARIA tabs, each with one
+ * Admin page of the "MCP for Cloud" settings section: five WAI-ARIA tabs, each with one
  * `role="tabpanel"` holding the core `.section` blocks of its area — overview (status), access and
  * permissions (the users × permissions matrix), clients and connections (OAuth clients and active
  * connections), data protection (exclusion tags) and advanced (server log, log privacy, OCR).
@@ -90,7 +90,7 @@
         <h2><?php p($l->t('Permissions')); ?></h2>
         <p class="settings-hint mcp-hint"><?php p($l->t('Users need “Can connect” and must turn the connection on in their personal settings. Reading starts allowed except the server log; writing, deleting and transferring start denied; Nextcloud permissions still apply. Changes save at once, and “All” applies to the current page.')); ?></p>
         <?php foreach ($_['unsupportedApps'] as $app) { ?>
-            <p class="mcp-unsupported-app"><?php p($l->t('%1$s %2$s is installed, but MCP for Nextcloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.', [$app['name'], $app['installed'], $app['required']])); ?></p>
+            <p class="mcp-unsupported-app"><?php p($l->t('%1$s %2$s is installed, but MCP for Cloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.', [$app['name'], $app['installed'], $app['required']])); ?></p>
         <?php } ?>
         <div class="mcp-toolbar">
             <input type="search" id="mcp-search" placeholder="<?php p($l->t('Search user (name, user ID or e-mail)')); ?>" aria-label="<?php p($l->t('Search user')); ?>">

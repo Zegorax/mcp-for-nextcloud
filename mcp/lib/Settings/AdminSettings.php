@@ -18,7 +18,7 @@ use OCP\IURLGenerator;
 use OCP\Settings\ISettings;
 
 /**
- * Admin page in the app's own "MCP for Nextcloud" section, in blocks: status (endpoint, service switch, version,
+ * Admin page in the app's own "MCP for Cloud" section, in blocks: status (endpoint, service switch, version,
  * user summary), OAuth clients, hidden files & tags, OCR, the users × permissions matrix, the groups that may read
  * the server log and the active connections. The matrix, OAuth clients, tags and log groups are loaded and saved by
  * js/admin-grants.js; the connections by js/connections.js.
@@ -67,7 +67,7 @@ class AdminSettings implements ISettings {
         ], AppEnablement::unsupported($this->appManager));
     }
 
-    /** @return string settings section id, the app's own "MCP for Nextcloud" entry */
+    /** @return string settings section id, the app's own "MCP for Cloud" entry */
     public function getSection(): string {
         return AdminSection::ID;
     }

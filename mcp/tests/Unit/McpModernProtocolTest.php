@@ -36,7 +36,7 @@ final class McpModernProtocolTest extends TestCase {
         $this->assertEquals(new \stdClass(), $result->capabilities->tools);
         // The prompt set never changes at runtime, so no listChanged notification is advertised.
         $this->assertFalse($result->capabilities->prompts->listChanged);
-        $this->assertSame(['name' => 'nextcloud-mcp', 'version' => McpProtocol::SERVER_INFO['version']], (array)$result->_meta->{'io.modelcontextprotocol/serverInfo'});
+        $this->assertSame(['name' => 'mcp-for-cloud', 'version' => McpProtocol::SERVER_INFO['version']], (array)$result->_meta->{'io.modelcontextprotocol/serverInfo'});
         $this->assertSame([0, 'private'], [$result->ttlMs, $result->cacheScope]);
         $this->assertStringContainsString('"capabilities":{"tools":{},"prompts":{"listChanged":false},"resources":{}}', json_encode($out['json']));
     }
@@ -52,7 +52,7 @@ final class McpModernProtocolTest extends TestCase {
         $this->assertSame(200, $call['status']);
         $this->assertSame('complete', $call['json']->result->resultType);
         $this->assertSame('MCP endpoint available', $call['json']->result->content[0]->text);
-        $this->assertSame('nextcloud-mcp', $call['json']->result->_meta->{'io.modelcontextprotocol/serverInfo'}->name);
+        $this->assertSame('mcp-for-cloud', $call['json']->result->_meta->{'io.modelcontextprotocol/serverInfo'}->name);
     }
 
     public function testLegacyFlowIsUnchanged(): void {

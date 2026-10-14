@@ -27,7 +27,7 @@ use OCP\Files\IRootFolder;
 use OCP\IUserManager;
 
 /**
- * Registry of MCP resources and resource templates for the Nextcloud MCP app.
+ * Registry of MCP resources and resource templates for the MCP for Cloud app.
  *
  * Implements the minimum approved MCP resource model:
  * - resources/list: only mcp://guide (the rendered ToolGuide overview)
