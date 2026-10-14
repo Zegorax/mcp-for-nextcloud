@@ -40,7 +40,7 @@
 	 * @param {string} spec.emptyText shown when the list is empty
 	 * @param {function(string): {value: string|null, error: string}} spec.normalize turns a typed text into an entry, or refuses it
 	 * @param {function(string): string} spec.removeLabel accessible name of the Remove button of an entry
-	 * @param {function(string[]): void} [spec.onChange] called after every change of the list
+	 * @param {function(string[]): void} [spec.onChange] called after every edit of the list (not after setSaved)
 	 * @return {{getItems: function(): string[], setSaved: function(string[]): void, isDirty: function(): boolean}}
 	 */
 	function create(spec) {
@@ -118,10 +118,11 @@
 		return {
 			getItems: () => items.slice(),
 			setSaved: (next) => {
+				// What the server saved; not an edit, so onChange is not called.
 				items = next.slice()
 				saved = next.slice()
 				render()
-				changed()
+				dirty.hidden = true
 			},
 			isDirty,
 		}

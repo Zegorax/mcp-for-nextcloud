@@ -1053,6 +1053,11 @@
 	border-bottom: 1px solid var(--color-border);
 }
 
+#mcp-admin .mcp-list-items code {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 #mcp-admin .mcp-list-items li:last-child {
 	border-bottom: none;
 }

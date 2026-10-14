@@ -1261,6 +1261,8 @@
 					placeholder: 'example.com',
 					emptyText: t('mcp', 'No host: keep at least one.'),
 					removeLabel: (host) => t('mcp', 'Remove {host}', { host }, undefined, { escape: false }),
+					// A "Saved" from an earlier save would read as if these edits were saved too.
+					onChange: () => { hostsStatus.textContent = '' },
 					normalize: (text) => {
 						const host = text.trim().toLowerCase()
 						if (/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(host) && host.length <= 253) {
