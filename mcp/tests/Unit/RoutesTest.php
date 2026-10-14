@@ -147,7 +147,7 @@ final class RoutesTest extends TestCase {
             'settings#personal' => ['NoAdminRequired'],
             'my_connections#index' => ['NoAdminRequired'], 'my_connections#destroy' => ['NoAdminRequired'],
             // No attribute at all is what makes a Nextcloud route admin-only.
-            'grants#index' => [], 'grants#bulk' => [], 'grants#update' => [], 'grants#service' => [],
+            'grants#index' => [], 'grants#show' => [], 'grants#bulk' => [], 'grants#bulkFiltered' => [], 'grants#update' => [], 'grants#service' => [],
             'grants#oauthClients' => [], 'grants#updateOauthClients' => [],
             'grants#logsAccess' => [], 'grants#updateLogsAccess' => [],
             'logs_privacy#show' => [], 'logs_privacy#update' => [],

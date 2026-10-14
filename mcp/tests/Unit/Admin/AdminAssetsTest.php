@@ -64,7 +64,7 @@ final class AdminAssetsTest extends TestCase {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
         preg_match_all("/Util::add(Script|Style)\\(\\s*'mcp'\\s*,\\s*'([^']+)'/", $template, $matches, PREG_SET_ORDER);
-        $this->assertCount(5, $matches);
+        $this->assertCount(7, $matches);
         foreach ($matches as [, $kind, $name]) {
             $file = $kind === 'Script' ? "$app/js/$name.js" : "$app/css/$name.css";
             $this->assertFileExists($file);
@@ -80,7 +80,7 @@ final class AdminAssetsTest extends TestCase {
     public function testAdminTemplateHasUniqueIdsAndBalancedDivs(): void {
         $app = dirname(__DIR__, 3);
         $template = (string)file_get_contents($app . '/templates/admin.php');
-        $script = (string)file_get_contents($app . '/js/admin-grants.js') . file_get_contents($app . '/js/connections.js') . file_get_contents($app . '/js/admin-tabs.js') . file_get_contents($app . '/js/admin-picker.js');
+        $script = (string)file_get_contents($app . '/js/admin-grants.js') . file_get_contents($app . '/js/connections.js') . file_get_contents($app . '/js/admin-tabs.js') . file_get_contents($app . '/js/admin-picker.js') . file_get_contents($app . '/js/admin-users.js');
         preg_match_all("/getElementById\\('([^']+)'\\)/", $script, $used);
         $this->assertNotEmpty($used[1]);
         foreach (array_unique($used[1]) as $id) {
@@ -109,7 +109,7 @@ final class AdminAssetsTest extends TestCase {
         $section = substr($template, $start, $end - $start);
         preg_match_all("/\\\$l->t\\('([^']+)'\\)/", $section, $fromTemplate);
         $script = (string)file_get_contents($app . '/js/admin-grants.js');
-        $oauthScript = substr($script, (int)strpos($script, 'async function initOauthClients'));
+        $oauthScript = substr($script, (int)strpos($script, 'async function initOauthClients')) . file_get_contents($app . '/js/admin-list.js');
         preg_match_all("/t\\('mcp', '([^']+)'/", $oauthScript, $fromScript);
         $strings = array_unique(array_merge($fromTemplate[1], $fromScript[1]));
         $this->assertGreaterThan(8, count($strings));
@@ -158,11 +158,11 @@ final class AdminAssetsTest extends TestCase {
         // The panels wrap their blocks in the tab order; ids and classes of the blocks stay as they were.
         $ordered = [
             'role="tablist"',
-            'id="mcp-panel-overview"', 'id="mcp-block-status"',
+            'id="mcp-panel-overview"', 'id="mcp-block-status"', 'id="mcp-block-howto"',
             'id="mcp-panel-access"', 'id="mcp-block-matrix"',
             'id="mcp-panel-clients"', 'id="mcp-block-oauth"', 'id="mcp-connections"',
             'id="mcp-panel-protection"', 'id="mcp-block-tags"',
-            'id="mcp-panel-advanced"', 'id="mcp-block-logs"', 'id="mcp-block-logs-privacy"', 'id="mcp-block-ocr"',
+            'id="mcp-panel-advanced"', 'id="mcp-block-logs"', 'id="mcp-block-logs-privacy"', 'id="mcp-block-uploads"', 'id="mcp-block-ocr"',
             'class="mcp-attribution"',
         ];
         $positions = array_map(static fn (string $needle) => strpos($template, $needle), $ordered);
@@ -172,13 +172,67 @@ final class AdminAssetsTest extends TestCase {
         $this->assertSame($sorted, $positions, 'tabs, panels and blocks must appear in the tab order');
     }
 
-    /** Eight blocks, each a core settings section with its own heading, in the tab order. */
-    public function testAdminPageHasEightSectionBlocks(): void {
+    /** Ten blocks, each a core settings section with its own heading, in the tab order. */
+    public function testAdminPageHasTenSectionBlocks(): void {
         $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
         preg_match_all('/<div class="section mcp-block" id="([^"]+)"[^>]*>\s*<h2><\?php p\(\$l->t\(\'([^\']+)\'\)\); \?><\/h2>/', $template, $blocks);
-        $this->assertSame(['mcp-block-status', 'mcp-block-matrix', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'], $blocks[1]);
-        $this->assertSame(['Status', 'Permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'Log privacy', 'OCR'], $blocks[2]);
+        $this->assertSame(['mcp-block-status', 'mcp-block-howto', 'mcp-block-matrix', 'mcp-block-oauth', 'mcp-connections', 'mcp-block-tags', 'mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-uploads', 'mcp-block-ocr'], $blocks[1]);
+        $this->assertSame(['Status', 'How access works', 'Permissions', 'OAuth clients', 'Active connections', 'Excluded from MCP access', 'Server log', 'Log privacy', 'Uploads', 'OCR'], $blocks[2]);
         $this->assertStringContainsString('data-scope="admin"', $template);
+    }
+
+    /**
+     * Every block says how its changes are saved: a data-save-mode the tests can read and, for every block with a
+     * control, the same thing in words under its heading.
+     */
+    public function testEveryBlockSaysHowItSaves(): void {
+        $template = (string)file_get_contents(dirname(__DIR__, 3) . '/templates/admin.php');
+        preg_match_all('/<div class="section mcp-block" id="([^"]+)"([^>]*)>\s*<h2>.*?<\/h2>\s*(<p class="mcp-save-mode">)?/s', $template, $blocks, PREG_SET_ORDER);
+        $this->assertCount(10, $blocks);
+        foreach ($blocks as $block) {
+            [, $id, $attributes] = $block;
+            $this->assertSame(1, preg_match('/data-save-mode="(immediate|button|mixed|none)"/', $attributes, $mode), "$id needs a data-save-mode");
+            $this->assertSame($mode[1] !== 'none', ($block[3] ?? '') !== '', "$id: the label under the heading matches its mode");
+        }
+    }
+
+    /**
+     * The Users view is the default and the matrix stays one click away; the detail panel is a modal <dialog> hidden
+     * while closed (Nextcloud's styles would otherwise keep it on screen) and loads one user from GET /api/grants/{uid}.
+     */
+    public function testUsersViewAndDetailPanelAreWired(): void {
+        $app = dirname(__DIR__, 3);
+        $template = (string)file_get_contents($app . '/templates/admin.php');
+        $this->assertStringContainsString('<button type="button" id="mcp-view-users" data-view="users" aria-pressed="true">', $template);
+        $this->assertStringContainsString('<button type="button" id="mcp-view-matrix" data-view="matrix" aria-pressed="false">', $template);
+        $this->assertStringContainsString('<div class="mcp-matrix-wrap mcp-matrix-only">', $template);
+        $this->assertStringContainsString('<dialog id="mcp-user-dialog" class="mcp-dialog" aria-labelledby="mcp-user-dialog-title">', $template);
+        $this->assertLessThan(strpos($template, "addScript('mcp', 'admin-users')"), strpos($template, "addScript('mcp', 'admin-grants')"), 'admin-users uses window.McpAdmin');
+        $users = (string)file_get_contents($app . '/js/admin-users.js');
+        $this->assertStringContainsString("api('GET', '/api/grants/' + encodeURIComponent(uid))", $users);
+        $this->assertStringContainsString("api('PUT', '/api/grants/' + encodeURIComponent(current.uid), payload)", $users);
+        $this->assertStringContainsString('dialog.showModal()', $users);
+        $this->assertStringNotContainsString('innerHTML', $users);
+        $grants = (string)file_get_contents($app . '/js/admin-grants.js');
+        $this->assertStringContainsString("root.dispatchEvent(new CustomEvent('mcp:users-loaded'", $grants);
+        $this->assertStringContainsString('window.McpAdmin = {', $grants);
+        $css = (string)file_get_contents($app . '/css/admin.css');
+        $this->assertMatchesRegularExpression('/dialog\.mcp-dialog:not\(\[open\]\) \{\s*display: none;/', $css);
+        $this->assertStringContainsString('.mcp-view-users .mcp-matrix-only', $css);
+        $this->assertStringContainsString('.mcp-view-matrix .mcp-users-only', $css);
+    }
+
+    /**
+     * "All" defaults to the page and offers every filtered user as a separate choice, which counts on the server first,
+     * sends that count back (409 when it changed) and undoes through the page endpoint.
+     */
+    public function testEveryPageBulkIsExplicitAndCountedFirst(): void {
+        $script = (string)file_get_contents(dirname(__DIR__, 3) . '/js/admin-grants.js');
+        $this->assertStringContainsString("const page = el('input', { type: 'radio', name, value: 'page', checked: true", $script);
+        $this->assertStringContainsString("api('POST', '/api/grants/bulk/filtered', { ...body, dryRun: true })", $script);
+        $this->assertStringContainsString("api('POST', '/api/grants/bulk/filtered', { ...body, expected: plan.change })", $script);
+        $this->assertStringContainsString("e.message === '409'", $script);
+        $this->assertStringContainsString('async function undoFiltered(', $script);
     }
 
     /** The catalog-driven app selector is labelled and does not alter server-side user filters. */
@@ -209,7 +263,7 @@ final class AdminAssetsTest extends TestCase {
         }
         $this->assertStringContainsString("textContent: '⊘'", $script);
         $this->assertStringContainsString("mark.setAttribute('aria-hidden', 'true')", $script);
-        $this->assertSame(1, substr_count($script, "api('POST', '/api/grants/bulk'"), 'bulk and undo share one request');
+        $this->assertSame(1, substr_count($script, "api('POST', '/api/grants/bulk',"), 'bulk and undo share one request');
         $this->assertStringContainsString('async function undoBulk(', $script);
         $this->assertStringNotContainsString('innerHTML', $script);
         $this->assertStringContainsString('const FIXED_COLUMNS = 3', $script);
@@ -218,12 +272,12 @@ final class AdminAssetsTest extends TestCase {
         $this->assertStringContainsString('noticeText.focus({ preventScroll: true })', $script);
         $this->assertStringContainsString('function setBulkBusy(on)', $script);
         $this->assertStringContainsString('if (!bulkBusy && !notice.matches(\':hover\')', $script, 'the undo countdown waits for the lock');
-        $this->assertSame(2, preg_match_all('/setBulkBusy\(true\)\s+try \{/', $script), 'bulk and undo both run under the lock');
-        $this->assertSame(2, preg_match_all('/\} finally \{\s+setBulkBusy\(false\)/', $script), 'the lock is released on failure too');
+        $this->assertSame(4, preg_match_all('/setBulkBusy\(true\)\s+try \{/', $script), 'both bulk changes and both undos run under the lock');
+        $this->assertSame(4, preg_match_all('/\} finally \{\s+setBulkBusy\(false\)/', $script), 'the lock is released on failure too');
         $this->assertStringContainsString('id="mcp-bulk-notice-text" tabindex="-1"', (string)file_get_contents($app . '/templates/admin.php'));
         $template = (string)file_get_contents($app . '/templates/admin.php');
-        $this->assertGreaterThan(strpos($template, 'class="mcp-matrix-wrap"'), strpos($template, 'class="mcp-legend"'), 'the legend sits under the table');
-        $this->assertGreaterThan(strpos($template, 'class="mcp-matrix-wrap"'), strpos($template, 'id="mcp-bulk-notice"'), 'the notice sits under the table');
+        $this->assertGreaterThan(strpos($template, 'class="mcp-matrix-wrap'), strpos($template, 'class="mcp-legend'), 'the legend sits under the table');
+        $this->assertGreaterThan(strpos($template, 'class="mcp-matrix-wrap'), strpos($template, 'id="mcp-bulk-notice"'), 'the notice sits under the table');
         $this->assertStringContainsString('<option value="eligible" selected>', $template);
         $this->assertStringContainsString("filter: 'eligible'", $script);
         $this->assertStringContainsString('function rowUnavailableReason(user)', $script);
@@ -299,7 +353,7 @@ final class AdminAssetsTest extends TestCase {
         foreach (['settings#global', 'settings#user', 'users#index'] as $gone) {
             $this->assertNotContains($gone, $routes);
         }
-        foreach (['settings#personal', 'grants#index', 'grants#update', 'grants#bulk', 'grants#service', 'grants#oauthClients', 'grants#updateOauthClients', 'o_auth#token', 'metadata#protectedResource',
+        foreach (['settings#personal', 'grants#index', 'grants#show', 'grants#update', 'grants#bulk', 'grants#bulkFiltered', 'grants#service', 'grants#oauthClients', 'grants#updateOauthClients', 'o_auth#token', 'metadata#protectedResource',
             'connections#index', 'connections#destroy', 'connections#revokeUser', 'my_connections#index', 'my_connections#destroy', 'checkout_limit#show', 'checkout_limit#update'] as $kept) {
             $this->assertContains($kept, $routes);
         }
@@ -384,11 +438,11 @@ final class AdminAssetsTest extends TestCase {
         }
         $this->assertTrue($loaded);
         $blocks = [
-            'mcp-panel-overview' => ['mcp-block-status'],
+            'mcp-panel-overview' => ['mcp-block-status', 'mcp-block-howto'],
             'mcp-panel-access' => ['mcp-block-matrix'],
             'mcp-panel-clients' => ['mcp-block-oauth', 'mcp-connections'],
             'mcp-panel-protection' => ['mcp-block-tags'],
-            'mcp-panel-advanced' => ['mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-ocr'],
+            'mcp-panel-advanced' => ['mcp-block-logs', 'mcp-block-logs-privacy', 'mcp-block-uploads', 'mcp-block-ocr'],
         ];
         foreach ($blocks as $panelId => $blockIds) {
             foreach ($blockIds as $blockId) {

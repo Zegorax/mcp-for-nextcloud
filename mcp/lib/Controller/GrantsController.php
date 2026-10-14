@@ -32,6 +32,8 @@ use OCP\IUserManager;
 class GrantsController extends Controller {
     /** Pseudo-operation of the bulk endpoint that toggles eligibility instead of a grant. */
     public const ELIGIBLE = 'eligible';
+    /** Most connections counted for one user in the detail panel; the panel says "100 or more" beyond it. */
+    public const MAX_LISTED_CONNECTIONS = 100;
     public function __construct(
         string $appName,
         IRequest $request,
@@ -104,6 +106,127 @@ class GrantsController extends Controller {
             }
             return ['updated' => count($uids)];
         });
+    }
+
+    /**
+     * One user for the detail panel of the admin page: the matrix row, the user's groups and how many MCP
+     * clients they have signed in with OAuth.
+     *
+     * @param string $uid existing Nextcloud user id
+     * @return JSONResponse the row of GrantMatrix::detail plus connections: int, or 400
+     */
+    public function show(string $uid): JSONResponse {
+        return $this->guard(function () use ($uid): array {
+            $user = $this->user($uid);
+            $connections = count($this->oauth->listGrants($user->getUID(), '', self::MAX_LISTED_CONNECTIONS, 0, time()));
+            return $this->matrix->detail($user) + ['connections' => $connections];
+        });
+    }
+
+    /**
+     * Applies one change to every user the matrix filters select, across all pages, never to more than
+     * GrantMatrix::MAX_BULK users.
+     *
+     * Body {search: string, group: string, filter: string, module: string|null, operations: list<string>, granted: bool,
+     * dryRun: bool, expected?: int}; module null with operations ["eligible"] changes "Can connect". Users for whom the
+     * permission is unavailable (a disabled account, "Can connect" off, the app unavailable to them) are left out, like
+     * the "All" menu of one page. A dry run only counts. The real run must send `expected`, the `change` count of its
+     * dry run: when the selection changed in between it answers 409 with the new counts and writes nothing.
+     *
+     * @return JSONResponse a dry run {matched, change, unavailable, unchanged, tooMany, limit}; a real run
+     *     {updated, previous: list<{uid, operation, granted}>} with the values it replaced, so the page can undo it;
+     *     400 for an invalid body or a selection over the limit; 409 when `expected` no longer matches
+     */
+    public function bulkFiltered(): JSONResponse {
+        try {
+            $search = $this->request->getParam('search', '');
+            $group = $this->request->getParam('group', '');
+            $filter = $this->request->getParam('filter', '');
+            $module = $this->request->getParam('module');
+            $operations = $this->request->getParam('operations');
+            $granted = self::bool($this->request->getParam('granted'));
+            $dryRun = self::bool($this->request->getParam('dryRun', false));
+            if (!is_string($search) || !is_string($group) || !is_string($filter) || !is_array($operations) || $operations === [] || !array_is_list($operations)) {
+                throw new InvalidArgumentException('Invalid request');
+            }
+            $eligibility = $module === null && $operations === [self::ELIGIBLE];
+            if (!$eligibility) {
+                foreach ($operations as $operation) {
+                    self::grant($module, $operation);
+                }
+                if (count(array_unique($operations)) !== count($operations)) {
+                    throw new InvalidArgumentException('Invalid request');
+                }
+            }
+            $users = $this->matrix->matching($search, $group, $filter, GrantMatrix::MAX_BULK);
+        } catch (InvalidArgumentException) {
+            return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
+        }
+        $tooMany = count($users) > GrantMatrix::MAX_BULK;
+        if ($tooMany && !$dryRun) {
+            return new JSONResponse(['error' => 'Too many users', 'limit' => GrantMatrix::MAX_BULK], Http::STATUS_BAD_REQUEST);
+        }
+        $plan = $this->bulkPlan($tooMany ? [] : $users, $module, $operations, $granted);
+        $counts = ['matched' => min(count($users), GrantMatrix::MAX_BULK), 'change' => count($plan['changes']),
+            'unavailable' => $plan['unavailable'], 'unchanged' => $plan['unchanged'], 'tooMany' => $tooMany, 'limit' => GrantMatrix::MAX_BULK];
+        if ($dryRun) {
+            return new JSONResponse($counts);
+        }
+        $expected = $this->request->getParam('expected');
+        if (!is_int($expected)) {
+            return new JSONResponse(['error' => 'Invalid request'], Http::STATUS_BAD_REQUEST);
+        }
+        if ($expected !== $counts['change']) {
+            return new JSONResponse(['error' => 'Conflict'] + $counts, Http::STATUS_CONFLICT);
+        }
+        $previous = [];
+        foreach ($plan['changes'] as $uid => $values) {
+            // A numeric uid became an integer array key; the policy and the answer take it as the string it is.
+            $uid = (string)$uid;
+            foreach ($values as $operation => $value) {
+                $eligibility ? $this->policy->setEligible($uid, $granted) : $this->policy->setGrant($uid, (string)$module, $operation, $granted);
+                $previous[] = ['uid' => $uid, 'operation' => $operation, 'granted' => $value];
+            }
+        }
+        return new JSONResponse(['updated' => count($plan['changes']), 'previous' => $previous]);
+    }
+
+    /**
+     * What a change would do to each user, with the rule of the page's "All" menu: a user for whom the permission is
+     * unavailable is left out, a user who already has the value is unchanged.
+     *
+     * @param list<IUser> $users users to change
+     * @param string|null $module module id, null for eligibility
+     * @param list<string> $operations operation ids, or ["eligible"]
+     * @param bool $granted new value
+     * @return array{changes: array<array-key, array<string, bool>>, unavailable: int, unchanged: int} per uid, the
+     *     operations that change and their current value
+     */
+    private function bulkPlan(array $users, ?string $module, array $operations, bool $granted): array {
+        $changes = [];
+        $unavailable = 0;
+        $unchanged = 0;
+        foreach (array_chunk($users, GrantMatrix::PAGE_SIZE) as $chunk) {
+            foreach ($this->matrix->rows($chunk) as $row) {
+                if (!$row['enabled'] || ($module !== null && (!$row['eligible'] || !($row['appsEnabled'][$module] ?? false)))) {
+                    $unavailable++;
+                    continue;
+                }
+                $values = [];
+                foreach ($operations as $operation) {
+                    $current = $module === null ? $row['eligible'] : $row['grants'][$module][$operation];
+                    if ($current !== $granted) {
+                        $values[$operation] = $current;
+                    }
+                }
+                if ($values === []) {
+                    $unchanged++;
+                } else {
+                    $changes[$row['uid']] = $values;
+                }
+            }
+        }
+        return ['changes' => $changes, 'unavailable' => $unavailable, 'unchanged' => $unchanged];
     }
 
     /**

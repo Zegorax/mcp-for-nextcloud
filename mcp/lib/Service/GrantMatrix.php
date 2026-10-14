@@ -28,6 +28,8 @@ class GrantMatrix {
     public const MAX_PAGE = 10000;
     /** Longest search term accepted. */
     public const MAX_SEARCH = 100;
+    /** Most users one "every filtered user" change may write; a larger selection must be narrowed first. */
+    public const MAX_BULK = 5000;
     /** Matrix filters: '' every user, 'eligible' the eligible ones, 'connected' the eligible ones who also connected. */
     public const FILTERS = ['' => null, 'eligible' => GrantPolicy::ELIGIBLE_KEY, 'connected' => GrantPolicy::CONNECTED_KEY];
     /**
@@ -80,6 +82,58 @@ class GrantMatrix {
             'groups' => $this->groups(),
             'serviceEnabled' => $this->policy->globalEnabled(),
         ];
+    }
+
+    /**
+     * Every user the matrix filters select, across all pages, for the "every filtered user" bulk change.
+     * At most $limit + 1 users are loaded, so a selection over the limit is detected without reading the
+     * whole user base.
+     *
+     * @param string $search term matched against uid, display name and e-mail, as in page()
+     * @param string $group group id to restrict to, '' for every user
+     * @param string $filter key of FILTERS
+     * @param int $limit most users wanted; one more is returned when the selection is larger
+     * @return list<IUser> users in the order of the matrix pages
+     * @throws InvalidArgumentException for an oversized term, an unknown group or filter
+     */
+    public function matching(string $search, string $group, string $filter, int $limit = self::MAX_BULK): array {
+        $search = trim($search);
+        if (mb_strlen($search) > self::MAX_SEARCH || !array_key_exists($filter, self::FILTERS)) {
+            throw new InvalidArgumentException('Invalid request');
+        }
+        if ($filter !== '') {
+            return $this->flaggedUsers(self::FILTERS[$filter], $group, $search, 0, $limit + 1)[0];
+        }
+        if ($group === '') {
+            return array_values($this->userManager->searchDisplayName($search, $limit + 1, 0));
+        }
+        if ($this->groupManager->get($group) === null) {
+            throw new InvalidArgumentException('Invalid request');
+        }
+        $users = [];
+        foreach (array_keys($this->groupManager->displayNamesInGroup($group, $search, $limit + 1, 0)) as $uid) {
+            $user = $this->userManager->get((string)$uid);
+            if ($user !== null) {
+                $users[] = $user;
+            }
+        }
+        return $users;
+    }
+
+    /**
+     * One user's row with what the detail panel adds: the groups the user belongs to.
+     *
+     * @param IUser $user user to describe
+     * @return array<string, mixed> the row of rows() plus groups: list<array{id:string, displayName:string}>
+     */
+    public function detail(IUser $user): array {
+        $groups = [];
+        foreach ($this->groupManager->getUserGroupIds($user) as $gid) {
+            $group = $this->groupManager->get($gid);
+            $groups[] = ['id' => $gid, 'displayName' => $group?->getDisplayName() ?? $gid];
+        }
+        usort($groups, static fn (array $a, array $b): int => strcasecmp($a['displayName'], $b['displayName']));
+        return $this->rows([$user])[0] + ['groups' => $groups];
     }
 
     /**
@@ -139,10 +193,11 @@ class GrantMatrix {
      * then narrowed by group and by uid, display name or e-mail, ordered by display name like the backend search.
      *
      * @param string $key GrantPolicy::ELIGIBLE_KEY or GrantPolicy::CONNECTED_KEY
+     * @param int $length users to return from $offset; a page asks for one extra to know whether another page exists
      * @return array{0: list<IUser>, 1: int} users of the page (one extra when another page exists) and the exact total
      * @throws InvalidArgumentException for an unknown group
      */
-    private function flaggedUsers(string $key, string $gid, string $search, int $offset): array {
+    private function flaggedUsers(string $key, string $gid, string $search, int $offset, int $length = self::PAGE_SIZE + 1): array {
         if ($gid !== '' && $this->groupManager->get($gid) === null) {
             throw new InvalidArgumentException('Invalid request');
         }
@@ -159,7 +214,7 @@ class GrantMatrix {
             $users[] = $user;
         }
         usort($users, static fn (IUser $a, IUser $b) => strcasecmp($a->getDisplayName(), $b->getDisplayName()) ?: strcmp($a->getUID(), $b->getUID()));
-        return [array_slice($users, $offset, self::PAGE_SIZE + 1), count($users)];
+        return [array_slice($users, $offset, $length), count($users)];
     }
 
     /**

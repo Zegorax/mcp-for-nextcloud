@@ -2,6 +2,25 @@
 
 All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/appinfo/info.xml`.
 
+## Unreleased
+
+### Added
+
+- admin: the "Access and permissions" tab opens on a **Users** list: name, user ID, "Can connect", personal activation, a short summary of what the user may do and **Edit**. The matrix stays one click away as **Matrix (advanced)**; the chosen view is kept in the address (`#access?view=matrix`) ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: **Edit** (or the address `#access?user=<uid>`) opens a panel with one user's permissions grouped by app: what still stops the user (account disabled, "Can connect" off, connection not turned on), the user's groups and active connections, "Can connect", and each operation with its hint. An operation that cannot be changed says why in words. Each change saves at once and shows "Saved" next to it; closing the panel refreshes the list and returns the focus to the user's Edit button. New admin endpoint `GET /apps/mcp/api/grants/{uid}` ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: the "All" menus of the matrix can apply a change to **every filtered user on every page**, as a separate choice in the menu ("The 50 users on this page" stays the default). The server counts first; the confirmation names the permission, the number of users and the filters, and the change is saved only if that count still holds (409 otherwise). At most 5000 users at once; "Undo" restores the previous values. New admin endpoint `POST /apps/mcp/api/grants/bulk/filtered` ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: **How access works** in Overview explains "Can connect", personal activation, app permissions and OAuth connections; the counters of the Status block link to the matching list ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: every block says under its heading whether its changes save at once or need its Save button. A matrix cell whose save failed keeps "Not saved" next to the checkbox ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+
+### Changed
+
+- admin: the allowed client hosts are a list of entries, each with its own Remove button, with Add and Save, instead of one comma-separated field. A URL or a host with a port is refused next to the field; the saved value and the API are unchanged ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+- admin: the checkout upload limit moved from Overview to a new **Uploads** block in Advanced ([#2](https://github.com/sintax-tech/mcp-for-nextcloud/issues/2)).
+
+### Known limitations
+
+- "Undo" of a change on every page writes the previous values back like the page "Undo": a change made by another administrator in between is overwritten.
+
 ## 1.0.8
 
 ### Changed
