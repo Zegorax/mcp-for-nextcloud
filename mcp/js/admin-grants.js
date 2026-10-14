@@ -1375,6 +1375,8 @@
 					placeholder: 'example.com',
 					emptyText: t('mcp', 'No host: keep at least one.'),
 					removeLabel: (host) => t('mcp', 'Remove {host}', { host }, undefined, { escape: false }),
+					// A "Saved" from an earlier save would read as if these edits were saved too.
+					onChange: () => { hostsStatus.textContent = '' },
 					normalize: (text) => {
 						const host = text.trim().toLowerCase()
 						if (/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(host) && host.length <= 253) {
@@ -1390,6 +1392,7 @@
 					placeholder: 'https://harness.example.com/oauth/callback',
 					emptyText: t('mcp', 'No redirect URI yet: the self-hosted client cannot sign in.'),
 					removeLabel: (uri) => t('mcp', 'Remove {uri}', { uri }, undefined, { escape: false }),
+					onChange: () => { customRedirectsStatus.textContent = '' },
 					normalize: (text) => {
 						const uri = text.trim()
 						if (/^https:\/\/[^\s#*]+$/i.test(uri) || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/[^\s#*]*)?$/i.test(uri)) {
