@@ -142,7 +142,7 @@ class McpController extends Controller {
         if ($user === null || !$user->isEnabled()) {
             // Basic stays the challenge for clients that sent Basic; everyone else is pointed to OAuth discovery.
             return $this->unauthorized(str_starts_with($authorization, 'Basic ')
-                ? 'Basic realm="Nextcloud MCP"'
+                ? 'Basic realm="MCP for Cloud"'
                 : 'Bearer ' . $this->bearerParameters());
         }
         if (!$this->policy->canConnect($user->getUID())) {

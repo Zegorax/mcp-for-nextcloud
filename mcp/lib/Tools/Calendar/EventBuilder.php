@@ -18,7 +18,7 @@ use Sabre\VObject\Component\VEvent;
  */
 final class EventBuilder {
     /** PRODID written on objects created by the app. */
-    public const PRODID = '-//Nextcloud MCP//Calendar//PT';
+    public const PRODID = '-//MCP for Cloud//Calendar//PT';
 
     /**
      * @param string $uid new event UID

@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class AdminUnsupportedAppsTest extends TestCase {
     /** The admin notice; its placeholders are the app name, the installed version and the minimum. */
-    private const NOTICE = '%1$s %2$s is installed, but MCP for Nextcloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.';
+    private const NOTICE = '%1$s %2$s is installed, but MCP for Cloud supports it from version %3$s on. Its tools stay hidden until the app is updated; the saved permissions are kept.';
 
     /**
      * @param array<string, string> $versions installed version per app id

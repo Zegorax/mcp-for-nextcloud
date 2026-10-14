@@ -2,6 +2,13 @@
 
 All notable changes to the native Nextcloud app (`mcp/`). Versions follow `mcp/appinfo/info.xml`.
 
+## 1.0.8
+
+### Changed
+
+- appinfo, admin: the app is now called "MCP for Cloud" (it was "MCP for Nextcloud"), because the Nextcloud App Store rules do not allow the Nextcloud name in the name of an app. The new name appears in the store listing, in the administration and personal settings menus, on both settings pages, in the READMEs and in the `NOTICE` file; the store description keeps saying that the app is a Model Context Protocol server for your Nextcloud (en, pt-BR, es). The app ID (`mcp`), the settings addresses, the endpoints, the saved settings and the tables are unchanged, and so are the installations, the permissions and the connections of the clients: nothing has to be done.
+- mcp: the server name that MCP clients show (`serverInfo.name`) is now `mcp-for-cloud` (it was `nextcloud-mcp`); the OAuth resource name, the Basic authentication realm and the product identifier written in the calendar events created by the app (`PRODID`) carry the new name as well. The identifier of the built-in native client (`nextcloud-mcp-native`) is kept, so the connections already made with it keep working.
+
 ## 1.0.7
 
 ### Added

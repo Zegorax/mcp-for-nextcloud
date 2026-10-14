@@ -35,7 +35,7 @@ class MetadataController extends Controller {
             'authorization_servers' => [$this->urls->issuer()],
             'scopes_supported' => ['mcp'],
             'bearer_methods_supported' => ['header'],
-            'resource_name' => 'Nextcloud MCP',
+            'resource_name' => 'MCP for Cloud',
         ]);
     }
 

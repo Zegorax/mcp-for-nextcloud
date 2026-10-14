@@ -206,16 +206,16 @@ Os arquivos de licença acompanham cada pacote em `vendor/`. O `vendor/autoload.
 
 ## Instalar
 
-A instalação normal é pela App Store do Nextcloud: *Apps* → buscar **MCP for Nextcloud** → **Baixar e ativar** (ou `occ app:install mcp`). O pacote da loja é assinado e atualiza pelo atualizador de apps. A instalação por SSH abaixo é a alternativa, para desenvolvimento ou testes de um build local.
+A instalação normal é pela App Store do Nextcloud: *Apps* → buscar **MCP for Cloud** → **Baixar e ativar** (ou `occ app:install mcp`). O pacote da loja é assinado e atualiza pelo atualizador de apps. A instalação por SSH abaixo é a alternativa, para desenvolvimento ou testes de um build local.
 
 ### Instalar via SSH
 
 Substitua `<servidor>`, `<nextcloud>` (raiz da instalação), `<apps>` (diretório de apps gravável, por exemplo `custom_apps` ou `apps`, conforme `apps_paths` em `config/config.php`) e `<www>` (usuário do servidor web, por exemplo `www-data`).
 
 ```sh
-scp build/mcp-1.0.7.tar.gz <servidor>:/tmp/
+scp build/mcp-1.0.8.tar.gz <servidor>:/tmp/
 ssh <servidor>
-sudo tar -xzf /tmp/mcp-1.0.7.tar.gz -C <nextcloud>/<apps>/
+sudo tar -xzf /tmp/mcp-1.0.8.tar.gz -C <nextcloud>/<apps>/
 sudo chown -R <www>:<www> <nextcloud>/<apps>/mcp
 sudo -u <www> php <nextcloud>/occ app:enable mcp
 sudo -u <www> php <nextcloud>/occ app:list | grep -A1 mcp
@@ -264,7 +264,7 @@ O `VisibilityGuard` aplica a ocultação por system tags em todos os caminhos de
 
 ## Configurar
 
-1. **Administração → MCP for Nextcloud** (entrada própria, com ícone, no menu de configurações): na aba **Visão geral**, marcar *Serviço MCP ativado*; na aba **Acesso e permissões**, usar a matriz de usuários × permissões.
+1. **Administração → MCP for Cloud** (entrada própria, com ícone, no menu de configurações): na aba **Visão geral**, marcar *Serviço MCP ativado*; na aba **Acesso e permissões**, usar a matriz de usuários × permissões.
    - A página tem cinco abas, cada uma acessível pelo teclado e por endereço (`#overview`, `#access`, `#clients`, `#protection`, `#advanced`); um link abre a aba que ele nomeia, e uma configuração de exclusão ilegível é sinalizada na Visão geral com o caminho para o reparo.
    - O bloco **Status** da Visão geral mostra o endpoint (com copiar), o serviço, a versão do app, quantos usuários podem conectar e quantos estão conectados, as conexões OAuth ativas e o **limite de envio do checkout** (`files_checkout`), editável em MiB, com o limite efetivo e o teto `post_max_size` do PHP ao lado. Antes isso só mudava por `occ`.
    - As demais abas: **Acesso e permissões** (a matriz), **Clientes e conexões** (**Clientes OAuth** e **Conexões ativas**), **Proteção de dados** (**Excluídos do acesso MCP**) e **Avançado** (**Log do servidor**, **Privacidade do log** e **OCR**). Os grupos do log do servidor e as etiquetas de exclusão são escolhidos em listas com busca e resumo.
@@ -276,8 +276,8 @@ O `VisibilityGuard` aplica a ocultação por system tags em todos os caminhos de
 2. **Excluídos do acesso MCP**: selecione etiquetas de sistema para que arquivos e pastas etiquetados fiquem totalmente invisíveis às ferramentas do MCP (leitura, busca, listagem, imagens, notas, talk e checkout; as ferramentas de log do servidor só enquanto “Esconder o texto das mensagens do log” estiver ligado). Recomenda-se o uso de etiquetas restritas ou invisíveis. A etiqueta vale para todos os descendentes, um compartilhamento local herda a ocultação da pasta de origem do dono e, na dúvida (configuração inválida, falha de consulta), o app recusa; ver [Etiquetas ocultas (1.0.6)](#etiquetas-ocultas-106).
    - Serviço, elegibilidade e conexão pessoal começam desligados para todos, inclusive administradores. Leitura começa permitida; escrita, exclusão, transferência e compartilhamento começam negadas. Em Arquivos, `files.share` (compartilhar com pessoa ou grupo) e `files.link` (link público) são duas operações separadas, para o admin liberar uma sem a outra; as duas vêm desligadas. Listar compartilhamentos continua sendo leitura.
    - A página usa a API JSON admin-only `GET /apps/mcp/api/grants` (`search`, `group`, `filter` = `eligible`/`connected`, `page`), `PUT /apps/mcp/api/grants/{uid}`, `POST /apps/mcp/api/grants/bulk`, `PUT /apps/mcp/api/service`, `GET`/`PUT /apps/mcp/api/checkout-limit` (`{mib}` inteiro ≥ 1) e, para as conexões, `GET /apps/mcp/api/connections`, `DELETE /apps/mcp/api/connections/{id}` e `DELETE /apps/mcp/api/connections/users/{uid}`. Para as etiquetas ocultas e a opção de log, `GET`/`PUT /apps/mcp/api/admin/tags` e `GET`/`PUT /apps/mcp/api/logs-privacy` (`{hideFileNames}`). Nenhuma resposta traz hash de token.
-3. **Clientes OAuth**: o bloco *OAuth clients* da seção **MCP for Nextcloud** edita os hosts de cliente permitidos e liga o cliente nativo para programas locais, sem passo de terminal. A API é `GET /apps/mcp/api/oauth-clients` e `PUT /apps/mcp/api/oauth-clients` (admin-only, com CSRF do Nextcloud), aceita `hosts` e/ou `nativeClientEnabled`, valida tudo antes de gravar e recusa uma lista de hosts inválida em vez de escrevê-la. Desligar o cliente nativo revoga na hora os tokens já emitidos para ele.
-4. **Configurações pessoais → MCP for Nextcloud**: o próprio usuário clica em *Connect*. A página mostra o estado (serviço, permissão do administrador, conexão) e a lista **Seus clientes conectados** (cliente, conectado em, expira em) com *Revogar*, pela API `GET /apps/mcp/api/my/connections` e `DELETE /apps/mcp/api/my/connections/{id}`, restrita às conexões do próprio usuário.
+3. **Clientes OAuth**: o bloco *OAuth clients* da seção **MCP for Cloud** edita os hosts de cliente permitidos e liga o cliente nativo para programas locais, sem passo de terminal. A API é `GET /apps/mcp/api/oauth-clients` e `PUT /apps/mcp/api/oauth-clients` (admin-only, com CSRF do Nextcloud), aceita `hosts` e/ou `nativeClientEnabled`, valida tudo antes de gravar e recusa uma lista de hosts inválida em vez de escrevê-la. Desligar o cliente nativo revoga na hora os tokens já emitidos para ele.
+4. **Configurações pessoais → MCP for Cloud**: o próprio usuário clica em *Connect*. A página mostra o estado (serviço, permissão do administrador, conexão) e a lista **Seus clientes conectados** (cliente, conectado em, expira em) com *Revogar*, pela API `GET /apps/mcp/api/my/connections` e `DELETE /apps/mcp/api/my/connections/{id}`, restrita às conexões do próprio usuário.
 5. Em **Configurações pessoais → Segurança**, o usuário cria uma senha de app. O cliente MCP usa autenticação HTTP Basic com o ID do usuário e essa senha de app. O app nunca pede nem guarda a senha principal.
 
 Risco residual nas escritas: colisões com destinos ocultos usam a mesma recusa genérica de destinos sem permissão, mas a diferença entre recusa e criação possível ainda permite inferir que um caminho está indisponível.
@@ -311,7 +311,7 @@ No claude.ai, em **Personalizar > Conectores > Adicionar conector personalizado*
 - metadata do servidor de autorização em `/apps/mcp/.well-known/openid-configuration` e `/apps/mcp/.well-known/oauth-authorization-server` (issuer `https://<instância>/apps/mcp`);
 - `oauth/authorize` (consentimento) e `oauth/token` (PKCE S256, refresh com rotação). Access token 1 h, refresh 30 dias; só hashes vão ao banco.
 
-Só clientes CIMD com host na allowlist são aceitos. A allowlist padrão é `claude.ai,chatgpt.com` e é editada sem terminal em **Administração → MCP for Nextcloud → Clientes OAuth → Hosts de clientes permitidos** (host exato, sem `https://`, porta, caminho ou `*`, ao menos um; salvar substitui a lista inteira e remover um host recusa o cliente na hora, mesmo com o documento em cache). A chave `oauth_client_hosts` não precisa ser gravada à mão: um valor salvo antes da 0.8.0 é preservado e o padrão só vale quando a chave está ausente ou vazia. A mesma seção liga **Permitir programas locais (cliente nativo)**, que habilita o `client_id` público fixo `nextcloud-mcp-native` (desligado por padrão) para programas locais como o Gemini CLI, e mostra os redirect URIs loopback aceitos.
+Só clientes CIMD com host na allowlist são aceitos. A allowlist padrão é `claude.ai,chatgpt.com` e é editada sem terminal em **Administração → MCP for Cloud → Clientes OAuth → Hosts de clientes permitidos** (host exato, sem `https://`, porta, caminho ou `*`, ao menos um; salvar substitui a lista inteira e remover um host recusa o cliente na hora, mesmo com o documento em cache). A chave `oauth_client_hosts` não precisa ser gravada à mão: um valor salvo antes da 0.8.0 é preservado e o padrão só vale quando a chave está ausente ou vazia. A mesma seção liga **Permitir programas locais (cliente nativo)**, que habilita o `client_id` público fixo `nextcloud-mcp-native` (desligado por padrão) para programas locais como o Gemini CLI, e mostra os redirect URIs loopback aceitos.
 
 Todo redirecionamento de volta a um cliente carrega `iss` com o emissor (RFC 9207), inclusive na negação e em erros redirecionáveis; erros anteriores à validação do redirect continuam locais. Clientes sem documento de identidade próprio, como o Gemini CLI, são recusados com `invalid_client` enquanto o cliente nativo estiver desligado.
 

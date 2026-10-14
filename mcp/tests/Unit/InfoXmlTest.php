@@ -90,7 +90,7 @@ final class InfoXmlTest extends TestCase {
         $names = $this->manifest()->name;
         $this->assertCount(1, $names, 'appinfo/info.xml must have exactly one <name>');
         $this->assertNull($names[0]['lang'], '<name> must not carry a lang attribute');
-        $this->assertSame('MCP for Nextcloud', trim((string)$names[0]));
+        $this->assertSame('MCP for Cloud', trim((string)$names[0]));
     }
 
     /** The description says what the app does, how it keeps the user in control and which clients connect to it. */

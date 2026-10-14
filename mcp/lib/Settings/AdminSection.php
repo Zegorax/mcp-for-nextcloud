@@ -11,14 +11,14 @@ use OCP\IURLGenerator;
 use OCP\Settings\IIconSection;
 
 /**
- * Own entry "MCP for Nextcloud" in the administration settings menu, with the app icon. AdminSettings renders
+ * Own entry "MCP for Cloud" in the administration settings menu, with the app icon. AdminSettings renders
  * into it. The name is the product name and is not translated.
  */
 class AdminSection implements IIconSection {
     /** Section id shared by the admin and personal menus. */
     public const ID = 'mcp';
     /** Product name shown in the menu. */
-    public const NAME = 'MCP for Nextcloud';
+    public const NAME = 'MCP for Cloud';
     /** After the core entries, before the generic app sections. */
     public const PRIORITY = 75;
 

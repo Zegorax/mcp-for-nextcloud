@@ -200,7 +200,7 @@ final class PromptCatalogTest extends TestCase {
         $this->policy->setGrant('alice', 'files', 'edit', true);
         $result = $this->call('prompts/get', ['name' => PromptCatalog::EDIT_LOCALLY], McpProtocol::MODERN_VERSION)->result;
         $this->assertSame('complete', $result->resultType);
-        $this->assertSame('nextcloud-mcp', $result->_meta->{'io.modelcontextprotocol/serverInfo'}->name);
+        $this->assertSame('mcp-for-cloud', $result->_meta->{'io.modelcontextprotocol/serverInfo'}->name);
         $this->assertNotSame('', $result->messages[0]->content->text);
     }
 
