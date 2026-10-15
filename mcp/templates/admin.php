@@ -167,6 +167,10 @@
             <ul id="mcp-native-redirects" class="mcp-native-redirects"></ul>
             <p class="settings-hint mcp-hint"><?php p($l->t('Paste this client_id in the client settings, for example Gemini CLI settings.json → mcpServers.<name>.oauth.clientId.')); ?></p>
         </div>
+        <h3 class="mcp-custom-heading"><?php p($l->t('Self-hosted clients (custom redirect URIs)')); ?></h3>
+        <p class="settings-hint mcp-hint"><?php p($l->t('For self-hosted programs that take a client_id in their settings and return to their own domain. Add one client per program: its name is shown to people on the consent screen and in their connections. Turning a client off, deleting it or removing one of its redirect URIs signs out its connections.')); ?></p>
+        <div id="mcp-custom-clients" class="mcp-custom-clients" aria-live="polite"></div>
+        <p><button type="button" id="mcp-custom-add"><?php p($l->t('Add client')); ?></button></p>
     </div>
 
     <div class="section mcp-block" id="mcp-connections" data-scope="admin">

@@ -1045,8 +1045,8 @@
 	}
 
 	/**
-	 * OAuth clients section: allowed client_id hosts and the native client switch, through
-	 * GET and PUT /apps/mcp/api/oauth-clients.
+	 * OAuth clients section: allowed client_id hosts, the native client switch and the self-hosted clients, each with
+	 * its name, Enabled setting and redirect URIs, through GET and PUT /apps/mcp/api/oauth-clients.
 	 */
 	async function initOauthClients() {
 		const hostsInput = document.getElementById('mcp-oauth-hosts')
@@ -1057,6 +1057,11 @@
 		const details = document.getElementById('mcp-native-client-details')
 		const clientId = document.getElementById('mcp-native-client-id')
 		const redirects = document.getElementById('mcp-native-redirects')
+		const customList = document.getElementById('mcp-custom-clients')
+		const customAdd = document.getElementById('mcp-custom-add')
+		/** Self-hosted clients as the server last returned them; each card edits one of them (or a new one). */
+		let customClients = []
+		let cardCount = 0
 
 		/** @param {object} data settings returned by the API */
 		function show(data) {
@@ -1065,6 +1070,7 @@
 			details.hidden = !data.nativeClientEnabled
 			clientId.textContent = data.nativeClientId
 			redirects.replaceChildren(...data.nativeRedirectUris.map((uri) => el('li', {}, [el('code', { textContent: uri })])))
+			customClients = data.customClients
 		}
 
 		/**
@@ -1077,12 +1083,145 @@
 			flash(status, ok)
 		}
 
+		/**
+		 * Saves the whole list of self-hosted clients.
+		 *
+		 * @param {Array<object>} clients every client to keep, a new one without id
+		 * @return {Promise<object|undefined>} the client the server added, if any
+		 */
+		async function saveCustom(clients) {
+			const before = new Set(customClients.map((client) => client.id))
+			const data = await api('PUT', '/api/oauth-clients', {
+				customClients: clients.map(({ id, name, enabled, redirectUris }) => ({ id, name, enabled, redirectUris })),
+			})
+			customClients = data.customClients
+			return customClients.find((client) => !before.has(client.id))
+		}
+
+		/**
+		 * One self-hosted client: name, Enabled, client_id with Copy (once saved), redirect URIs, Save and Delete.
+		 * Saving or deleting replaces only this card, so unsaved edits in the other cards stay.
+		 *
+		 * @param {object} client a stored client, or {id: null, ...} for a new one
+		 * @return {HTMLElement} the card
+		 */
+		function customCard(client) {
+			const n = ++cardCount
+			const saved = client.id !== null
+			const name = el('input', { type: 'text', id: 'mcp-custom-name-' + n, value: client.name, maxLength: 64, autocomplete: 'off', spellcheck: false })
+			const enabled = el('input', { type: 'checkbox', className: 'checkbox', id: 'mcp-custom-enabled-' + n, checked: client.enabled })
+			const uris = el('textarea', {
+				id: 'mcp-custom-uris-' + n, className: 'mcp-custom-redirects', rows: 3, spellcheck: false, autocomplete: 'off',
+				placeholder: 'https://harness.example.com/oauth/callback', value: client.redirectUris.join('\n'),
+			})
+			const status = el('span', { className: 'mcp-status' })
+			status.setAttribute('aria-live', 'polite')
+			const save = el('button', { type: 'button', textContent: t('mcp', 'Save') })
+			const remove = el('button', { type: 'button', textContent: t('mcp', 'Delete') })
+			const rows = [
+				el('p', {}, [el('label', { htmlFor: name.id, textContent: t('mcp', 'Name') }), ' ', name]),
+				el('p', {}, [enabled, el('label', { htmlFor: enabled.id, textContent: t('mcp', 'Enabled') })]),
+			]
+			if (saved) {
+				const code = el('code', { textContent: client.clientId })
+				const copy = el('button', { type: 'button', className: 'mcp-copy', textContent: t('mcp', 'Copy') })
+				copy.addEventListener('click', () => {
+					navigator.clipboard.writeText(client.clientId).then(
+						() => { copy.textContent = t('mcp', 'Copied') },
+						() => notifyError(t('mcp', 'Could not copy the client_id.')),
+					)
+				})
+				rows.push(el('p', {}, ['client_id: ', code, ' ', copy]))
+			}
+			rows.push(
+				el('p', {}, [el('label', { htmlFor: uris.id, textContent: t('mcp', 'Accepted redirect URIs') })]),
+				uris,
+				el('p', { className: 'settings-hint mcp-hint', textContent: t('mcp', 'One URI per line, exactly as the client sends it: https, no wildcard or fragment.') }),
+				el('p', {}, [save, ' ', remove, ' ', status]),
+			)
+			const card = el('div', { className: 'mcp-custom-client' }, rows)
+
+			/** @return {object} the client as edited in the card */
+			function read() {
+				return {
+					id: client.id,
+					name: name.value.trim(),
+					enabled: enabled.checked,
+					redirectUris: uris.value.split('\n').map((uri) => uri.trim()).filter((uri) => uri !== ''),
+				}
+			}
+
+			save.addEventListener('click', async () => {
+				const entry = read()
+				save.disabled = true
+				try {
+					const added = await saveCustom(saved
+						? customClients.map((other) => other.id === client.id ? entry : other)
+						: [...customClients, entry])
+					const next = customCard(saved ? customClients.find((other) => other.id === client.id) : added)
+					card.replaceWith(next)
+					next.querySelector('.mcp-status').textContent = t('mcp', 'Saved')
+					flash(next.querySelector('.mcp-status'), true)
+				} catch (e) {
+					report(status, false, t('mcp', 'Not saved: each client needs a name of up to 64 characters that no other client has, and 1 to 20 redirect URIs (absolute https URIs, without user name, wildcard or fragment).'))
+				} finally {
+					save.disabled = false
+				}
+			})
+
+			// A saved client's Enabled setting applies at once, like the native client's; a new one's is saved with it.
+			enabled.addEventListener('change', async () => {
+				if (!saved) {
+					return
+				}
+				const value = enabled.checked
+				enabled.disabled = true
+				try {
+					await saveCustom(customClients.map((other) => other.id === client.id ? { ...other, enabled: value } : other))
+					report(status, true)
+				} catch (e) {
+					enabled.checked = !value
+					report(status, false)
+					notifyError(t('mcp', 'Could not change the self-hosted client.'))
+				} finally {
+					enabled.disabled = false
+				}
+			})
+
+			remove.addEventListener('click', async () => {
+				if (!saved) {
+					card.remove()
+					return
+				}
+				if (!window.confirm(t('mcp', 'Delete the client “{name}”? Its connections are signed out at once.', { name: client.name }))) {
+					return
+				}
+				remove.disabled = true
+				try {
+					await saveCustom(customClients.filter((other) => other.id !== client.id))
+					card.remove()
+				} catch (e) {
+					report(status, false)
+					notifyError(t('mcp', 'Could not delete the self-hosted client.'))
+				} finally {
+					remove.disabled = false
+				}
+			})
+			return card
+		}
+
 		try {
 			show(await api('GET', '/api/oauth-clients'))
 		} catch (e) {
 			notifyError(t('mcp', 'Could not load the OAuth client settings.'))
 			return
 		}
+		customList.replaceChildren(...customClients.map(customCard))
+		customAdd.addEventListener('click', () => {
+			const card = customCard({ id: null, name: '', enabled: true, redirectUris: [] })
+			customList.append(card)
+			card.querySelector('input[type="text"]').focus()
+		})
 
 		hostsSave.addEventListener('click', async () => {
 			const hosts = hostsInput.value.split(',').map((host) => host.trim().toLowerCase()).filter((host) => host !== '')

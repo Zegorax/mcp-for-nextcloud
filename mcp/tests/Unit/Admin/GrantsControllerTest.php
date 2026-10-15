@@ -9,6 +9,7 @@ namespace OCA\Mcp\Tests\Unit\Admin;
 
 use OCA\Mcp\Controller\GrantsController;
 use OCA\Mcp\OAuth\ClientMetadataFetcher;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
@@ -186,6 +187,7 @@ final class GrantsControllerTest extends TestCase {
             'nativeClientEnabled' => false,
             'nativeClientId' => NativeClient::CLIENT_ID,
             'nativeRedirectUris' => NativeClient::REDIRECT_URIS,
+            'customClients' => [],
         ], $data);
     }
 
@@ -232,6 +234,84 @@ final class GrantsControllerTest extends TestCase {
         $this->assertSame([], $this->fx->oauth->codes);
     }
 
+    private const CB = 'https://harness.example.com/oauth/callback';
+
+    /** @return list<array<string, mixed>> the self-hosted clients as stored */
+    private function storedCustom(): array {
+        return json_decode($this->fx->config->app['mcp'][CustomClient::CLIENTS_KEY] ?? '[]', true);
+    }
+
+    public function testUpdateOauthClientsAddsSelfHostedClientsWithTheirOwnIds(): void {
+        $data = $this->controller(['customClients' => [
+            ['name' => ' QwenPaw ', 'enabled' => true, 'redirectUris' => [' ' . self::CB, self::CB]],
+            ['name' => 'Équipe', 'enabled' => false, 'redirectUris' => ['https://other.example.org/cb?tenant=a']],
+        ]])->updateOauthClients()->getData();
+        $stored = $this->storedCustom();
+        $this->assertCount(2, $stored);
+        $this->assertSame(['QwenPaw', true, [self::CB]], [$stored[0]['name'], $stored[0]['enabled'], $stored[0]['redirectUris']]);
+        $this->assertStringContainsString('Équipe', $this->fx->config->app['mcp'][CustomClient::CLIENTS_KEY]);
+        $this->assertNotSame($stored[0]['id'], $stored[1]['id']);
+        $this->assertSame([
+            ['id' => $stored[0]['id'], 'clientId' => 'nextcloud-mcp-custom-' . $stored[0]['id'], 'name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => [self::CB]],
+            ['id' => $stored[1]['id'], 'clientId' => 'nextcloud-mcp-custom-' . $stored[1]['id'], 'name' => 'Équipe', 'enabled' => false,
+                'redirectUris' => ['https://other.example.org/cb?tenant=a']],
+        ], $data['customClients']);
+        $this->assertFalse($data['nativeClientEnabled']);
+
+        $data = $this->controller(['customClients' => []])->updateOauthClients()->getData();
+        $this->assertArrayNotHasKey(CustomClient::CLIENTS_KEY, $this->fx->config->app['mcp']);
+        $this->assertSame([], $data['customClients']);
+    }
+
+    /** Clients A and B with one grant each, plus a native and a CIMD grant; returns [idA, idB]. */
+    private function twoClientsWithGrants(): array {
+        $data = $this->controller(['customClients' => [
+            ['name' => 'A', 'enabled' => true, 'redirectUris' => [self::CB]],
+            ['name' => 'B', 'enabled' => true, 'redirectUris' => ['https://b.example/cb']],
+        ]])->updateOauthClients()->getData();
+        [$a, $b] = array_column($data['customClients'], 'id');
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => CustomClient::clientId($a)], 0);
+        $this->fx->oauth->insertCode(['user_id' => 'bob', 'client_id' => CustomClient::clientId($a)], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => CustomClient::clientId($b)], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => NativeClient::CLIENT_ID], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => 'https://claude.ai/x'], 0);
+        return [$a, $b];
+    }
+
+    /** @return list<string> client_ids that still have tokens */
+    private function tokenClients(): array {
+        return array_values(array_column($this->fx->oauth->tokens, 'client_id'));
+    }
+
+    public function testRenamingOrAddingAUriOrTurningOnRevokesNothing(): void {
+        [$a, $b] = $this->twoClientsWithGrants();
+        $this->controller(['customClients' => [
+            ['id' => $b, 'name' => 'B', 'enabled' => true, 'redirectUris' => ['https://b.example/cb']],
+            ['id' => $a, 'name' => 'A renamed', 'enabled' => true, 'redirectUris' => ['https://a.example/second', self::CB]],
+        ]])->updateOauthClients();
+        $this->assertCount(4, $this->fx->oauth->tokens);
+        $this->assertCount(1, $this->fx->oauth->codes);
+        $this->assertSame('A renamed', $this->storedCustom()[1]['name']);
+    }
+
+    public function testTurningOffDeletingOrRemovingAUriRevokesOnlyThatClient(): void {
+        [$a, $b] = $this->twoClientsWithGrants();
+        $keepB = ['id' => $b, 'name' => 'B', 'enabled' => true, 'redirectUris' => ['https://b.example/cb']];
+        $this->controller(['customClients' => [['id' => $a, 'name' => 'A', 'enabled' => false, 'redirectUris' => [self::CB]], $keepB]])->updateOauthClients();
+        $this->assertSame([CustomClient::clientId($b), NativeClient::CLIENT_ID, 'https://claude.ai/x'], $this->tokenClients());
+        $this->assertSame([], $this->fx->oauth->codes);
+
+        $this->controller(['customClients' => [['id' => $a, 'name' => 'A', 'enabled' => true, 'redirectUris' => [self::CB]],
+            ['id' => $b, 'name' => 'B', 'enabled' => true, 'redirectUris' => ['https://b2.example/cb']]]])->updateOauthClients();
+        $this->assertSame([NativeClient::CLIENT_ID, 'https://claude.ai/x'], $this->tokenClients());
+
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => CustomClient::clientId($a)], 0);
+        $this->fx->oauth->insertToken(['user_id' => 'ana', 'client_id' => CustomClient::clientId($b)], 0);
+        $this->controller(['customClients' => [['id' => $b, 'name' => 'B', 'enabled' => true, 'redirectUris' => ['https://b2.example/cb']]]])->updateOauthClients();
+        $this->assertSame([NativeClient::CLIENT_ID, 'https://claude.ai/x', CustomClient::clientId($b)], $this->tokenClients());
+        $this->assertSame([$b], array_column($this->storedCustom(), 'id'));
+    }
+
     public function testSendingTheDefaultHostsDeletesTheKeyAndAnotherListStoresIt(): void {
         $this->fx->config->app['mcp']['oauth_client_hosts'] = 'claude.ai,example.org';
         $data = $this->controller(['hosts' => ['chatgpt.com', 'claude.ai']])->updateOauthClients()->getData();
@@ -264,10 +344,20 @@ final class GrantsControllerTest extends TestCase {
             ['hosts' => [42]],
             ['hosts' => ['claude.ai'], 'nativeClientEnabled' => 'yes'],
             ['nativeClientEnabled' => 1],
+            ['customClients' => 'QwenPaw'],
+            ['customClients' => [['name' => 'QwenPaw', 'enabled' => 'true', 'redirectUris' => ['https://harness.example.com/cb']]]],
+            ['customClients' => [['name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => ['http://harness.example.com/cb']]]],
+            ['customClients' => [['name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => []]]],
+            ['customClients' => [['name' => '', 'enabled' => true, 'redirectUris' => ['https://harness.example.com/cb']]]],
+            ['customClients' => [['id' => 'aaaaaaaaaaaa', 'name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => ['https://harness.example.com/cb']]]],
+            ['customClients' => [['name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => ['https://harness.example.com/cb']],
+                ['name' => 'QWENPAW', 'enabled' => true, 'redirectUris' => ['https://harness.example.com/cb']]]],
+            ['hosts' => ['claude.ai'], 'customClients' => [['name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => ['https://u@harness.example.com/cb']]]],
         ] as $body) {
             self::assertBad($this->controller($body)->updateOauthClients());
         }
-        $this->assertSame([], array_intersect_key($this->fx->config->app['mcp'] ?? [], ['oauth_client_hosts' => 1, 'oauth_native_client_enabled' => 1]));
+        $this->assertSame([], array_intersect_key($this->fx->config->app['mcp'] ?? [], ['oauth_client_hosts' => 1, 'oauth_native_client_enabled' => 1,
+            CustomClient::CLIENTS_KEY => 1]));
     }
 
     /** The groups that may read the server log: none by default (administrators only), every group offered. */

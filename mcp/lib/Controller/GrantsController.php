@@ -10,6 +10,7 @@ namespace OCA\Mcp\Controller;
 use InvalidArgumentException;
 use OCA\Mcp\OAuth\ClientMetadataFetcher;
 use OCA\Mcp\OAuth\ClientResolver;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthStore;
 use OCA\Mcp\Service\GrantMatrix;
@@ -121,15 +122,19 @@ class GrantsController extends Controller {
     /**
      * Current OAuth client settings for the admin page.
      *
-     * @return JSONResponse {hosts, hostsDefault, nativeClientEnabled, nativeClientId, nativeRedirectUris}
+     * @return JSONResponse {hosts, hostsDefault, nativeClientEnabled, nativeClientId, nativeRedirectUris, customClients}
      */
     public function oauthClients(): JSONResponse {
         return $this->guard(fn (): array => $this->oauthState());
     }
 
     /**
-     * Body {hosts?: list<string>, nativeClientEnabled?: bool}. Everything is validated before anything is written;
-     * an empty host list is rejected because at least one host must stay trusted.
+     * Body {hosts?: list<string>, nativeClientEnabled?: bool, customClients?: list<{id?, name, enabled, redirectUris}>}.
+     * customClients replaces the whole list of self-hosted clients; an entry without id is a new client. Everything is
+     * validated before anything is written; an empty host list is rejected because at least one host must stay
+     * trusted. Turning a built-in client off deletes its grants, and so does turning a self-hosted client off,
+     * deleting it or removing one of its redirect URIs, so nothing issued for a withdrawn client or URI outlives the
+     * decision.
      *
      * @return JSONResponse the same shape as oauthClients(), or 400
      */
@@ -137,7 +142,8 @@ class GrantsController extends Controller {
         return $this->guard(function (): array {
             $hosts = $this->request->getParam('hosts');
             $native = $this->request->getParam('nativeClientEnabled');
-            if ($hosts === null && $native === null) {
+            $custom = $this->request->getParam('customClients');
+            if ($hosts === null && $native === null && $custom === null) {
                 throw new InvalidArgumentException('Invalid request');
             }
             if ($hosts !== null) {
@@ -145,6 +151,10 @@ class GrantsController extends Controller {
             }
             if ($native !== null) {
                 $native = self::bool($native);
+            }
+            $current = CustomClient::clients($this->config);
+            if ($custom !== null) {
+                $custom = CustomClient::validate($custom, $current);
             }
             if ($hosts !== null) {
                 $default = explode(',', ClientMetadataFetcher::DEFAULT_HOSTS);
@@ -159,6 +169,17 @@ class GrantsController extends Controller {
                 $this->config->setAppValue($this->appName, NativeClient::CONFIG_KEY, $native ? '1' : '0');
                 if (!$native) {
                     $this->oauth->deleteForClient(NativeClient::CLIENT_ID);
+                }
+            }
+            if ($custom !== null) {
+                if ($custom === []) {
+                    $this->config->deleteAppValue($this->appName, CustomClient::CLIENTS_KEY);
+                } else {
+                    $this->config->setAppValue($this->appName, CustomClient::CLIENTS_KEY,
+                        (string)json_encode($custom, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+                }
+                foreach (CustomClient::withdrawn($current, $custom) as $clientId) {
+                    $this->oauth->deleteForClient($clientId);
                 }
             }
             return $this->oauthState();
@@ -213,7 +234,11 @@ class GrantsController extends Controller {
         ];
     }
 
-    /** @return array{hosts:list<string>, hostsDefault:bool, nativeClientEnabled:bool, nativeClientId:string, nativeRedirectUris:list<string>} */
+    /**
+     * @return array{hosts:list<string>, hostsDefault:bool, nativeClientEnabled:bool, nativeClientId:string,
+     *     nativeRedirectUris:list<string>, customClients:list<array{id:string, clientId:string, name:string, enabled:bool,
+     *     redirectUris:list<string>}>}
+     */
     private function oauthState(): array {
         $raw = $this->config->getAppValue($this->appName, ClientMetadataFetcher::HOSTS_KEY, '');
         $hosts = array_values(array_filter(array_map('trim', explode(',', $raw)), static fn (string $h) => $h !== ''));
@@ -224,6 +249,13 @@ class GrantsController extends Controller {
             'nativeClientEnabled' => ClientResolver::nativeEnabled($this->config),
             'nativeClientId' => NativeClient::CLIENT_ID,
             'nativeRedirectUris' => NativeClient::REDIRECT_URIS,
+            'customClients' => array_map(static fn (array $client): array => [
+                'id' => $client['id'],
+                'clientId' => CustomClient::clientId($client['id']),
+                'name' => $client['name'],
+                'enabled' => $client['enabled'],
+                'redirectUris' => $client['redirectUris'],
+            ], CustomClient::clients($this->config)),
         ];
     }
 

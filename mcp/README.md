@@ -295,11 +295,12 @@ Browser login through OAuth is described in [Connecting through claude.ai (OAuth
 | own table | `mcp_logs_groups` | one row of groups (canonical JSON) and version; empty list = administrators only; editable in the **Server log** block; imports the legacy appconfig on the first read |
 | app `mcp` | `oauth_client_hosts` | comma-separated list of hosts; absent or empty means the default `claude.ai,chatgpt.com` |
 | app `mcp` | `oauth_native_client_enabled` | `1` enables the local native client `nextcloud-mcp-native`, `0` or absent disabled |
+| app `mcp` | `oauth_custom_clients` | JSON list of the self-hosted clients, each `{id, name, enabled, redirectUris}`; the `client_id` is `nextcloud-mcp-custom-<id>` (absent = none, and every `nextcloud-mcp-custom…` client is refused) |
 | app `mcp` | `checkout_max_bytes` | upload limit of `files_checkout` in bytes; default 50 MiB; editable in the Status block in MiB; never above PHP's `post_max_size` |
 | app `mcp` | `hidden_system_tags` | JSON list of the hidden system tag IDs (`[]` = hiding off); editable in the **Excluded from MCP access** block |
 | app `mcp` | `logs_hide_file_names` | `1` (default) hides the text of log messages in the log tools while hidden tags are configured; `0` shows the complete log for diagnosis |
 
-The two OAuth keys are editable in the **OAuth clients** section of the admin page and do not need `occ`; see [Connecting through claude.ai (OAuth)](#connecting-through-claudeai-oauth).
+The OAuth keys are editable in the **OAuth clients** section of the admin page and do not need `occ`; see [Connecting through claude.ai (OAuth)](#connecting-through-claudeai-oauth).
 
 The `enabled` key of the `mcp` app belongs to Nextcloud, which uses it to mark the app as enabled (`yes`), and is not the MCP on/off switch. The app never reads or writes `enabled`, `installed_version`, `types`, `levels` or `ocsid`. For diagnostics: `occ config:app:get mcp service_enabled`.
 
@@ -311,7 +312,7 @@ In claude.ai, under **Customize > Connectors > Add custom connector**, paste the
 - authorization server metadata at `/apps/mcp/.well-known/openid-configuration` and `/apps/mcp/.well-known/oauth-authorization-server` (issuer `https://<instance>/apps/mcp`);
 - `oauth/authorize` (consent) and `oauth/token` (PKCE S256, refresh with rotation). Access token 1 h, refresh 30 days; only hashes go to the database.
 
-Only CIMD clients with a host on the allowlist are accepted. The default allowlist is `claude.ai,chatgpt.com` and is edited without a terminal in **Administration → MCP for Cloud → OAuth clients → Allowed client hosts** (exact host, without `https://`, port, path or `*`, at least one; saving replaces the whole list and removing a host refuses the client immediately, even with the document cached). The `oauth_client_hosts` key does not need to be written by hand: a value saved before 0.8.0 is preserved and the default only applies when the key is absent or empty. The same section turns on **Allow local programs (native client)**, which enables the fixed public `client_id` `nextcloud-mcp-native` (off by default) for local programs such as Gemini CLI, and shows the accepted loopback redirect URIs.
+Only CIMD clients with a host on the allowlist are accepted. The default allowlist is `claude.ai,chatgpt.com` and is edited without a terminal in **Administration → MCP for Cloud → OAuth clients → Allowed client hosts** (exact host, without `https://`, port, path or `*`, at least one; saving replaces the whole list and removing a host refuses the client immediately, even with the document cached). The `oauth_client_hosts` key does not need to be written by hand: a value saved before 0.8.0 is preserved and the default only applies when the key is absent or empty. The same section turns on **Allow local programs (native client)**, which enables the fixed public `client_id` `nextcloud-mcp-native` (off by default) for local programs such as Gemini CLI, and shows the accepted loopback redirect URIs. **Self-hosted clients (custom redirect URIs)** lists the public clients the administrator adds (none by default, at most 20): each has a name (unique, up to 64 characters, shown on the consent screen and in the connection lists), an **Enabled** setting, its own random `client_id` `nextcloud-mcp-custom-<12 hex>` and 1 to 20 exact redirect URIs (absolute `https`, `http` only on loopback; no userinfo, `*` or fragment; up to 2000 characters). Turning the native client off, or turning a self-hosted client off, deleting it or removing one of its redirect URIs, deletes that client's tokens and pending codes; a disabled or deleted client can neither exchange a code nor refresh nor authenticate.
 
 Every redirect back to a client carries `iss` with the issuer (RFC 9207), including on denial and redirectable errors; errors before the redirect validation remain local. Clients without an identity document of their own, such as Gemini CLI, are refused with `invalid_client` while the native client is off.
 
@@ -323,6 +324,8 @@ User steps, with the same URL and the same "Allow" screen, are in the root READM
 
 - **ChatGPT**: CIMD at `chatgpt.com`, accepted by the default allowlist. The real document carries `token_endpoint_auth_methods_supported: [none, private_key_jwt]` and the singular `private_key_jwt`; the plural wins, and `none` is in the list, so the client is accepted as public.
 - **Gemini CLI**: it does not publish an identity document, so it uses the static native client. The user pastes the `client_id` shown in the admin section into `~/.gemini/settings.json` → `mcpServers.<name>.oauth.clientId` and runs `/mcp auth`. The redirect `http://localhost:<port>/oauth/callback` matches because `RedirectUriMatcher` ignores the port on loopback (RFC 8252 7.3).
+
+- **Self-hosted harnesses**: a harness that takes a manually configured `client_id` and returns to its own domain uses a self-hosted client the administrator added for it. `RedirectUriMatcher` compares the requested `redirect_uri` with that client's stored list exactly (only loopback entries ignore the port); the consent page shows the name the administrator gave the client, says the administrator added it, and shows the redirect host. See the root README for the steps.
 
 `iss` is mandatory because Gemini CLI rejects a return without it.
 

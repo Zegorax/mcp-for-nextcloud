@@ -26,9 +26,11 @@ final class ConnectionsFixture {
     public int $now = 1_000_000;
     /** @var array<string, string> display names by uid */
     public array $names = ['alice' => 'Alice Lima', 'bob' => 'Bob'];
+    public InMemoryConfig $config;
 
     public function __construct(private TestCase $test) {
         $this->store = new InMemoryOAuthStore();
+        $this->config = new InMemoryConfig();
     }
 
     /** Adds a live grant (or an expired one with $expired) and returns its id. */
@@ -56,12 +58,12 @@ final class ConnectionsFixture {
             $user->method('getDisplayName')->willReturn($this->names[$uid]);
             return $user;
         });
-        $config = (new InMemoryConfig())->mock($this->test);
+        $config = $this->config->mock($this->test);
         $system = $this->mock(IConfig::class);
         $system->method('getSystemValueString')->willReturn('instance-secret');
         $tokens = new TokenService($this->store, new TokenHasher($system), $time,
             new TokenOwnerGate($users, \OCA\Mcp\Tests\Unit\InMemoryConfig::policy($config, $this->store), $this->store), $config);
-        return new ConnectionList($this->store, $tokens, $users, $time);
+        return new ConnectionList($this->store, $tokens, $users, $time, $config);
     }
 
     private function mock(string $class): object {

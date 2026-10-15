@@ -8,10 +8,12 @@ declare(strict_types=1);
 namespace OCA\Mcp\Service;
 
 use InvalidArgumentException;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthStore;
 use OCA\Mcp\OAuth\TokenService;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\IConfig;
 use OCP\IUserManager;
 
 /**
@@ -32,13 +34,14 @@ class ConnectionList {
         private TokenService $tokens,
         private IUserManager $userManager,
         private ITimeFactory $time,
+        private IConfig $config,
     ) {}
 
     /**
      * @param string|null $uid owner to restrict to, null for every user
      * @param string $search part of the user id or client_id, '' for none
      * @param int $page 1-based page
-     * @return array{connections: list<array{id:int, uid:string, displayName:string, client:array{kind:string, host:string, id:string}, createdAt:int, expiresAt:int}>, page:int, pageSize:int, hasMore:bool}
+     * @return array{connections: list<array{id:int, uid:string, displayName:string, client:array{kind:string, host:string, id:string, name?:string}, createdAt:int, expiresAt:int}>, page:int, pageSize:int, hasMore:bool}
      * @throws InvalidArgumentException for a page out of range or an oversized term
      */
     public function page(?string $uid, string $search, int $page): array {
@@ -49,14 +52,15 @@ class ConnectionList {
         $rows = $this->store->listGrants($uid, $search, self::PAGE_SIZE + 1, ($page - 1) * self::PAGE_SIZE, $this->time->getTime());
         $hasMore = count($rows) > self::PAGE_SIZE;
         $names = [];
-        $connections = array_map(function (array $row) use (&$names): array {
+        $clients = CustomClient::names($this->config);
+        $connections = array_map(function (array $row) use (&$names, $clients): array {
             $owner = $row['user_id'];
             $names[$owner] ??= $this->userManager->get($owner)?->getDisplayName() ?? $owner;
             return [
                 'id' => $row['id'],
                 'uid' => $owner,
                 'displayName' => $names[$owner],
-                'client' => self::client($row['client_id']),
+                'client' => self::client($row['client_id'], $clients),
                 'createdAt' => $row['created_at'],
                 'expiresAt' => $row['refresh_expires'],
             ];
@@ -90,12 +94,17 @@ class ConnectionList {
     }
 
     /**
-     * @param string $clientId client_id of the grant: a CIMD URL or the native client id
-     * @return array{kind:string, host:string, id:string} kind 'native' or 'web', the host shown to people and the raw id
+     * @param string $clientId client_id of the grant: a CIMD URL, the native client id or a self-hosted one
+     * @param array<string, string> $customNames names of the self-hosted clients by client_id
+     * @return array{kind:string, host:string, id:string, name?:string} kind 'native', 'custom' or 'web', the host shown
+     *     to people and the raw id; a self-hosted client also has its name ('' when it was deleted)
      */
-    public static function client(string $clientId): array {
+    public static function client(string $clientId, array $customNames = []): array {
         if ($clientId === NativeClient::CLIENT_ID) {
             return ['kind' => 'native', 'host' => '', 'id' => $clientId];
+        }
+        if (CustomClient::owns($clientId)) {
+            return ['kind' => 'custom', 'host' => '', 'id' => $clientId, 'name' => $customNames[$clientId] ?? ''];
         }
         $host = parse_url($clientId, PHP_URL_HOST);
         return ['kind' => 'web', 'host' => is_string($host) && $host !== '' ? strtolower($host) : $clientId, 'id' => $clientId];

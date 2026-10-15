@@ -10,6 +10,7 @@ namespace OCA\Mcp\Tests\Unit\OAuth;
 use OCA\Mcp\OAuth\AccessTokenAuthenticator;
 use OCA\Mcp\OAuth\AuthorizationRequest;
 use OCA\Mcp\OAuth\ClientMetadata;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\OAuthException;
 use OCA\Mcp\OAuth\TokenHasher;
@@ -115,6 +116,74 @@ final class TokenFlowTest extends TestCase {
         $tokens = $this->exchange($this->code());
         $this->appConfig->app['mcp'][NativeClient::CONFIG_KEY] = '0';
         $this->assertNotNull($this->authenticator->authenticate('Bearer ' . $tokens['access_token'], self::RESOURCE));
+    }
+
+    private const CUSTOM_REDIRECT = 'https://harness.example.com/oauth/callback';
+    private const CUSTOM_A = 'nextcloud-mcp-custom-aaaaaaaaaaaa';
+    private const CUSTOM_B = 'nextcloud-mcp-custom-bbbbbbbbbbbb';
+
+    /** Stores self-hosted clients A and B, each with its own redirect URI, and the Enabled setting of each. */
+    private function customClients(bool $a = true, bool $b = true): void {
+        $this->appConfig->app['mcp'][CustomClient::CLIENTS_KEY] = json_encode([
+            ['id' => 'aaaaaaaaaaaa', 'name' => 'QwenPaw', 'enabled' => $a, 'redirectUris' => [self::CUSTOM_REDIRECT]],
+            ['id' => 'bbbbbbbbbbbb', 'name' => 'Other', 'enabled' => $b, 'redirectUris' => ['https://other.example.org/cb']],
+        ]);
+    }
+
+    private function customCode(string $clientId = self::CUSTOM_A, string $redirect = self::CUSTOM_REDIRECT): string {
+        $request = new AuthorizationRequest(new ClientMetadata($clientId, 'QwenPaw', [$redirect]),
+            $redirect, 'xyz', self::CHALLENGE, self::RESOURCE, 'mcp');
+        return $this->service->createCode($request, 'alice');
+    }
+
+    private function customExchange(string $code, string $redirect = self::CUSTOM_REDIRECT, string $clientId = self::CUSTOM_A): array {
+        return $this->service->exchangeCode([
+            'grant_type' => 'authorization_code', 'code' => $code, 'code_verifier' => self::VERIFIER,
+            'client_id' => $clientId, 'redirect_uri' => $redirect, 'resource' => self::RESOURCE,
+        ]);
+    }
+
+    public function testSelfHostedClientExchangesRefreshesAndAuthenticatesWhileEnabled(): void {
+        $this->customClients();
+        $tokens = $this->customExchange($this->customCode());
+        $this->assertNotNull($this->authenticator->authenticate('Bearer ' . $tokens['access_token'], self::RESOURCE));
+        $next = $this->service->refresh(['refresh_token' => $tokens['refresh_token'], 'client_id' => self::CUSTOM_A]);
+        $this->assertNotSame($tokens['refresh_token'], $next['refresh_token']);
+    }
+
+    public function testSelfHostedCodeIsBoundToItsRedirectUriAndItsClient(): void {
+        $this->customClients();
+        $this->assertGrantFails(fn () => $this->customExchange($this->customCode(), self::CUSTOM_REDIRECT . '/'));
+        $this->assertGrantFails(fn () => $this->customExchange($this->customCode(), self::CUSTOM_REDIRECT, self::CUSTOM_B));
+    }
+
+    public function testDisabledSelfHostedClientCannotExchangeRefreshOrAuthenticateAndTheOtherOneStillWorks(): void {
+        $this->customClients();
+        $code = $this->customCode();
+        $tokens = $this->customExchange($this->customCode());
+        $other = $this->customExchange($this->customCode(self::CUSTOM_B, 'https://other.example.org/cb'), 'https://other.example.org/cb', self::CUSTOM_B);
+        $this->customClients(false, true);
+        $this->assertGrantFails(fn () => $this->customExchange($code));
+        $this->assertNull($this->authenticator->authenticate('Bearer ' . $tokens['access_token'], self::RESOURCE));
+        $this->assertGrantFails(fn () => $this->service->refresh(['refresh_token' => $tokens['refresh_token'], 'client_id' => self::CUSTOM_A]));
+        $this->assertNotNull($this->authenticator->authenticate('Bearer ' . $other['access_token'], self::RESOURCE));
+    }
+
+    public function testDeletedSelfHostedClientCannotRefreshOrAuthenticate(): void {
+        $this->customClients();
+        $tokens = $this->customExchange($this->customCode());
+        unset($this->appConfig->app['mcp'][CustomClient::CLIENTS_KEY]);
+        $this->assertNull($this->authenticator->authenticate('Bearer ' . $tokens['access_token'], self::RESOURCE));
+        $this->assertGrantFails(fn () => $this->service->refresh(['refresh_token' => $tokens['refresh_token'], 'client_id' => self::CUSTOM_A]));
+    }
+
+    public function testDisabledSelfHostedClientDoesNotAffectCimdOrNativeTokens(): void {
+        $this->appConfig->app['mcp'][NativeClient::CONFIG_KEY] = '1';
+        $native = $this->nativeExchange($this->nativeCode());
+        $cimd = $this->exchange($this->code());
+        $this->customClients(false, false);
+        $this->assertNotNull($this->authenticator->authenticate('Bearer ' . $native['access_token'], self::RESOURCE));
+        $this->assertNotNull($this->authenticator->authenticate('Bearer ' . $cimd['access_token'], self::RESOURCE));
     }
 
     public function testDeleteForClientRemovesOnlyThatClientsRows(): void {

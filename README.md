@@ -132,6 +132,7 @@ Every client talks to the same URL, `https://cloud.example.com/apps/mcp/`, and a
 | **Claude** — claude.ai, Claude Desktop, Cowork, Claude Code | OAuth **Sign in**, Claude's published identity (CIMD) | Nothing: `claude.ai` is allowed by default |
 | **ChatGPT** | OAuth **Sign in**, OpenAI's published identity (CIMD) | Nothing: `chatgpt.com` is allowed by default |
 | **Gemini CLI** | OAuth with the app's built-in native client | Tick **Allow local programs** and copy the `client_id` |
+| **Self-hosted harness** that takes a `client_id` and returns to its own domain | OAuth with a self-hosted client the administrator adds | **Add client** under *Self-hosted clients*: name it, list the harness's redirect URI and copy its `client_id` |
 | **Any other MCP client** | App password (HTTP Basic) | Nothing |
 
 ### Claude (claude.ai, Claude Desktop, Cowork and Claude Code — recommended)
@@ -180,14 +181,32 @@ Two steps, one from the administrator and one from the user, with no terminal on
 
 Why a built-in client: Gemini CLI has no published client identity document, so the app ships one fixed public client for local programs. Its id is the same for everyone on the instance, and that is safe because it grants nothing by itself — the login, the eligibility, the personal connection, the administrator's grants, the consent screen and PKCE all still apply. Turning the switch off also stops the client from exchanging an authorization code and from refreshing a token.
 
+### Self-hosted harnesses (custom redirect URI)
+
+For an MCP harness you run yourself (on your own domain) that supports OAuth and lets you type a `client_id`, but publishes no client identity document of its own. A harness that does publish one only needs its host added to **Allowed client hosts**.
+
+**Administrator** — *Administration settings → MCP for Cloud → OAuth clients*:
+
+1. Under **Self-hosted clients (custom redirect URIs)**, click **Add client**. There are none by default, and none is accepted until one is added.
+2. Give it a **Name**, for example `QwenPaw`. People see this name on the consent screen ("Allow QwenPaw to access MCP with your account?") and in their connections. It must be unique and at most 64 characters.
+3. In **Accepted redirect URIs**, enter the harness's callback URL, one per line, exactly as the harness sends it (for example `https://harness.example.com/oauth/callback`), and click **Save**. Each one must be an absolute `https` URI without user name, `*` or `#fragment`; plain `http` is accepted only for loopback addresses. From 1 to 20.
+4. Copy the `client_id` shown after saving, for example `nextcloud-mcp-custom-3f9c2a7b1d04`. Each client gets its own random id, which does not change when it is renamed.
+
+Add one client per harness: each has its own name, redirect URIs, **Enabled** setting and `client_id`, so one can be turned off or deleted without touching the others. At most 20 clients.
+
+**In the harness**: add an MCP server with the URL `https://cloud.example.com/apps/mcp/`, choose OAuth, and set the client id to the copied `client_id` with no client secret (it is a public client with PKCE). Connecting opens your Nextcloud: log in and click **Allow**; the consent screen shows the client's name, says it was added by your administrator, and names the host it returns to.
+
+The redirect URI has to match one of that client's URIs character for character — a different path, query, port or trailing slash, or another client's URI, is refused before the login page. Unticking **Enabled**, deleting the client or removing one of its URIs signs out every connection made with that client at once; a disabled client is refused until it is enabled again. Renaming it, adding a URI or enabling it signs no one out. The `client_id` grants nothing by itself: the login, eligibility, personal connection, administrator grants, consent and PKCE all still apply.
+
 ### Administrators: OAuth clients
 
 *Administration settings → MCP for Cloud → OAuth clients* decides which clients may connect, without any terminal step:
 
 - **Allowed client hosts** — the hosts whose published client identity document the app is willing to download, separated by commas; `claude.ai` and `chatgpt.com` by default. Exact host names only: no `https://`, no port, no path, no `*`, and at least one host has to stay. The host is the one in the URL the client uses as its `client_id`. Saving replaces the whole list, and removing a host refuses that client immediately, even when its document is already cached.
 - **Allow local programs (native client)** — enables the `nextcloud-mcp-native` client described above and shows the `client_id` and the accepted redirect URIs to copy.
+- **Self-hosted clients (custom redirect URIs)** — the clients described above, each with its name, **Enabled** setting, `client_id` and the exact redirect URIs it may return to.
 
-Both controls are administrator-only and CSRF-protected, and they report a refused save. A configuration you set yourself is not overwritten by the defaults: an `oauth_client_hosts` value saved before 0.8.0 keeps being used as it is.
+These controls are administrator-only and CSRF-protected, and they report a refused save. A configuration you set yourself is not overwritten by the defaults: an `oauth_client_hosts` value saved before 0.8.0 keeps being used as it is.
 
 ### Other MCP clients (app password)
 

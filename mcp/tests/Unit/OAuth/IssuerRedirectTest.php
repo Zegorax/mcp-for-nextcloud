@@ -11,6 +11,7 @@ use OCA\Mcp\OAuth\AuthorizationRequest;
 use OCA\Mcp\OAuth\AuthorizationValidator;
 use OCA\Mcp\OAuth\ClientMetadata;
 use OCA\Mcp\OAuth\ClientResolver;
+use OCA\Mcp\OAuth\CustomClient;
 use OCA\Mcp\OAuth\NativeClient;
 use OCA\Mcp\OAuth\ResourceUrl;
 use OCA\Mcp\OAuth\TokenService;
@@ -171,5 +172,30 @@ final class IssuerRedirectTest extends TestCase {
         $this->assertNotSame('', $page->getParams()['clientHost']);
         $this->assertTrue($page->getParams()['loopback']);
         $this->assertNotSame('', $page->getParams()['client']);
+    }
+
+    public function testSelfHostedClientConsentShowsItsNameAndTheRedirectHostWithoutLoopbackWarning(): void {
+        $id = CustomClient::clientId('aaaaaaaaaaaa');
+        $this->client = new ClientMetadata($id, 'QwenPaw', ['https://harness.example.com/oauth/callback']);
+        $controller = $this->controller($this->params([
+            'client_id' => $id, 'redirect_uri' => 'https://harness.example.com/oauth/callback']));
+        $page = $controller->authorize();
+        $this->assertInstanceOf(TemplateResponse::class, $page);
+        $params = $page->getParams();
+        $this->assertTrue($params['customClient']);
+        $this->assertFalse($params['nativeClient']);
+        $this->assertFalse($params['loopback']);
+        $this->assertSame('harness.example.com', $params['redirectHost']);
+        $this->assertSame('QwenPaw', $params['client']);
+        $this->assertSame('QwenPaw', $params['clientHost']);
+    }
+
+    public function testSelfHostedClientNeverRedirectsToAnUnlistedUri(): void {
+        $id = CustomClient::clientId('aaaaaaaaaaaa');
+        $this->client = new ClientMetadata($id, 'QwenPaw', ['https://harness.example.com/oauth/callback']);
+        $response = $this->controller($this->params([
+            'client_id' => $id, 'redirect_uri' => 'https://evil.example/oauth/callback']))->authorize();
+        $this->assertInstanceOf(TemplateResponse::class, $response);
+        $this->assertNotNull($response->getParams()['error']);
     }
 }

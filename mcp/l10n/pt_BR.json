@@ -976,6 +976,18 @@
     "The groups were changed in another window or by another administrator; the current list was loaded." : "Os grupos foram alterados em outra janela ou por outro administrador; a lista atual foi carregada.",
     "Task categories must be a list of at most %s texts." : "As categorias da tarefa devem ser uma lista de no máximo %s textos.",
     "Each task category must have 1 to %s characters and no control characters." : "Cada categoria da tarefa deve ter de 1 a %s caracteres e nenhum caractere de controle.",
-    "Categories" : "Categorias"
+    "Categories" : "Categorias",
+    "Could not change the self-hosted client." : "Não foi possível alterar o cliente auto-hospedado.",
+    "Self-hosted clients (custom redirect URIs)" : "Clientes auto-hospedados (URIs de redirecionamento personalizadas)",
+    "For self-hosted programs that take a client_id in their settings and return to their own domain. Add one client per program: its name is shown to people on the consent screen and in their connections. Turning a client off, deleting it or removing one of its redirect URIs signs out its connections." : "Para programas auto-hospedados que aceitam um client_id nas configurações e retornam ao próprio domínio. Adicione um cliente por programa: o nome dele aparece para as pessoas na tela de consentimento e nas conexões delas. Desligar um cliente, excluí-lo ou remover uma das URIs de redirecionamento dele desconecta as conexões dele.",
+    "Add client" : "Adicionar cliente",
+    "%s (added by your administrator)" : "%s (adicionado pela administração)",
+    "Self-hosted client" : "Cliente auto-hospedado",
+    "Delete" : "Excluir",
+    "Could not copy the client_id." : "Não foi possível copiar o client_id.",
+    "One URI per line, exactly as the client sends it: https, no wildcard or fragment." : "Uma URI por linha, exatamente como o cliente envia: https, sem curinga nem fragmento.",
+    "Not saved: each client needs a name of up to 64 characters that no other client has, and 1 to 20 redirect URIs (absolute https URIs, without user name, wildcard or fragment)." : "Não salvo: cada cliente precisa de um nome de até 64 caracteres que nenhum outro cliente tenha e de 1 a 20 URIs de redirecionamento (URIs https absolutas, sem nome de usuário, curinga nem fragmento).",
+    "Delete the client “{name}”? Its connections are signed out at once." : "Excluir o cliente “{name}”? As conexões dele são desconectadas na hora.",
+    "Could not delete the self-hosted client." : "Não foi possível excluir o cliente auto-hospedado."
 },"pluralForm" :"nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }
