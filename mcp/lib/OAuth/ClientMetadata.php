@@ -20,13 +20,16 @@ class ClientMetadata {
         public readonly array $redirectUris,
     ) {}
 
-    /** @return string host of the client_id URL (a fixed label for the built-in clients), the identity shown on the consent screen */
+    /**
+     * @return string host of the client_id URL (a fixed label for the native client, the administrator's name for a
+     *     self-hosted one), the identity shown on the consent screen
+     */
     public function host(): string {
         if ($this->clientId === NativeClient::CLIENT_ID) {
             return NativeClient::NAME;
         }
-        if ($this->clientId === CustomClient::CLIENT_ID) {
-            return CustomClient::NAME;
+        if (CustomClient::owns($this->clientId)) {
+            return $this->name;
         }
         return (string)parse_url($this->clientId, PHP_URL_HOST);
     }

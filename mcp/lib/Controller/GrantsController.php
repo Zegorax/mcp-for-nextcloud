@@ -122,18 +122,19 @@ class GrantsController extends Controller {
     /**
      * Current OAuth client settings for the admin page.
      *
-     * @return JSONResponse {hosts, hostsDefault, nativeClientEnabled, nativeClientId, nativeRedirectUris,
-     *                      customClientEnabled, customClientId, customRedirectUris}
+     * @return JSONResponse {hosts, hostsDefault, nativeClientEnabled, nativeClientId, nativeRedirectUris, customClients}
      */
     public function oauthClients(): JSONResponse {
         return $this->guard(fn (): array => $this->oauthState());
     }
 
     /**
-     * Body {hosts?: list<string>, nativeClientEnabled?: bool, customClientEnabled?: bool,
-     * customRedirectUris?: list<string>}. Everything is validated before anything is written; an empty host list is
-     * rejected because at least one host must stay trusted. Turning a built-in client off deletes its grants, and so
-     * does removing a redirect URI of the custom client, so nothing issued for a withdrawn URI outlives the decision.
+     * Body {hosts?: list<string>, nativeClientEnabled?: bool, customClients?: list<{id?, name, enabled, redirectUris}>}.
+     * customClients replaces the whole list of self-hosted clients; an entry without id is a new client. Everything is
+     * validated before anything is written; an empty host list is rejected because at least one host must stay
+     * trusted. Turning a built-in client off deletes its grants, and so does turning a self-hosted client off,
+     * deleting it or removing one of its redirect URIs, so nothing issued for a withdrawn client or URI outlives the
+     * decision.
      *
      * @return JSONResponse the same shape as oauthClients(), or 400
      */
@@ -141,9 +142,8 @@ class GrantsController extends Controller {
         return $this->guard(function (): array {
             $hosts = $this->request->getParam('hosts');
             $native = $this->request->getParam('nativeClientEnabled');
-            $custom = $this->request->getParam('customClientEnabled');
-            $uris = $this->request->getParam('customRedirectUris');
-            if ($hosts === null && $native === null && $custom === null && $uris === null) {
+            $custom = $this->request->getParam('customClients');
+            if ($hosts === null && $native === null && $custom === null) {
                 throw new InvalidArgumentException('Invalid request');
             }
             if ($hosts !== null) {
@@ -152,11 +152,9 @@ class GrantsController extends Controller {
             if ($native !== null) {
                 $native = self::bool($native);
             }
+            $current = CustomClient::clients($this->config);
             if ($custom !== null) {
-                $custom = self::bool($custom);
-            }
-            if ($uris !== null) {
-                $uris = CustomClient::validate($uris);
+                $custom = CustomClient::validate($custom, $current);
             }
             if ($hosts !== null) {
                 $default = explode(',', ClientMetadataFetcher::DEFAULT_HOSTS);
@@ -173,21 +171,16 @@ class GrantsController extends Controller {
                     $this->oauth->deleteForClient(NativeClient::CLIENT_ID);
                 }
             }
-            $revokeCustom = false;
-            if ($uris !== null) {
-                $revokeCustom = array_diff(CustomClient::redirectUris($this->config), $uris) !== [];
-                if ($uris === []) {
-                    $this->config->deleteAppValue($this->appName, CustomClient::REDIRECTS_KEY);
-                } else {
-                    $this->config->setAppValue($this->appName, CustomClient::REDIRECTS_KEY, (string)json_encode($uris, JSON_UNESCAPED_SLASHES));
-                }
-            }
             if ($custom !== null) {
-                $this->config->setAppValue($this->appName, CustomClient::ENABLED_KEY, $custom ? '1' : '0');
-                $revokeCustom = $revokeCustom || !$custom;
-            }
-            if ($revokeCustom) {
-                $this->oauth->deleteForClient(CustomClient::CLIENT_ID);
+                if ($custom === []) {
+                    $this->config->deleteAppValue($this->appName, CustomClient::CLIENTS_KEY);
+                } else {
+                    $this->config->setAppValue($this->appName, CustomClient::CLIENTS_KEY,
+                        (string)json_encode($custom, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+                }
+                foreach (CustomClient::withdrawn($current, $custom) as $clientId) {
+                    $this->oauth->deleteForClient($clientId);
+                }
             }
             return $this->oauthState();
         });
@@ -243,7 +236,8 @@ class GrantsController extends Controller {
 
     /**
      * @return array{hosts:list<string>, hostsDefault:bool, nativeClientEnabled:bool, nativeClientId:string,
-     *     nativeRedirectUris:list<string>, customClientEnabled:bool, customClientId:string, customRedirectUris:list<string>}
+     *     nativeRedirectUris:list<string>, customClients:list<array{id:string, clientId:string, name:string, enabled:bool,
+     *     redirectUris:list<string>}>}
      */
     private function oauthState(): array {
         $raw = $this->config->getAppValue($this->appName, ClientMetadataFetcher::HOSTS_KEY, '');
@@ -255,9 +249,13 @@ class GrantsController extends Controller {
             'nativeClientEnabled' => ClientResolver::nativeEnabled($this->config),
             'nativeClientId' => NativeClient::CLIENT_ID,
             'nativeRedirectUris' => NativeClient::REDIRECT_URIS,
-            'customClientEnabled' => CustomClient::enabled($this->config),
-            'customClientId' => CustomClient::CLIENT_ID,
-            'customRedirectUris' => CustomClient::redirectUris($this->config),
+            'customClients' => array_map(static fn (array $client): array => [
+                'id' => $client['id'],
+                'clientId' => CustomClient::clientId($client['id']),
+                'name' => $client['name'],
+                'enabled' => $client['enabled'],
+                'redirectUris' => $client['redirectUris'],
+            ], CustomClient::clients($this->config)),
         ];
     }
 

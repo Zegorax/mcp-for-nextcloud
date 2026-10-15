@@ -103,12 +103,10 @@ final class AdminAssetsTest extends TestCase {
         $this->assertIsInt($end, 'the active connections block');
         $this->assertTrue($start < $end, 'the OAuth clients block opens the Clients and connections tab');
         foreach (['mcp-oauth-hosts', 'mcp-oauth-hosts-status', 'mcp-native-client', 'mcp-native-client-status', 'mcp-native-client-details',
-            'mcp-custom-client', 'mcp-custom-client-status', 'mcp-custom-client-details', 'mcp-custom-client-id', 'mcp-custom-redirects',
-            'mcp-custom-redirects-save', 'mcp-custom-redirects-status'] as $id) {
+            'mcp-custom-clients', 'mcp-custom-add'] as $id) {
             $this->assertSame(1, substr_count($template, 'id="' . $id . '"'), $id);
         }
         $this->assertStringContainsString('data-copy="mcp-native-client-id"', $template);
-        $this->assertStringContainsString('data-copy="mcp-custom-client-id"', $template);
         $section = substr($template, $start, $end - $start);
         preg_match_all("/\\\$l->t\\('([^']+)'\\)/", $section, $fromTemplate);
         $script = (string)file_get_contents($app . '/js/admin-grants.js');

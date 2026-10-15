@@ -52,6 +52,18 @@ final class MyConnectionsControllerTest extends TestCase {
         $this->assertSame([], $this->controller('carol')->index()->getData()['connections']);
     }
 
+    public function testASelfHostedClientIsListedUnderTheNameTheAdministratorGaveIt(): void {
+        $this->fx->config->app['mcp']['oauth_custom_clients'] = json_encode([
+            ['id' => 'aaaaaaaaaaaa', 'name' => 'QwenPaw', 'enabled' => true, 'redirectUris' => ['https://harness.example.com/cb']]]);
+        $this->fx->grant('alice', 'nextcloud-mcp-custom-aaaaaaaaaaaa', 10);
+        $this->fx->grant('alice', 'nextcloud-mcp-custom-bbbbbbbbbbbb', 5);
+        $clients = array_column($this->controller('alice')->index()->getData()['connections'], 'client');
+        $this->assertEqualsCanonicalizing([
+            ['kind' => 'custom', 'host' => '', 'id' => 'nextcloud-mcp-custom-aaaaaaaaaaaa', 'name' => 'QwenPaw'],
+            ['kind' => 'custom', 'host' => '', 'id' => 'nextcloud-mcp-custom-bbbbbbbbbbbb', 'name' => ''],
+        ], $clients);
+    }
+
     public function testAUserCannotRevokeSomeoneElsesConnection(): void {
         $mine = $this->fx->grant('alice', 'https://claude.ai/c', 10);
         $bobs = $this->fx->grant('bob', 'https://claude.ai/c', 20);

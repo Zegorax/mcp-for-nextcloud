@@ -78,7 +78,7 @@ class OAuthController extends Controller {
             'client' => $authRequest->client->name,
             'clientHost' => $authRequest->client->host(),
             'nativeClient' => $authRequest->client->clientId === NativeClient::CLIENT_ID,
-            'customClient' => $authRequest->client->clientId === CustomClient::CLIENT_ID,
+            'customClient' => CustomClient::owns($authRequest->client->clientId),
             'redirectHost' => (string)parse_url($authRequest->redirectUri, PHP_URL_HOST),
             'loopback' => RedirectUriMatcher::isLoopback($authRequest->redirectUri),
             'account' => $user->getDisplayName(),

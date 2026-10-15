@@ -749,5 +749,8 @@
     text-decoration: underline;
 }
 
-/* Redirect URIs of the self-hosted client: one per line, wide enough for a full URL. */
+/* Self-hosted clients: one card each; redirect URIs one per line, wide enough for a full URL. */
+#mcp-admin .mcp-custom-heading { margin-top: 20px; font-size: 16px; font-weight: bold; }
+#mcp-admin .mcp-custom-client { max-width: 680px; margin: 12px 0; padding: 8px 16px; border: 1px solid var(--color-border); border-radius: var(--border-radius-large, 12px); }
+#mcp-admin .mcp-custom-client input[type="text"] { width: 100%; max-width: 320px; }
 .mcp-custom-redirects { width: 100%; max-width: 640px; font-family: var(--font-face-monospace, monospace); }

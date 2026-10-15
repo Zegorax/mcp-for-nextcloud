@@ -35,7 +35,7 @@
     <p><?php p($l->t('Signed in as %s.', [$_['account']])); ?></p>
     <p><?php p($l->t('The app will be able to use the MCP tools your administrator enabled for you. You can disconnect it at any time in your personal settings.')); ?></p>
     <p class="mcp-hosts">
-        <?php p($l->t('Client: %s', [$_['nativeClient'] ? $l->t('Local program (native client)') : ($_['customClient'] ? $l->t('Self-hosted client (custom redirect URIs)') : $_['clientHost'])])); ?><br>
+        <?php p($l->t('Client: %s', [$_['nativeClient'] ? $l->t('Local program (native client)') : ($_['customClient'] ? $l->t('%s (added by your administrator)', [$_['client']]) : $_['clientHost'])])); ?><br>
         <?php p($l->t('Returns to: %s', [$_['redirectHost']])); ?>
     </p>
     <?php if ($_['loopback']): ?>

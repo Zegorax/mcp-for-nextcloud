@@ -979,10 +979,17 @@ OC.L10N.register(
     "Task categories must be a list of at most %s texts." : "Las categorías de la tarea deben ser una lista de como máximo %s textos.",
     "Each task category must have 1 to %s characters and no control characters." : "Cada categoría de la tarea debe tener de 1 a %s caracteres y ningún carácter de control.",
     "Categories" : "Categorías",
-    "Allow self-hosted clients (custom redirect URIs)" : "Permitir clientes autoalojados (URI de redirección personalizados)",
-    "Self-hosted client (custom redirect URIs)" : "Cliente autoalojado (URI de redirección personalizados)",
-    "One URI per line, exactly as the client sends it: https, no wildcard or fragment. Removing a URI signs out every connection of this client. Use it for self-hosted programs that take a client_id in their settings and return to their own domain." : "Un URI por línea, exactamente como lo envía el cliente: https, sin comodín ni fragmento. Quitar un URI cierra todas las conexiones de este cliente. Úselo para programas autoalojados que aceptan un client_id en su configuración y vuelven a su propio dominio.",
     "Could not change the self-hosted client." : "No se pudo cambiar el cliente autoalojado.",
-    "Invalid redirect URIs: use at most 20 absolute https URIs, without user name, wildcard or fragment." : "URI de redirección no válidos: use como máximo 20 URI https absolutos, sin nombre de usuario, comodín ni fragmento."
+    "Self-hosted clients (custom redirect URIs)" : "Clientes autoalojados (URI de redirección personalizadas)",
+    "For self-hosted programs that take a client_id in their settings and return to their own domain. Add one client per program: its name is shown to people on the consent screen and in their connections. Turning a client off, deleting it or removing one of its redirect URIs signs out its connections." : "Para programas autoalojados que aceptan un client_id en su configuración y vuelven a su propio dominio. Añada un cliente por programa: su nombre se muestra a las personas en la pantalla de consentimiento y en sus conexiones. Desactivar un cliente, eliminarlo o quitar una de sus URI de redirección cierra sus conexiones.",
+    "Add client" : "Añadir cliente",
+    "%s (added by your administrator)" : "%s (añadido por su administrador)",
+    "Self-hosted client" : "Cliente autoalojado",
+    "Delete" : "Eliminar",
+    "Could not copy the client_id." : "No se pudo copiar el client_id.",
+    "One URI per line, exactly as the client sends it: https, no wildcard or fragment." : "Una URI por línea, exactamente como la envía el cliente: https, sin comodín ni fragmento.",
+    "Not saved: each client needs a name of up to 64 characters that no other client has, and 1 to 20 redirect URIs (absolute https URIs, without user name, wildcard or fragment)." : "No guardado: cada cliente necesita un nombre de hasta 64 caracteres que ningún otro cliente tenga y de 1 a 20 URI de redirección (URI https absolutas, sin nombre de usuario, comodín ni fragmento).",
+    "Delete the client “{name}”? Its connections are signed out at once." : "¿Eliminar el cliente «{name}»? Sus conexiones se cierran de inmediato.",
+    "Could not delete the self-hosted client." : "No se pudo eliminar el cliente autoalojado."
 },
 "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;");

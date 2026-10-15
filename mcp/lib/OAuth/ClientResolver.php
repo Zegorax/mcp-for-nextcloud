@@ -10,7 +10,7 @@ namespace OCA\Mcp\OAuth;
 use OCP\IConfig;
 
 /**
- * Resolves a client_id to its metadata: one of the optional built-in clients (native, custom), or a Client ID
+ * Resolves a client_id to its metadata: the optional native client, a self-hosted client, or a Client ID
  * Metadata Document.
  */
 class ClientResolver {
@@ -23,7 +23,7 @@ class ClientResolver {
      * @param string $clientId client_id from the authorization request
      * @return ClientMetadata metadata of the client
      * @throws OAuthException invalid_client (never redirectable) when the client is unknown, disallowed or disabled
-     *         (the custom client also counts as disabled while it has no redirect URI)
+     *         (a self-hosted client_id that is not stored, or whose client is disabled, counts as disabled)
      */
     public function resolve(string $clientId): ClientMetadata {
         if ($clientId === NativeClient::CLIENT_ID) {
@@ -32,12 +32,12 @@ class ClientResolver {
             }
             return NativeClient::metadata();
         }
-        if ($clientId === CustomClient::CLIENT_ID) {
-            $client = CustomClient::metadata($this->config);
-            if (!CustomClient::enabled($this->config) || $client->redirectUris === []) {
+        if (CustomClient::owns($clientId)) {
+            $client = CustomClient::find($this->config, $clientId);
+            if ($client === null || !$client['enabled'] || $client['redirectUris'] === []) {
                 throw new OAuthException('invalid_client', 'Unknown or not allowed client');
             }
-            return $client;
+            return CustomClient::metadata($client);
         }
         return $this->fetcher->fetch($clientId);
     }
@@ -53,10 +53,11 @@ class ClientResolver {
     /**
      * @param IConfig $config app configuration
      * @param string $clientId client of a stored grant
-     * @return bool true when the grant belongs to a built-in client the administrator has turned off
+     * @return bool true when the grant belongs to a built-in client the administrator has turned off, or to a
+     *     self-hosted client that was turned off or deleted
      */
     public static function builtInDisabled(IConfig $config, string $clientId): bool {
         return $clientId === NativeClient::CLIENT_ID && !self::nativeEnabled($config)
-            || $clientId === CustomClient::CLIENT_ID && !CustomClient::enabled($config);
+            || CustomClient::owns($clientId) && !CustomClient::active($config, $clientId);
     }
 }

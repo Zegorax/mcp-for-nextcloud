@@ -174,10 +174,11 @@ final class IssuerRedirectTest extends TestCase {
         $this->assertNotSame('', $page->getParams()['client']);
     }
 
-    public function testCustomClientConsentShowsItsLabelAndTheRedirectHostWithoutLoopbackWarning(): void {
-        $this->client = new ClientMetadata(CustomClient::CLIENT_ID, CustomClient::NAME, ['https://harness.example.com/oauth/callback']);
+    public function testSelfHostedClientConsentShowsItsNameAndTheRedirectHostWithoutLoopbackWarning(): void {
+        $id = CustomClient::clientId('aaaaaaaaaaaa');
+        $this->client = new ClientMetadata($id, 'QwenPaw', ['https://harness.example.com/oauth/callback']);
         $controller = $this->controller($this->params([
-            'client_id' => CustomClient::CLIENT_ID, 'redirect_uri' => 'https://harness.example.com/oauth/callback']));
+            'client_id' => $id, 'redirect_uri' => 'https://harness.example.com/oauth/callback']));
         $page = $controller->authorize();
         $this->assertInstanceOf(TemplateResponse::class, $page);
         $params = $page->getParams();
@@ -185,13 +186,15 @@ final class IssuerRedirectTest extends TestCase {
         $this->assertFalse($params['nativeClient']);
         $this->assertFalse($params['loopback']);
         $this->assertSame('harness.example.com', $params['redirectHost']);
-        $this->assertSame(CustomClient::NAME, $params['clientHost']);
+        $this->assertSame('QwenPaw', $params['client']);
+        $this->assertSame('QwenPaw', $params['clientHost']);
     }
 
-    public function testCustomClientNeverRedirectsToAnUnlistedUri(): void {
-        $this->client = new ClientMetadata(CustomClient::CLIENT_ID, CustomClient::NAME, ['https://harness.example.com/oauth/callback']);
+    public function testSelfHostedClientNeverRedirectsToAnUnlistedUri(): void {
+        $id = CustomClient::clientId('aaaaaaaaaaaa');
+        $this->client = new ClientMetadata($id, 'QwenPaw', ['https://harness.example.com/oauth/callback']);
         $response = $this->controller($this->params([
-            'client_id' => CustomClient::CLIENT_ID, 'redirect_uri' => 'https://evil.example/oauth/callback']))->authorize();
+            'client_id' => $id, 'redirect_uri' => 'https://evil.example/oauth/callback']))->authorize();
         $this->assertInstanceOf(TemplateResponse::class, $response);
         $this->assertNotNull($response->getParams()['error']);
     }
